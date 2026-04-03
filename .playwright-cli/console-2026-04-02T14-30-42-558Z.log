@@ -1,0 +1,56 @@
+[    2109ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/live/cricket:0
+[    2432ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ webpack-internal:///./node_modules/react-dom/cjs/react-dom.development.js:29889
+[    2512ms] Error: Cannot find module './819.js'
+Require stack:
+- D:\GitHub\xiaolongxia-ai-1\.next\server\webpack-runtime.js
+- D:\GitHub\xiaolongxia-ai-1\.next\server\pages\_document.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\require.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\load-components.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\build\utils.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\dev\hot-middleware.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\dev\hot-reloader-webpack.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\lib\router-server.js
+- D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\lib\start-server.js
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1456:15)
+    at <unknown> (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\require-hook.js:55:36)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1066:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1071:22)
+    at Module._load (node:internal/modules/cjs/loader:1242:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1556:12)
+    at mod.require (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\require-hook.js:65:28)
+    at require (node:internal/modules/helpers:152:16)
+    at __webpack_require__.f.require (file://D:\GitHub\xiaolongxia-ai-1\.next\server\webpack-runtime.js:198:28)
+    at <unknown> (file://D:\GitHub\xiaolongxia-ai-1\.next\server\webpack-runtime.js:111:40)
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (file://D:\GitHub\xiaolongxia-ai-1\.next\server\webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (file://D:\GitHub\xiaolongxia-ai-1\.next\server\webpack-runtime.js:162:22)
+    at <unknown> (file://D:\GitHub\xiaolongxia-ai-1\.next\server\app\_not-found\page.js:1:3584)
+    at Object.<anonymous> (file://D:\GitHub\xiaolongxia-ai-1\.next\server\app\_not-found\page.js:1:3625)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1556:12)
+    at mod.require (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\require-hook.js:65:28)
+    at require (node:internal/modules/helpers:152:16)
+    at requirePage (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\require.js:109:84)
+    at <unknown> (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\load-components.js:98:84)
+    at async loadComponentsImpl (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\next-server.js:710:36)
+    at async DevServer.findPageComponents (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\dev\next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\base-server.js:2097:30)
+    at async pipe.req.req (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\base-server.js:2063:30)
+    at async DevServer.pipeImpl (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\base-server.js:920:25)
+    at async (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\dev\next-dev-server.js:339:20)
+    at async Span.traceAsyncFn (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\trace\trace.js:154:20)
+    at async DevServer.handleRequest (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\dev\next-dev-server.js:336:24)
+    at async invokeRender (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\lib\router-server.js:174:21)
+    at async handleRequest (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\lib\router-server.js:368:24)
+    at async requestHandlerImpl (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\lib\router-server.js:377:13)
+    at async Server.requestListener (file://D:\GitHub\xiaolongxia-ai-1\node_modules\next\dist\server\lib\start-server.js:141:13)
+[    2489ms] [LOG] [HMR] connected @ webpack-internal:///./node_modules/next/dist/client/components/react-dev-overlay/pages/websocket.js:45
+[    2509ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/favicon.ico:0

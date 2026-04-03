@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Signal Nine Sports MVP
 
-## Getting Started
+Sports data platform MVP built with `Next.js 16`, `React 19`, `Tailwind 4`, Prisma, and SQLite.
 
-First, run the development server:
+## Delivery plan
+
+Follow the execution baseline in [docs/development-schedule.md](./docs/development-schedule.md).
+
+## Current scope
+
+- Homepage and core product shell
+- Football live scores
+- Basketball live scores
+- Cricket live entry page
+- Database page for football and basketball
+- Match detail page
+- AI predictions page
+- Plans and paid content flow
+- Member center
+- Admin console
+
+## Scope baseline
+
+- Football and basketball remain the phase-one core for data depth, database views, and operator workflows.
+- Cricket is now part of the product baseline, but the first shipped slice is the live board and localized fallback dataset.
+- Follow-up cricket work will expand into schedule/results depth, statistics, content, and admin operations in later phases.
+
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+pnpm db:generate
+pnpm db:init
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm dev
+pnpm build
+pnpm lint
+pnpm db:generate
+pnpm db:init
+pnpm db:push
+```
 
-## Learn More
+`db:init` and `db:push` both bootstrap the local SQLite schema through `scripts/init-db.mjs`. This avoids the Prisma schema-engine instability we hit on Windows while still using the Prisma client at runtime.
 
-To learn more about Next.js, take a look at the following resources:
+## Environment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Add this value to `.env`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+DATABASE_URL="file:./dev.db"
+```
 
-## Deploy on Vercel
+## Sports data modes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 1. Nowscore scrape + database mode
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Football and basketball use the current `nowscore` scrape/provider flow with local persistence and fallback handling. These routes are wired into the scrape or synced database path:
+
+- `/`
+- `/live/football`
+- `/live/basketball`
+- `/database`
+- `/matches/[id]`
+- `/api/admin/sync`
+
+### 2. Localized fallback mode
+
+Cricket currently ships through a localized mock/fallback dataset so the product can expose a stable third-sport entry without depending on a new provider yet:
+
+- `/live/cricket`
+
+## Demo flow
+
+1. Visit `/login`
+2. Log in as member or admin
+3. Purchase a membership on `/member`
+4. Unlock a paid plan on `/plans`
+5. Check the admin console on `/admin`
+
+## Notes
+
+- Auth, sessions, membership orders, and content orders are persisted in local SQLite.
+- Football and basketball data are scrape-backed and can also be read from the synced local database.
+- Cricket is currently a staged rollout and remains fallback-backed in this phase.
+- Paid plans, author rankings, and AI recommendation cards are still partly mock-backed while the backend content system continues to deepen.

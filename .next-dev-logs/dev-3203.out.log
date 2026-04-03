@@ -1,0 +1,19 @@
+
+> web@0.1.0 dev C:\Users\14471\Documents\GitHub\web
+> next dev "--port" "3203"
+
+▲ Next.js 16.2.2 (Turbopack)
+- Local:         http://localhost:3203
+- Network:       http://192.168.1.170:3203
+- Environments: .env
+✓ Ready in 298ms
+Creating turbopack project { dir: 'C:\\Users\\14471\\Documents\\GitHub\\web', testMode: true }
+
+ GET /database?sport=cricket&league=psl&view=h2h 200 in 3.4s (next.js: 216ms, application-code: 3.2s)
+ GET /database?sport=cricket&league=ipl&view=standings 200 in 1573ms (next.js: 324ms, application-code: 1249ms)
+ GET /matches/m7 200 in 3.6s (next.js: 794ms, application-code: 2.8s)
+ GET /database?sport=cricket&league=ipl&view=standings 200 in 913ms (next.js: 17ms, application-code: 896ms)
+ GET /database?sport=cricket&league=psl&view=h2h 200 in 727ms (next.js: 150ms, application-code: 577ms)
+ GET /matches/m7 200 in 795ms (next.js: 71ms, application-code: 724ms)
+[?25h
+ ELIFECYCLE  Command failed with exit code 4294967295.
