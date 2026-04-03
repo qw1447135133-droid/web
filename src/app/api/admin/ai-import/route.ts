@@ -11,6 +11,7 @@ function redirectToAdmin(request: NextRequest, formData: FormData, suffix = "") 
   const aiResult = String(formData.get("aiResult") || "").trim();
   const aiScope = String(formData.get("aiScope") || "").trim();
   const aiPage = String(formData.get("aiPage") || "").trim();
+  const handoffStatus = String(formData.get("handoffStatus") || "").trim();
 
   if (aiSport && aiSport !== "all") {
     url.searchParams.set("aiSport", aiSport);
@@ -30,6 +31,10 @@ function redirectToAdmin(request: NextRequest, formData: FormData, suffix = "") 
 
   if (aiPage && aiPage !== "1") {
     url.searchParams.set("aiPage", aiPage);
+  }
+
+  if (handoffStatus && handoffStatus !== "all") {
+    url.searchParams.set("handoffStatus", handoffStatus);
   }
 
   if (suffix.startsWith("&")) {

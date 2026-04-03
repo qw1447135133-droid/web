@@ -11,32 +11,42 @@ import { getSessionContext } from "@/lib/session";
 
 function redirectToAdmin(request: NextRequest, formData: FormData, suffix = "") {
   const url = new URL("/admin", request.url);
-  url.searchParams.set("tab", "ai");
+  url.searchParams.set("tab", "content");
 
-  const aiSport = String(formData.get("aiSport") || "").trim();
-  const aiAuthorId = String(formData.get("aiAuthorId") || "").trim();
-  const aiResult = String(formData.get("aiResult") || "").trim();
-  const aiScope = String(formData.get("aiScope") || "").trim();
-  const aiPage = String(formData.get("aiPage") || "").trim();
+  const contentSport = String(formData.get("contentSport") || "").trim();
+  const contentAuthorId = String(formData.get("contentAuthorId") || "").trim();
+  const contentPlanStatus = String(formData.get("contentPlanStatus") || "").trim();
+  const contentQuery = String(formData.get("contentQuery") || "").trim();
+  const knowledgeStatus = String(formData.get("knowledgeStatus") || "").trim();
+  const knowledgeCategory = String(formData.get("knowledgeCategory") || "").trim();
+  const knowledgeQuery = String(formData.get("knowledgeQuery") || "").trim();
 
-  if (aiSport && aiSport !== "all") {
-    url.searchParams.set("aiSport", aiSport);
+  if (contentSport && contentSport !== "all") {
+    url.searchParams.set("contentSport", contentSport);
   }
 
-  if (aiAuthorId) {
-    url.searchParams.set("aiAuthorId", aiAuthorId);
+  if (contentAuthorId) {
+    url.searchParams.set("contentAuthorId", contentAuthorId);
   }
 
-  if (aiResult && aiResult !== "all") {
-    url.searchParams.set("aiResult", aiResult);
+  if (contentPlanStatus && contentPlanStatus !== "all") {
+    url.searchParams.set("contentPlanStatus", contentPlanStatus);
   }
 
-  if (aiScope && aiScope !== "recent") {
-    url.searchParams.set("aiScope", aiScope);
+  if (contentQuery) {
+    url.searchParams.set("contentQuery", contentQuery);
   }
 
-  if (aiPage && aiPage !== "1") {
-    url.searchParams.set("aiPage", aiPage);
+  if (knowledgeStatus && knowledgeStatus !== "all") {
+    url.searchParams.set("knowledgeStatus", knowledgeStatus);
+  }
+
+  if (knowledgeCategory) {
+    url.searchParams.set("knowledgeCategory", knowledgeCategory);
+  }
+
+  if (knowledgeQuery) {
+    url.searchParams.set("knowledgeQuery", knowledgeQuery);
   }
 
   if (suffix.startsWith("&")) {

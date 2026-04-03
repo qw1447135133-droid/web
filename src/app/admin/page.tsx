@@ -58,6 +58,8 @@ type AdminSportFilter = "all" | "football" | "basketball" | "cricket" | "esports
 type AdminPlanStatusFilter = "all" | "draft" | "published" | "archived";
 type AdminPredictionResultFilter = "all" | "pending" | "won" | "lost";
 type AdminAiScope = "recent" | "all";
+type AdminAssistantKnowledgeStatusFilter = "all" | "active" | "inactive";
+type AdminAssistantHandoffStatusFilter = "all" | "pending" | "resolved";
 const ADMIN_AI_PAGE_SIZE = 12;
 
 function pickValue(value: string | string[] | undefined, fallback: string) {
@@ -271,7 +273,15 @@ function normalizeAdminPlanStatusFilter(value: string): AdminPlanStatusFilter {
 }
 
 function buildAdminContentHref(
-  filters: { contentSport: AdminSportFilter; contentAuthorId: string; contentPlanStatus: AdminPlanStatusFilter; contentQuery: string },
+  filters: {
+    contentSport: AdminSportFilter;
+    contentAuthorId: string;
+    contentPlanStatus: AdminPlanStatusFilter;
+    contentQuery: string;
+    knowledgeStatus?: AdminAssistantKnowledgeStatusFilter;
+    knowledgeCategory?: string;
+    knowledgeQuery?: string;
+  },
   overrides?: {
     editAuthor?: string;
     editPlan?: string;
@@ -279,6 +289,7 @@ function buildAdminContentHref(
     editFeaturedSlot?: string;
     editModule?: string;
     editAnnouncement?: string;
+    editKnowledge?: string;
   },
 ) {
   const params = new URLSearchParams();
@@ -294,6 +305,11 @@ function buildAdminContentHref(
 
   setOptionalSearchParam(params, "contentAuthorId", filters.contentAuthorId);
   setOptionalSearchParam(params, "contentQuery", filters.contentQuery);
+  if (filters.knowledgeStatus && filters.knowledgeStatus !== "all") {
+    params.set("knowledgeStatus", filters.knowledgeStatus);
+  }
+  setOptionalSearchParam(params, "knowledgeCategory", filters.knowledgeCategory);
+  setOptionalSearchParam(params, "knowledgeQuery", filters.knowledgeQuery);
 
   if (overrides?.editAuthor) {
     params.set("editAuthor", overrides.editAuthor);
@@ -319,11 +335,23 @@ function buildAdminContentHref(
     params.set("editAnnouncement", overrides.editAnnouncement);
   }
 
+  if (overrides?.editKnowledge) {
+    params.set("editKnowledge", overrides.editKnowledge);
+  }
+
   return `/admin?${params.toString()}`;
 }
 
 function normalizeAdminAiScope(value: string): AdminAiScope {
   return value === "all" ? "all" : "recent";
+}
+
+function normalizeAssistantKnowledgeStatusFilter(value: string): AdminAssistantKnowledgeStatusFilter {
+  return value === "active" || value === "inactive" ? value : "all";
+}
+
+function normalizeAssistantHandoffStatusFilter(value: string): AdminAssistantHandoffStatusFilter {
+  return value === "pending" || value === "resolved" ? value : "all";
 }
 
 function buildAdminAiHrefWithFilters(filters: {
@@ -332,8 +360,8 @@ function buildAdminAiHrefWithFilters(filters: {
   aiResult: AdminPredictionResultFilter;
   aiScope: AdminAiScope;
   aiPage?: number;
+  handoffStatus?: AdminAssistantHandoffStatusFilter;
   editPredictionId?: string;
-  editKnowledgeId?: string;
 }) {
   const params = new URLSearchParams();
   params.set("tab", "ai");
@@ -356,12 +384,12 @@ function buildAdminAiHrefWithFilters(filters: {
     params.set("aiPage", String(filters.aiPage));
   }
 
-  if (filters.editPredictionId) {
-    params.set("editPrediction", filters.editPredictionId);
+  if (filters.handoffStatus && filters.handoffStatus !== "all") {
+    params.set("handoffStatus", filters.handoffStatus);
   }
 
-  if (filters.editKnowledgeId) {
-    params.set("editKnowledge", filters.editKnowledgeId);
+  if (filters.editPredictionId) {
+    params.set("editPrediction", filters.editPredictionId);
   }
 
   return `/admin?${params.toString()}`;
@@ -617,6 +645,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const aiResult = normalizeAdminPredictionResultFilter(pickValue(resolved.aiResult, "all"));
   const aiScope = normalizeAdminAiScope(pickValue(resolved.aiScope, "recent"));
   const aiPage = pickPositiveInt(resolved.aiPage, 1);
+  const knowledgeStatus = normalizeAssistantKnowledgeStatusFilter(pickValue(resolved.knowledgeStatus, "all"));
+  const knowledgeCategory = pickValue(resolved.knowledgeCategory, "").trim();
+  const knowledgeQuery = pickValue(resolved.knowledgeQuery, "").trim();
+  const handoffStatus = normalizeAssistantHandoffStatusFilter(pickValue(resolved.handoffStatus, "all"));
   const saved = pickValue(resolved.saved, "");
   const error = pickValue(resolved.error, "");
   const seeded = pickValue(resolved.seeded, "");
@@ -728,6 +760,46 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     }
 
     if (aiResult !== "all" && prediction.result !== aiResult) {
+      return false;
+    }
+
+    return true;
+  });
+  const filteredSupportKnowledgeItems = supportKnowledgeItems.filter((item) => {
+    if (knowledgeStatus !== "all" && item.status !== knowledgeStatus) {
+      return false;
+    }
+
+    if (knowledgeCategory && item.category !== knowledgeCategory) {
+      return false;
+    }
+
+    if (knowledgeQuery) {
+      const query = knowledgeQuery.toLowerCase();
+      const haystack = [
+        item.key,
+        item.category,
+        item.questionZhCn,
+        item.questionZhTw,
+        item.questionEn,
+        item.answerZhCn,
+        item.answerZhTw,
+        item.answerEn,
+        item.href ?? "",
+        item.tagsText ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (!haystack.includes(query)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+  const filteredAssistantHandoffRequests = assistantHandoffRequests.filter((item) => {
+    if (handoffStatus !== "all" && item.status !== handoffStatus) {
       return false;
     }
 
@@ -943,12 +1015,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : error === "refund"
           ? adminPageCopy.users.refundNotices.failed
           : null;
-  const aiNotice =
+  const predictionNotice =
     saved === "prediction"
       ? aiImportPanelCopy.notices.saved
       : saved === "prediction-deleted"
         ? aiImportPanelCopy.notices.deleted
-      : saved === "assistant-knowledge"
+      : error === "prediction"
+        ? aiImportPanelCopy.notices.failed
+        : null;
+  const knowledgeNotice =
+    saved === "assistant-knowledge"
         ? locale === "en"
           ? "Assistant knowledge item saved."
           : locale === "zh-TW"
@@ -960,9 +1036,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           : locale === "zh-TW"
             ? "預設 AI 客服知識種子已導入。"
             : "默认 AI 客服知识种子已导入。"
-      : error === "prediction"
-        ? aiImportPanelCopy.notices.failed
-        : error === "assistant-knowledge"
+      : error === "assistant-knowledge"
           ? locale === "en"
             ? "Assistant knowledge operation failed."
             : locale === "zh-TW"
@@ -1075,6 +1149,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const assistantPendingCount = assistantHandoffRequests.filter((item) => item.status === "pending").length;
   const assistantResolvedCount = assistantHandoffRequests.filter((item) => item.status === "resolved").length;
   const assistantKnowledgeActiveCount = supportKnowledgeItems.filter((item) => item.status === "active").length;
+  const assistantKnowledgeCategories = Array.from(new Set(supportKnowledgeItems.map((item) => item.category))).sort((left, right) =>
+    left.localeCompare(right),
+  );
   const sortedMatches = [...matches].sort((left, right) => new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime());
   const matchLookup = new Map(sortedMatches.map((match) => [match.id, match]));
   const currentFeaturedSlotMatchValue =
@@ -1084,6 +1161,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const predictionMatchOptionExists = sortedMatches.some((match) => match.id === predictionMatchValue);
   const predictionAuthorOptionExists = authorTeams.some((author) => author.id === currentPrediction?.authorId);
   const aiFormTitle = currentPrediction ? aiImportPanelCopy.editTitle : aiImportPanelCopy.createTitle;
+  const aiRouteState = {
+    aiSport,
+    aiAuthorId,
+    aiResult,
+    aiScope,
+    aiPage: resolvedAiPage,
+    handoffStatus,
+  };
+  const contentKnowledgeRouteState = {
+    contentSport,
+    contentAuthorId,
+    contentPlanStatus,
+    contentQuery,
+    knowledgeStatus,
+    knowledgeCategory,
+    knowledgeQuery,
+  };
 
   const overviewCards = [
     {
@@ -1445,6 +1539,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               }`}
             >
               {contentNotice}
+            </div>
+          ) : null}
+
+          {knowledgeNotice ? (
+            <div
+              className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                error === "assistant-knowledge"
+                  ? "border-rose-300/25 bg-rose-400/10 text-rose-100"
+                  : "border-lime-300/20 bg-lime-300/10 text-lime-100"
+              }`}
+            >
+              {knowledgeNotice}
             </div>
           ) : null}
 
@@ -2951,7 +3057,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 <div className="flex flex-wrap gap-2">
                   {currentKnowledgeItem ? (
                     <Link
-                      href={buildAdminAiHrefWithFilters({ aiSport, aiAuthorId, aiResult, aiScope, aiPage: resolvedAiPage })}
+                      href={buildAdminContentHref(contentKnowledgeRouteState)}
                       className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/25 hover:text-white"
                     >
                       {adminPageCopy.shared.cancelEdit}
@@ -2970,11 +3076,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
               </div>
               <input type="hidden" name="id" value={currentKnowledgeItem?.id ?? ""} />
-              <input type="hidden" name="aiSport" value={aiSport} />
-              <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
-              <input type="hidden" name="aiResult" value={aiResult} />
-              <input type="hidden" name="aiScope" value={aiScope} />
-              <input type="hidden" name="aiPage" value={resolvedAiPage} />
+              <input type="hidden" name="contentSport" value={contentSport} />
+              <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
+              <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
+              <input type="hidden" name="contentQuery" value={contentQuery} />
+              <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
+              <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
+              <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
@@ -3047,7 +3155,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300">
-                    {assistantKnowledgeCopy.count(supportKnowledgeItems.length)}
+                    {assistantKnowledgeCopy.count(filteredSupportKnowledgeItems.length)}
                   </span>
                   <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm text-lime-100">
                     {assistantKnowledgeActiveCount} {assistantKnowledgeCopy.active}
@@ -3055,8 +3163,42 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
               </div>
 
+              <form action="/admin" method="get" className="mt-4 grid gap-3 md:grid-cols-[1.1fr,0.8fr,0.8fr,auto,auto]">
+                <input type="hidden" name="tab" value="content" />
+                <input type="hidden" name="contentSport" value={contentSport} />
+                <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
+                <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
+                <input type="hidden" name="contentQuery" value={contentQuery} />
+                <input
+                  type="text"
+                  name="knowledgeQuery"
+                  defaultValue={knowledgeQuery}
+                  placeholder={locale === "en" ? "Search key / question / tags" : locale === "zh-TW" ? "搜尋 key / 問題 / 標籤" : "搜索 key / 问题 / 标签"}
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                />
+                <select name="knowledgeCategory" defaultValue={knowledgeCategory} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                  <option value="">{locale === "en" ? "All categories" : locale === "zh-TW" ? "全部分類" : "全部分类"}</option>
+                  {assistantKnowledgeCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+                <select name="knowledgeStatus" defaultValue={knowledgeStatus} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                  <option value="all">{locale === "en" ? "All status" : locale === "zh-TW" ? "全部狀態" : "全部状态"}</option>
+                  <option value="active">{assistantKnowledgeCopy.statusLabels.active}</option>
+                  <option value="inactive">{assistantKnowledgeCopy.statusLabels.inactive}</option>
+                </select>
+                <button type="submit" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300">
+                  {locale === "en" ? "Apply" : locale === "zh-TW" ? "套用" : "应用"}
+                </button>
+                <Link href={buildAdminContentHref({ ...contentKnowledgeRouteState, knowledgeStatus: "all", knowledgeCategory: "", knowledgeQuery: "" })} className="inline-flex items-center justify-center rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                  {locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置"}
+                </Link>
+              </form>
+
               <div className="mt-5 space-y-4">
-                {supportKnowledgeItems.map((item) => {
+                {filteredSupportKnowledgeItems.map((item) => {
                   const isEditing = currentKnowledgeItem?.id === item.id;
 
                   return (
@@ -3110,13 +3252,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Link
-                          href={buildAdminAiHrefWithFilters({
-                            aiSport,
-                            aiAuthorId,
-                            aiResult,
-                            aiScope,
-                            aiPage: resolvedAiPage,
-                            editKnowledgeId: item.id,
+                          href={buildAdminContentHref(contentKnowledgeRouteState, {
+                            editKnowledge: item.id,
                           })}
                           className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white"
                         >
@@ -3125,11 +3262,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         <form action="/api/admin/operations/site-assistant-knowledge" method="post">
                           <input type="hidden" name="intent" value="move-up" />
                           <input type="hidden" name="id" value={item.id} />
-                          <input type="hidden" name="aiSport" value={aiSport} />
-                          <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
-                          <input type="hidden" name="aiResult" value={aiResult} />
-                          <input type="hidden" name="aiScope" value={aiScope} />
-                          <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                          <input type="hidden" name="contentSport" value={contentSport} />
+                          <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
+                          <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
+                          <input type="hidden" name="contentQuery" value={contentQuery} />
+                          <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
+                          <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
+                          <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
                           <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
                             {assistantKnowledgeCopy.moveUp}
                           </button>
@@ -3137,11 +3276,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         <form action="/api/admin/operations/site-assistant-knowledge" method="post">
                           <input type="hidden" name="intent" value="move-down" />
                           <input type="hidden" name="id" value={item.id} />
-                          <input type="hidden" name="aiSport" value={aiSport} />
-                          <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
-                          <input type="hidden" name="aiResult" value={aiResult} />
-                          <input type="hidden" name="aiScope" value={aiScope} />
-                          <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                          <input type="hidden" name="contentSport" value={contentSport} />
+                          <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
+                          <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
+                          <input type="hidden" name="contentQuery" value={contentQuery} />
+                          <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
+                          <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
+                          <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
                           <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
                             {assistantKnowledgeCopy.moveDown}
                           </button>
@@ -3149,11 +3290,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         <form action="/api/admin/operations/site-assistant-knowledge" method="post">
                           <input type="hidden" name="intent" value="toggle-status" />
                           <input type="hidden" name="id" value={item.id} />
-                          <input type="hidden" name="aiSport" value={aiSport} />
-                          <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
-                          <input type="hidden" name="aiResult" value={aiResult} />
-                          <input type="hidden" name="aiScope" value={aiScope} />
-                          <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                          <input type="hidden" name="contentSport" value={contentSport} />
+                          <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
+                          <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
+                          <input type="hidden" name="contentQuery" value={contentQuery} />
+                          <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
+                          <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
+                          <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
                           <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white">
                             {item.status === "active" ? assistantKnowledgeCopy.disable : assistantKnowledgeCopy.enable}
                           </button>
@@ -3163,7 +3306,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   );
                 })}
 
-                {supportKnowledgeItems.length === 0 ? (
+                {filteredSupportKnowledgeItems.length === 0 ? (
                   <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
                     {assistantKnowledgeCopy.empty}
                   </div>
@@ -3171,6 +3314,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
+
         </section>
       ) : null}
 
@@ -3703,13 +3847,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       {tab === "ai" ? (
         <section className="glass-panel rounded-[2rem] p-6">
           <SectionHeading eyebrow={adminPageCopy.aiImport.eyebrow} title={adminPageCopy.aiImport.title} />
-          {aiNotice ? (
+          {predictionNotice ? (
             <div
               className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
                 error === "prediction" ? "border-rose-300/25 bg-rose-400/10 text-rose-100" : "border-lime-300/20 bg-lime-300/10 text-lime-100"
               }`}
             >
-              {aiNotice}
+              {predictionNotice}
             </div>
           ) : null}
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
@@ -3721,7 +3865,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 {currentPrediction ? (
                   <Link
-                    href={buildAdminAiHrefWithFilters({ aiSport, aiAuthorId, aiResult, aiScope, aiPage: resolvedAiPage })}
+                    href={buildAdminAiHrefWithFilters(aiRouteState)}
                     className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/25 hover:text-white"
                   >
                     {adminPageCopy.shared.cancelEdit}
@@ -3734,6 +3878,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               <input type="hidden" name="aiResult" value={aiResult} />
               <input type="hidden" name="aiScope" value={aiScope} />
               <input type="hidden" name="aiPage" value={resolvedAiPage} />
+              <input type="hidden" name="handoffStatus" value={handoffStatus} />
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
                   <span className="text-slate-400">{aiImportPanelCopy.fields.sport}</span>
@@ -3866,6 +4011,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 <div className="flex flex-wrap items-center gap-3">
                   <form action="/admin" method="get" className="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="tab" value="ai" />
+                    <input type="hidden" name="handoffStatus" value={handoffStatus} />
                     <label className="text-sm text-slate-400">{aiImportPanelCopy.filters.sport}</label>
                     <select
                       name="aiSport"
@@ -3978,11 +4124,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           ) : null}
                           <Link
                             href={buildAdminAiHrefWithFilters({
-                              aiSport,
-                              aiAuthorId,
-                              aiResult,
-                              aiScope,
-                              aiPage: resolvedAiPage,
+                              ...aiRouteState,
                               editPredictionId: prediction.id,
                             })}
                             className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white"
@@ -3997,6 +4139,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                             <input type="hidden" name="aiResult" value={aiResult} />
                             <input type="hidden" name="aiScope" value={aiScope} />
                             <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                            <input type="hidden" name="handoffStatus" value={handoffStatus} />
                             <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-rose-300/30 hover:text-white">
                               {aiImportPanelCopy.delete}
                             </button>
@@ -4023,10 +4166,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     previousHref={
                       resolvedAiPage > 1
                         ? buildAdminAiHrefWithFilters({
-                            aiSport,
-                            aiAuthorId,
-                            aiResult,
-                            aiScope,
+                            ...aiRouteState,
                             aiPage: resolvedAiPage - 1,
                           })
                         : undefined
@@ -4034,10 +4174,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     nextHref={
                       resolvedAiPage < aiTotalPages
                         ? buildAdminAiHrefWithFilters({
-                            aiSport,
-                            aiAuthorId,
-                            aiResult,
-                            aiScope,
+                            ...aiRouteState,
                             aiPage: resolvedAiPage + 1,
                           })
                         : undefined
@@ -4045,6 +4182,137 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   />
                 ) : null}
               </div>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="section-label">{assistantSupportCopy.eyebrow}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">{assistantSupportCopy.title}</h3>
+                <p className="mt-2 text-sm text-slate-400">{assistantSupportCopy.description}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1.5 text-xs text-orange-100">
+                  {assistantSupportCopy.pending}: {assistantPendingCount}
+                </span>
+                <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1.5 text-xs text-lime-100">
+                  {assistantSupportCopy.resolved}: {assistantResolvedCount}
+                </span>
+              </div>
+            </div>
+
+            {assistantHandoffNotice ? (
+              <div
+                className={`mt-5 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                  saved === "assistant-handoff"
+                    ? "border-lime-300/20 bg-lime-300/10 text-lime-100"
+                    : "border-rose-300/20 bg-rose-400/10 text-rose-100"
+                }`}
+              >
+                {assistantHandoffNotice}
+              </div>
+            ) : null}
+
+            <form action="/admin" method="get" className="mt-5 flex flex-wrap items-center gap-3">
+              <input type="hidden" name="tab" value="ai" />
+              <input type="hidden" name="aiSport" value={aiSport} />
+              <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
+              <input type="hidden" name="aiResult" value={aiResult} />
+              <input type="hidden" name="aiScope" value={aiScope} />
+              <input type="hidden" name="aiPage" value={resolvedAiPage} />
+              <label className="text-sm text-slate-400">{locale === "en" ? "Queue status" : locale === "zh-TW" ? "隊列狀態" : "队列状态"}</label>
+              <select name="handoffStatus" defaultValue={handoffStatus} className="rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 text-sm text-white outline-none">
+                <option value="all">{locale === "en" ? "All" : locale === "zh-TW" ? "全部" : "全部"}</option>
+                <option value="pending">{assistantSupportCopy.pending}</option>
+                <option value="resolved">{assistantSupportCopy.resolved}</option>
+              </select>
+              <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/25 hover:text-white">
+                OK
+              </button>
+              <Link
+                href={buildAdminAiHrefWithFilters({
+                  ...aiRouteState,
+                  handoffStatus: "all",
+                })}
+                className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/25 hover:text-white"
+              >
+                {locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置"}
+              </Link>
+            </form>
+
+            <div className="mt-5 grid gap-4">
+              {filteredAssistantHandoffRequests.length > 0 ? (
+                filteredAssistantHandoffRequests.map((item) => (
+                  <div key={item.id} className="rounded-[1.35rem] border border-white/8 bg-slate-950/40 p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-white">
+                            {item.conversationTitle ?? `${assistantSupportCopy.conversation} ${item.conversationId.slice(0, 8)}`}
+                          </span>
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs ${
+                              item.status === "resolved"
+                                ? "bg-lime-300/12 text-lime-100"
+                                : "bg-orange-300/12 text-orange-100"
+                            }`}
+                          >
+                            {item.status === "resolved" ? assistantSupportCopy.resolved : assistantSupportCopy.pending}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {assistantSupportCopy.requester}: {item.requesterName ?? "--"}
+                          {item.requesterEmail ? ` / ${item.requesterEmail}` : ""}
+                        </p>
+                      </div>
+                      {item.status !== "resolved" ? (
+                        <form action="/api/admin/operations/site-assistant-handoffs" method="post">
+                          <input type="hidden" name="intent" value="resolve" />
+                          <input type="hidden" name="id" value={item.id} />
+                          <input type="hidden" name="tab" value="ai" />
+                          <input type="hidden" name="aiSport" value={aiSport} />
+                          <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
+                          <input type="hidden" name="aiResult" value={aiResult} />
+                          <input type="hidden" name="aiScope" value={aiScope} />
+                          <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                          <input type="hidden" name="handoffStatus" value={handoffStatus} />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
+                          >
+                            {assistantSupportCopy.markResolved}
+                          </button>
+                        </form>
+                      ) : null}
+                    </div>
+                    <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-2">
+                      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantSupportCopy.contact}</p>
+                        <p className="mt-2">{item.contactMethod ?? "--"}</p>
+                        {item.contactName ? <p className="mt-1 text-slate-400">{item.contactName}</p> : null}
+                      </div>
+                      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantSupportCopy.note}</p>
+                        <p className="mt-2">{item.note ?? "--"}</p>
+                      </div>
+                    </div>
+                    {item.conversationSummary ? (
+                      <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm text-slate-300">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantSupportCopy.conversation}</p>
+                        <p className="mt-2">{item.conversationSummary}</p>
+                      </div>
+                    ) : null}
+                    <p className="mt-4 text-xs text-slate-500">
+                      {formatDateTime(item.createdAt, locale)} / {item.locale}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[1.35rem] border border-dashed border-white/10 bg-white/[0.02] px-5 py-8 text-sm text-slate-400">
+                  {assistantSupportCopy.empty}
+                </div>
+              )}
             </div>
           </div>
         </section>
