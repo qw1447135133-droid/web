@@ -953,7 +953,7 @@ const planTranslations: Record<string, Localized<Pick<ArticlePlan, "title" | "le
 };
 
 export function localizeHomepageModule(module: HomepageModule, locale: Locale): HomepageModule {
-  const translation = moduleTranslations[module.id];
+  const translation = moduleTranslations[module.key ?? module.id];
   return translation ? { ...module, ...pickLocale(translation, locale) } : module;
 }
 

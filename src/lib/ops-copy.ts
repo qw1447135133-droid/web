@@ -31,6 +31,11 @@ type OpsCopy = {
     dashboardDescription: string;
     sourceLabel: string;
     sourceValue: string;
+    coverageLabel: string;
+    rotationLabel: string;
+    currentWindowLabel: string;
+    nextWindowLabel: string;
+    cooldownLabel: string;
     syncSaved: string;
     syncFailed: string;
     latestRuns: string;
@@ -82,12 +87,17 @@ const zhCnCopy: OpsCopy = {
     dashboardDescription: "查看最近同步记录、失败详情与定时触发入口。当前按 API-Sports 免费额度执行稳定轮转同步，而不是每次全量抓取。",
     sourceLabel: "数据源",
     sourceValue: "API-Sports 免费版",
+    coverageLabel: "本次覆盖",
+    rotationLabel: "轮转计划",
+    currentWindowLabel: "当前轮次",
+    nextWindowLabel: "下一轮次",
+    cooldownLabel: "冷却窗口",
     syncSaved: "同步任务已触发，最新执行记录已经刷新。",
     syncFailed: "同步任务执行失败，请检查最近一次运行记录。",
     latestRuns: "最近运行记录",
     triggerEndpointLabel: "定时触发接口",
     cronHint: "服务器定时任务可调用内部接口并携带 `SYNC_TRIGGER_TOKEN`，无需登录后台。",
-    alreadyRunning: "已有同步任务在执行中，系统已阻止重复触发。",
+    alreadyRunning: "已有同步任务在执行中，或仍处于冷却窗口内，系统已阻止重复触发。",
     running: "运行中",
     noRuns: "暂无同步记录。",
     failures: "失败项",
@@ -133,12 +143,17 @@ const zhTwCopy: OpsCopy = {
     dashboardDescription: "查看最近同步紀錄、失敗詳情與定時觸發入口。目前按 API-Sports 免費額度執行穩定輪轉同步，而不是每次全量抓取。",
     sourceLabel: "資料源",
     sourceValue: "API-Sports 免費版",
+    coverageLabel: "本次覆蓋",
+    rotationLabel: "輪轉計畫",
+    currentWindowLabel: "當前輪次",
+    nextWindowLabel: "下一輪次",
+    cooldownLabel: "冷卻視窗",
     syncSaved: "同步任務已觸發，最新執行紀錄已刷新。",
     syncFailed: "同步任務執行失敗，請檢查最近一次執行紀錄。",
     latestRuns: "最近執行紀錄",
     triggerEndpointLabel: "定時觸發介面",
     cronHint: "伺服器定時任務可呼叫內部介面並攜帶 `SYNC_TRIGGER_TOKEN`，不需要登入後台。",
-    alreadyRunning: "已有同步任務執行中，系統已阻止重複觸發。",
+    alreadyRunning: "已有同步任務執行中，或仍在冷卻視窗內，系統已阻止重複觸發。",
     running: "執行中",
     noRuns: "暫無同步紀錄。",
     failures: "失敗項",
@@ -184,12 +199,17 @@ const enCopy: OpsCopy = {
     dashboardDescription: "Review recent sync runs, failures, and the scheduled trigger entry. The pipeline now rotates leagues to stay within the API-Sports free-tier request budget.",
     sourceLabel: "Data source",
     sourceValue: "API-Sports free tier",
+    coverageLabel: "Coverage",
+    rotationLabel: "Rotation plan",
+    currentWindowLabel: "Current slot",
+    nextWindowLabel: "Next slot",
+    cooldownLabel: "Cooldown",
     syncSaved: "The sync job was triggered and the latest run history was refreshed.",
     syncFailed: "The sync job failed. Review the latest run history.",
     latestRuns: "Recent runs",
     triggerEndpointLabel: "Scheduled trigger endpoint",
     cronHint: "Server cron jobs can call the internal endpoint with `SYNC_TRIGGER_TOKEN` and do not need an admin login.",
-    alreadyRunning: "A sync job is already in progress, so duplicate execution was blocked.",
+    alreadyRunning: "A sync job is already running or still inside the cooldown window, so duplicate execution was blocked.",
     running: "Running",
     noRuns: "No sync runs yet.",
     failures: "Failures",

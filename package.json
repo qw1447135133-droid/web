@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
+    "qa:smoke": "node scripts/smoke-regression.mjs",
+    "ops:sync:stress": "node scripts/sync-stability-check.mjs",
     "db:generate": "prisma generate",
     "db:init": "node scripts/init-db.mjs",
     "db:push": "node scripts/init-db.mjs"

@@ -30,6 +30,7 @@ import type {
   AuthorTeam,
   HomepageBanner,
   HomepageModule,
+  Match,
   PredictionRecord,
   SiteAnnouncement,
   Sport,
@@ -56,6 +57,22 @@ function mergeById<T extends { id: string }>(primary: T[], fallback: T[]) {
   for (const item of primary) {
     const existing = merged.get(item.id);
     merged.set(item.id, existing ? mergeDefined(existing, item) : item);
+  }
+
+  return Array.from(merged.values());
+}
+
+function mergeByKey<T extends object>(primary: T[], fallback: T[], getKey: (item: T) => string) {
+  const merged = new Map<string, T>();
+
+  for (const item of fallback) {
+    merged.set(getKey(item), item);
+  }
+
+  for (const item of primary) {
+    const key = getKey(item);
+    const existing = merged.get(key);
+    merged.set(key, existing ? mergeDefined(existing, item) : item);
   }
 
   return Array.from(merged.values());
@@ -134,6 +151,134 @@ function localizeHomepageBanner(
   };
 }
 
+type HomepageModuleMetricInput = {
+  footballMatches: Match[];
+  basketballMatches: Match[];
+  cricketMatches: Match[];
+  esportsMatches: Match[];
+  cricketLeagueCount: number;
+  esportsLeagueCount: number;
+  authorCount: number;
+  articlePlanCount: number;
+  predictions: Array<{ result: string }>;
+};
+
+function resolveEsportsCircuitCount(matches: Match[]) {
+  const circuits = new Set<string>();
+
+  for (const match of matches) {
+    if (match.leagueSlug === "lpl") {
+      circuits.add("lol");
+    } else if (match.leagueSlug === "dreamleague") {
+      circuits.add("dota2");
+    } else {
+      circuits.add("cs2");
+    }
+  }
+
+  return circuits.size;
+}
+
+function getHomepageModuleCode(module: HomepageModule) {
+  return module.key ?? module.id;
+}
+
+function formatHitRate(value: number) {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+export function applyHomepageModuleMetrics(
+  modules: HomepageModule[],
+  input: HomepageModuleMetricInput,
+  locale: Locale = defaultLocale,
+): HomepageModule[] {
+  const allMatches = [
+    ...input.footballMatches,
+    ...input.basketballMatches,
+    ...input.cricketMatches,
+    ...input.esportsMatches,
+  ];
+  const liveMatches = allMatches.filter((match) => match.status === "live").length;
+  const sportsCovered = new Set(allMatches.map((match) => match.sport)).size;
+  const settledPredictions = input.predictions.filter((prediction) => prediction.result !== "pending");
+  const wonPredictions = settledPredictions.filter((prediction) => prediction.result === "won").length;
+  const hitRate = settledPredictions.length > 0 ? (wonPredictions / settledPredictions.length) * 100 : null;
+  const esportsLiveCount = input.esportsMatches.filter((match) => match.status === "live").length;
+  const esportsCircuitCount = resolveEsportsCircuitCount(input.esportsMatches);
+
+  return modules.map((module) => {
+    const moduleCode = getHomepageModuleCode(module);
+
+    if (moduleCode === "scores") {
+      return {
+        ...module,
+        metric:
+          locale === "en"
+            ? `${liveMatches} live / ${sportsCovered} sports`
+            : locale === "zh-TW"
+              ? `${liveMatches} 場進行中 / ${sportsCovered} 個項目`
+              : `${liveMatches} 场进行中 / ${sportsCovered} 个项目`,
+      };
+    }
+
+    if (moduleCode === "plans") {
+      return {
+        ...module,
+        metric:
+          locale === "en"
+            ? `${input.authorCount} authors / ${input.articlePlanCount} plans`
+            : locale === "zh-TW"
+              ? `${input.authorCount} 位作者 / ${input.articlePlanCount} 條計畫單`
+              : `${input.authorCount} 位作者 / ${input.articlePlanCount} 条计划单`,
+      };
+    }
+
+    if (moduleCode === "ai") {
+      return {
+        ...module,
+        metric:
+          hitRate == null
+            ? locale === "en"
+              ? `${input.predictions.length} predictions online`
+              : locale === "zh-TW"
+                ? `${input.predictions.length} 條預測在線`
+                : `${input.predictions.length} 条预测在线`
+            : locale === "en"
+              ? `${formatHitRate(hitRate)}% hit rate / ${settledPredictions.length} settled`
+              : locale === "zh-TW"
+                ? `${formatHitRate(hitRate)}% 命中 / ${settledPredictions.length} 條已結算`
+                : `${formatHitRate(hitRate)}% 命中 / ${settledPredictions.length} 条已结算`,
+      };
+    }
+
+    if (moduleCode === "cricket") {
+      return {
+        ...module,
+        metric:
+          locale === "en"
+            ? `${input.cricketMatches.length} fixtures / ${input.cricketLeagueCount} leagues`
+            : locale === "zh-TW"
+              ? `${input.cricketMatches.length} 場賽事 / ${input.cricketLeagueCount} 個聯賽`
+              : `${input.cricketMatches.length} 场赛事 / ${input.cricketLeagueCount} 个联赛`,
+      };
+    }
+
+    if (moduleCode === "esports") {
+      return {
+        ...module,
+        metric:
+          locale === "en"
+            ? `${esportsLiveCount} live / ${Math.max(esportsCircuitCount, input.esportsLeagueCount)} circuits`
+            : locale === "zh-TW"
+              ? `${esportsLiveCount} 場進行中 / ${Math.max(esportsCircuitCount, input.esportsLeagueCount)} 條賽道`
+              : `${esportsLiveCount} 场进行中 / ${Math.max(esportsCircuitCount, input.esportsLeagueCount)} 条赛道`,
+      };
+    }
+
+    return module;
+  });
+}
+
 export async function getHomepageBanners(locale: Locale = defaultLocale): Promise<HomepageBanner[]> {
   const storedBanners = await getStoredHomepageBanners();
   const fallbackBanners = homepageBannerSeeds.map((item) => ({
@@ -161,7 +306,7 @@ export async function getHomepageBanners(locale: Locale = defaultLocale): Promis
 
 export async function getHomepageModules(locale: Locale = defaultLocale): Promise<HomepageModule[]> {
   const modules = await getStoredHomepageModules();
-  const source = mergeById(modules, mockHomepageModules);
+  const source = mergeByKey(modules, mockHomepageModules, (item) => item.key ?? item.id);
   return source.map((item) => localizeHomepageModule(item, locale));
 }
 

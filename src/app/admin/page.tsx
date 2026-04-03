@@ -2,10 +2,20 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminBannerComposer } from "@/components/admin-banner-composer";
 import { SectionHeading } from "@/components/section-heading";
+import {
+  applyHomepageModuleMetrics,
+  getArticlePlans as getSiteArticlePlans,
+  getAuthorTeams as getSiteAuthorTeams,
+  getPredictions as getSitePredictions,
+} from "@/lib/content-data";
 import { getAdminArticlePlans, getAdminAuthorTeams, getAdminPredictionRecords } from "@/lib/admin-content";
 import {
+  getAdminAssistantHandoffRequests,
+  getAdminHomepageFeaturedMatchSlots,
+  getAdminHomepageFeaturedMatches,
   getAdminHomepageBanners,
   getAdminHomepageModules,
+  getAdminSupportKnowledgeItems,
   getAdminSiteAnnouncements,
 } from "@/lib/admin-operations";
 import { getAdminPageCopy } from "@/lib/admin-page-copy";
@@ -18,7 +28,7 @@ import {
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { getCurrentLocale } from "@/lib/i18n";
 import { localizeMembershipPlan } from "@/lib/localized-content";
-import { homepageBannerSeeds, membershipPlans } from "@/lib/mock-data";
+import { homepageBannerSeeds, homepageModules as homepageModuleSeeds, membershipPlans } from "@/lib/mock-data";
 import { getOpsCopy } from "@/lib/ops-copy";
 import { getManualCollectionSummary, getPaymentCheckoutFlow } from "@/lib/payment-gateway";
 import {
@@ -28,8 +38,8 @@ import {
 } from "@/lib/payment-provider";
 import { getOrderActivityMeta, getOrderFailureMeta, getOrderStatusMeta } from "@/lib/payment-ui";
 import { getSessionContext } from "@/lib/session";
-import { getMatchesBySport } from "@/lib/sports-data";
-import { getRecentSyncRuns } from "@/lib/sync/sports-sync";
+import { getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
+import { getRecentSyncRuns, getSyncRotationPlan } from "@/lib/sync/sports-sync";
 import { getSiteCopy } from "@/lib/ui-copy";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -201,6 +211,25 @@ function getTrendMaxValue(
   return points.reduce((max, item) => Math.max(max, item.impressionCount, item.clickCount), 0);
 }
 
+function getReadinessStateMeta(
+  state: "ready" | "attention",
+  locale: "zh-CN" | "zh-TW" | "en",
+) {
+  if (state === "ready") {
+    return {
+      badgeClassName: "bg-lime-300/12 text-lime-100",
+      dotClassName: "bg-lime-300",
+      ringClassName: "border-lime-300/15 bg-lime-300/8",
+    };
+  }
+
+  return {
+    badgeClassName: "bg-orange-300/12 text-orange-100",
+    dotClassName: "bg-orange-300",
+    ringClassName: "border-orange-300/15 bg-orange-300/8",
+  };
+}
+
 function buildAdminUsersHref(filters: AdminUsersTabFilters, overrides: Partial<AdminUsersTabFilters> = {}) {
   const nextFilters = { ...filters, ...overrides };
   const params = new URLSearchParams();
@@ -243,7 +272,14 @@ function normalizeAdminPlanStatusFilter(value: string): AdminPlanStatusFilter {
 
 function buildAdminContentHref(
   filters: { contentSport: AdminSportFilter; contentAuthorId: string; contentPlanStatus: AdminPlanStatusFilter; contentQuery: string },
-  overrides?: { editAuthor?: string; editPlan?: string; editBanner?: string; editModule?: string; editAnnouncement?: string },
+  overrides?: {
+    editAuthor?: string;
+    editPlan?: string;
+    editBanner?: string;
+    editFeaturedSlot?: string;
+    editModule?: string;
+    editAnnouncement?: string;
+  },
 ) {
   const params = new URLSearchParams();
   params.set("tab", "content");
@@ -271,6 +307,10 @@ function buildAdminContentHref(
     params.set("editBanner", overrides.editBanner);
   }
 
+  if (overrides?.editFeaturedSlot) {
+    params.set("editFeaturedSlot", overrides.editFeaturedSlot);
+  }
+
   if (overrides?.editModule) {
     params.set("editModule", overrides.editModule);
   }
@@ -293,6 +333,7 @@ function buildAdminAiHrefWithFilters(filters: {
   aiScope: AdminAiScope;
   aiPage?: number;
   editPredictionId?: string;
+  editKnowledgeId?: string;
 }) {
   const params = new URLSearchParams();
   params.set("tab", "ai");
@@ -317,6 +358,10 @@ function buildAdminAiHrefWithFilters(filters: {
 
   if (filters.editPredictionId) {
     params.set("editPrediction", filters.editPredictionId);
+  }
+
+  if (filters.editKnowledgeId) {
+    params.set("editKnowledge", filters.editKnowledgeId);
   }
 
   return `/admin?${params.toString()}`;
@@ -558,9 +603,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const editAuthorId = pickValue(resolved.editAuthor, "");
   const editPlanId = pickValue(resolved.editPlan, "");
   const editBannerId = pickValue(resolved.editBanner, "");
+  const editFeaturedSlotId = pickValue(resolved.editFeaturedSlot, "");
   const editModuleId = pickValue(resolved.editModule, "");
   const editAnnouncementId = pickValue(resolved.editAnnouncement, "");
   const editPredictionId = pickValue(resolved.editPrediction, "");
+  const editKnowledgeId = pickValue(resolved.editKnowledge, "");
   const contentSport = normalizeAdminSportFilter(pickValue(resolved.contentSport, "all"));
   const contentAuthorId = pickValue(resolved.contentAuthorId, "").trim();
   const contentPlanStatus = normalizeAdminPlanStatusFilter(pickValue(resolved.contentPlanStatus, "all"));
@@ -581,17 +628,25 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const membershipPage = pickPositiveInt(resolved.membershipPage, 1);
   const contentPage = pickPositiveInt(resolved.contentPage, 1);
 
-  const [footballMatches, basketballMatches, cricketMatches, esportsMatches, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, usersDashboard, paymentCallbackActivity, recentSyncRuns] = await Promise.all([
+  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests] = await Promise.all([
     getMatchesBySport("football", locale),
     getMatchesBySport("basketball", locale),
     getMatchesBySport("cricket", locale),
+    getTrackedLeagues("cricket", locale),
     getMatchesBySport("esports", locale),
+    getTrackedLeagues("esports", locale),
+    getAdminHomepageFeaturedMatches(locale, 6),
+    getAdminHomepageFeaturedMatchSlots(locale),
     getAdminArticlePlans(),
     getAdminAuthorTeams(),
     getAdminHomepageBanners(),
     getAdminHomepageModules(),
     getAdminSiteAnnouncements(),
     getAdminPredictionRecords(),
+    getAdminSupportKnowledgeItems(),
+    getSiteArticlePlans(undefined, locale),
+    getSiteAuthorTeams(locale),
+    getSitePredictions(undefined, locale),
     getAdminUsersDashboard({
       query: orderQuery,
       orderStatus,
@@ -603,15 +658,43 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     }),
     getAdminPaymentCallbackActivity(),
     getRecentSyncRuns(),
+    getSyncRotationPlan(),
+    getAdminAssistantHandoffRequests(),
   ]);
 
   const matches = [...footballMatches, ...basketballMatches, ...cricketMatches, ...esportsMatches];
+  const homepageFeaturedMatches = homepageFeaturedPreview.matches;
   const currentAuthor = authorTeams.find((item) => item.id === editAuthorId);
   const currentPlan = articlePlans.find((item) => item.id === editPlanId);
   const currentBanner = homepageBanners.find((item) => item.id === editBannerId);
+  const currentFeaturedSlot = homepageFeaturedSlots.find((item) => item.id === editFeaturedSlotId);
   const currentModule = homepageModules.find((item) => item.id === editModuleId);
+  const homepageModuleSeedCodes = new Set(homepageModuleSeeds.map((module) => module.key ?? module.id));
+  const homepageModulePreviewSource = [
+    ...homepageModuleSeeds.map((module) => homepageModules.find((item) => item.key === (module.key ?? module.id)) ?? module),
+    ...homepageModules.filter((module) => !homepageModuleSeedCodes.has(module.key ?? module.id)),
+  ];
+  const homepageModuleRuntimePreview = applyHomepageModuleMetrics(
+    homepageModulePreviewSource,
+    {
+      footballMatches,
+      basketballMatches,
+      cricketMatches,
+      esportsMatches,
+      cricketLeagueCount: cricketLeagues.length,
+      esportsLeagueCount: esportsLeagues.length,
+      authorCount: siteAuthorTeams.length,
+      articlePlanCount: siteArticlePlans.length,
+      predictions: sitePredictions,
+    },
+    locale,
+  );
+  const homepageModuleRuntimeMetricMap = new Map(
+    homepageModuleRuntimePreview.map((module) => [module.key ?? module.id, module.metric]),
+  );
   const currentAnnouncement = siteAnnouncements.find((item) => item.id === editAnnouncementId);
   const currentPrediction = predictionRecords.find((item) => item.id === editPredictionId);
+  const currentKnowledgeItem = supportKnowledgeItems.find((item) => item.id === editKnowledgeId);
   const filteredArticlePlans = articlePlans.filter((plan) => {
     if (contentSport !== "all" && plan.sport !== contentSport) {
       return false;
@@ -693,6 +776,108 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const activeLiveBannerCount = bannerRunStates.filter((item) => item.key === "live").length;
   const scheduledBannerCount = bannerRunStates.filter((item) => item.key === "scheduled").length;
   const inactiveBannerCount = bannerRunStates.filter((item) => item.key === "inactive").length;
+  const homepageHeroSourceLabel =
+    activeLiveBannerCount > 0
+      ? adminPageCopy.content.homepageOverview.cards.banners.databaseSource
+      : adminPageCopy.content.homepageOverview.cards.banners.fallbackSource;
+  const seededHomepageModuleCount = homepageModuleSeeds.filter((module) =>
+    homepageModules.some((item) => (item.key ?? item.id) === (module.key ?? module.id)),
+  ).length;
+  const customHomepageModuleCount = homepageModules.filter(
+    (module) => !homepageModuleSeedCodes.has(module.key ?? module.id),
+  ).length;
+  const homepageModuleCoverageLabel =
+    seededHomepageModuleCount === 0
+      ? adminPageCopy.content.homepageOverview.cards.modules.empty
+      : seededHomepageModuleCount === homepageModuleSeeds.length
+        ? adminPageCopy.content.homepageOverview.cards.modules.seeded
+        : adminPageCopy.content.homepageOverview.cards.modules.partial(
+            seededHomepageModuleCount,
+            homepageModuleSeeds.length,
+          );
+  const contentBaseHref = buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery });
+  const homepageReadinessItems = [
+    {
+      key: "banners-ready",
+      state: activeLiveBannerCount > 0 ? ("ready" as const) : ("attention" as const),
+      title: adminPageCopy.content.homepageReadiness.items.bannersReady.title,
+      description:
+        activeLiveBannerCount > 0
+          ? adminPageCopy.content.homepageReadiness.items.bannersReady.ok
+          : adminPageCopy.content.homepageReadiness.items.bannersReady.issue,
+      action:
+        activeLiveBannerCount > 0
+          ? undefined
+          : {
+              kind: "link" as const,
+              href: `${contentBaseHref}#homepage-banner-form`,
+              label: adminPageCopy.content.homepageReadiness.actionLabels.createBanner,
+            },
+    },
+    {
+      key: "featured-slots",
+      state: homepageFeaturedSlots.length > 0 ? ("ready" as const) : ("attention" as const),
+      title: adminPageCopy.content.homepageReadiness.items.featuredSlotsReady.title,
+      description:
+        homepageFeaturedSlots.length > 0
+          ? adminPageCopy.content.homepageReadiness.items.featuredSlotsReady.ok
+          : adminPageCopy.content.homepageReadiness.items.featuredSlotsReady.issue,
+      action:
+        homepageFeaturedSlots.length > 0
+          ? undefined
+          : {
+              kind: "link" as const,
+              href: `${contentBaseHref}#homepage-featured-slot-form`,
+              label: adminPageCopy.content.homepageReadiness.actionLabels.configureSlots,
+            },
+    },
+    {
+      key: "featured-source",
+      state:
+        homepageFeaturedPreview.source === "mock-fallback" || homepageFeaturedPreview.source === "live-fallback"
+          ? ("attention" as const)
+          : ("ready" as const),
+      title: adminPageCopy.content.homepageReadiness.items.featuredSourceReady.title,
+      description:
+        homepageFeaturedPreview.source === "mock-fallback" || homepageFeaturedPreview.source === "live-fallback"
+          ? adminPageCopy.content.homepageReadiness.items.featuredSourceReady.issue
+          : adminPageCopy.content.homepageReadiness.items.featuredSourceReady.ok,
+      action:
+        homepageFeaturedPreview.source === "mock-fallback" || homepageFeaturedPreview.source === "live-fallback"
+          ? {
+              kind: "link" as const,
+              href: "/admin?tab=events",
+              label: adminPageCopy.content.homepageReadiness.actionLabels.checkSync,
+            }
+          : undefined,
+    },
+    {
+      key: "modules-ready",
+      state:
+        seededHomepageModuleCount === homepageModuleSeeds.length
+          ? ("ready" as const)
+          : ("attention" as const),
+      title: adminPageCopy.content.homepageReadiness.items.modulesReady.title,
+      description:
+        seededHomepageModuleCount === homepageModuleSeeds.length
+          ? adminPageCopy.content.homepageReadiness.items.modulesReady.ok
+          : adminPageCopy.content.homepageReadiness.items.modulesReady.issue,
+      action:
+        seededHomepageModuleCount === homepageModuleSeeds.length
+          ? undefined
+          : {
+              kind: "form" as const,
+              action: "/api/admin/operations/homepage-modules",
+              intent: "bootstrap",
+              label: adminPageCopy.content.homepageReadiness.actionLabels.importModules,
+            },
+    },
+  ];
+  const homepageReadinessIssueCount = homepageReadinessItems.filter((item) => item.state === "attention").length;
+  const homepageReadinessSummaryLabel =
+    homepageReadinessIssueCount === 0
+      ? adminPageCopy.content.homepageReadiness.summary.ready
+      : adminPageCopy.content.homepageReadiness.summary.attention;
 
   const usersTabFilters: AdminUsersTabFilters = {
     query: usersDashboard.appliedFilters.query,
@@ -723,13 +908,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         ? adminPageCopy.content.notices.authorSaved
         : saved === "banner"
           ? adminPageCopy.content.notices.bannerSaved
-        : saved === "module"
-          ? adminPageCopy.content.notices.moduleSaved
-        : saved === "announcement"
-          ? adminPageCopy.content.notices.announcementSaved
-        : saved
-          ? adminPageCopy.content.notices.planSaved
-          : null;
+        : saved === "featured-slot"
+            ? adminPageCopy.content.notices.featuredSlotSaved
+          : saved === "featured-slot-deleted"
+            ? adminPageCopy.content.notices.featuredSlotDeleted
+          : saved === "module"
+            ? adminPageCopy.content.notices.moduleSaved
+            : saved === "module-seeded"
+              ? adminPageCopy.content.notices.moduleSeeded
+            : saved === "announcement"
+              ? adminPageCopy.content.notices.announcementSaved
+              : saved
+                ? adminPageCopy.content.notices.planSaved
+                : null;
 
   const syncNotice =
     saved === "sync"
@@ -757,11 +948,137 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       ? aiImportPanelCopy.notices.saved
       : saved === "prediction-deleted"
         ? aiImportPanelCopy.notices.deleted
+      : saved === "assistant-knowledge"
+        ? locale === "en"
+          ? "Assistant knowledge item saved."
+          : locale === "zh-TW"
+            ? "AI 客服知識條目已保存。"
+            : "AI 客服知识条目已保存。"
+      : saved === "assistant-knowledge-seeded"
+        ? locale === "en"
+          ? "Default assistant knowledge seeds imported."
+          : locale === "zh-TW"
+            ? "預設 AI 客服知識種子已導入。"
+            : "默认 AI 客服知识种子已导入。"
       : error === "prediction"
         ? aiImportPanelCopy.notices.failed
+        : error === "assistant-knowledge"
+          ? locale === "en"
+            ? "Assistant knowledge operation failed."
+            : locale === "zh-TW"
+              ? "AI 客服知識操作失敗。"
+              : "AI 客服知识操作失败。"
         : null;
+  const assistantHandoffNotice =
+    saved === "assistant-handoff"
+      ? locale === "en"
+        ? "Assistant handoff request marked as resolved."
+        : locale === "zh-TW"
+          ? "AI 助手轉接請求已標記為完成。"
+          : "AI 助手转接请求已标记为完成。"
+      : error === "assistant-handoff"
+        ? locale === "en"
+          ? "Assistant handoff action failed."
+          : locale === "zh-TW"
+            ? "AI 助手轉接操作失敗。"
+            : "AI 助手转接操作失败。"
+        : null;
+  const assistantSupportCopy = {
+    eyebrow: locale === "en" ? "Support Queue" : locale === "zh-TW" ? "客服轉接" : "客服转接",
+    title: locale === "en" ? "AI assistant handoff queue" : locale === "zh-TW" ? "AI 助手人工轉接隊列" : "AI 助手人工转接队列",
+    description:
+      locale === "en"
+        ? "Requests raised from the floating assistant will appear here for follow-up."
+        : locale === "zh-TW"
+          ? "使用者在右下角助手中發起的人工轉接請求，會集中顯示在這裡。"
+          : "用户在右下角助手中发起的人工转接请求，会集中显示在这里。",
+    pending: locale === "en" ? "Pending" : locale === "zh-TW" ? "待處理" : "待处理",
+    resolved: locale === "en" ? "Resolved" : locale === "zh-TW" ? "已完成" : "已完成",
+    empty:
+      locale === "en"
+        ? "No assistant handoff requests yet."
+        : locale === "zh-TW"
+          ? "目前還沒有 AI 助手轉接請求。"
+          : "目前还没有 AI 助手转接请求。",
+    contact: locale === "en" ? "Contact" : locale === "zh-TW" ? "聯絡方式" : "联系方式",
+    requester: locale === "en" ? "Requester" : locale === "zh-TW" ? "發起人" : "发起人",
+    note: locale === "en" ? "Note" : locale === "zh-TW" ? "補充說明" : "补充说明",
+    conversation: locale === "en" ? "Conversation" : locale === "zh-TW" ? "會話" : "会话",
+    markResolved: locale === "en" ? "Mark resolved" : locale === "zh-TW" ? "標記完成" : "标记完成",
+  };
+  const assistantKnowledgeCopy = {
+    eyebrow: locale === "en" ? "Knowledge Base" : locale === "zh-TW" ? "知識庫" : "知识库",
+    title: locale === "en" ? "Assistant FAQ knowledge" : locale === "zh-TW" ? "AI 客服 FAQ 知識庫" : "AI 客服 FAQ 知识库",
+    description:
+      locale === "en"
+        ? "Maintain website-specific Q&A entries used by the floating assistant and fallback answers."
+        : locale === "zh-TW"
+          ? "維護右下角 AI 客服使用的站內問答知識，供真實模型與備援回覆共同使用。"
+          : "维护右下角 AI 客服使用的站内问答知识，供真实模型与备用回复共同使用。",
+    formTitle: currentKnowledgeItem
+      ? locale === "en"
+        ? "Edit knowledge item"
+        : locale === "zh-TW"
+          ? "編輯知識條目"
+          : "编辑知识条目"
+      : locale === "en"
+        ? "Create knowledge item"
+        : locale === "zh-TW"
+          ? "新增知識條目"
+          : "新增知识条目",
+    count: (count: number) =>
+      locale === "en" ? `${count} items` : locale === "zh-TW" ? `${count} 條` : `${count} 条`,
+    active: locale === "en" ? "Active" : locale === "zh-TW" ? "啟用中" : "启用中",
+    inactive: locale === "en" ? "Inactive" : locale === "zh-TW" ? "未啟用" : "未启用",
+    seed: locale === "en" ? "Import defaults" : locale === "zh-TW" ? "導入預設" : "导入默认",
+    save: locale === "en" ? "Save knowledge" : locale === "zh-TW" ? "保存知識" : "保存知识",
+    edit: locale === "en" ? "Edit" : locale === "zh-TW" ? "編輯" : "编辑",
+    moveUp: locale === "en" ? "Move up" : locale === "zh-TW" ? "上移" : "上移",
+    moveDown: locale === "en" ? "Move down" : locale === "zh-TW" ? "下移" : "下移",
+    enable: locale === "en" ? "Enable" : locale === "zh-TW" ? "啟用" : "启用",
+    disable: locale === "en" ? "Disable" : locale === "zh-TW" ? "停用" : "停用",
+    empty:
+      locale === "en"
+        ? "No assistant knowledge items yet. Import defaults first or create a custom FAQ."
+        : locale === "zh-TW"
+          ? "目前還沒有 AI 客服知識條目，可先導入預設問答或建立自定義 FAQ。"
+          : "目前还没有 AI 客服知识条目，可先导入默认问答或创建自定义 FAQ。",
+    fields: {
+      key: locale === "en" ? "Unique key" : locale === "zh-TW" ? "唯一 key" : "唯一 key",
+      category: locale === "en" ? "Category" : locale === "zh-TW" ? "分類" : "分类",
+      href: locale === "en" ? "Related route" : locale === "zh-TW" ? "關聯路由" : "关联路由",
+      tagsText: locale === "en" ? "Tags" : locale === "zh-TW" ? "標籤" : "标签",
+      sortOrder: locale === "en" ? "Sort order" : locale === "zh-TW" ? "排序" : "排序",
+      status: locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态",
+      questionZhCn: locale === "en" ? "Question (zh-CN)" : locale === "zh-TW" ? "問題（简体）" : "问题（简体）",
+      questionZhTw: locale === "en" ? "Question (zh-TW)" : locale === "zh-TW" ? "問題（繁體）" : "问题（繁体）",
+      questionEn: locale === "en" ? "Question (EN)" : locale === "zh-TW" ? "問題（英文）" : "问题（英文）",
+      answerZhCn: locale === "en" ? "Answer (zh-CN)" : locale === "zh-TW" ? "答案（简体）" : "答案（简体）",
+      answerZhTw: locale === "en" ? "Answer (zh-TW)" : locale === "zh-TW" ? "答案（繁體）" : "答案（繁体）",
+      answerEn: locale === "en" ? "Answer (EN)" : locale === "zh-TW" ? "答案（英文）" : "答案（英文）",
+    },
+    tagsHint:
+      locale === "en"
+        ? "Separate tags with commas, line breaks, or pipes."
+        : locale === "zh-TW"
+          ? "標籤可用逗號、換行或豎線分隔。"
+          : "标签可用逗号、换行或竖线分隔。",
+    statusLabels: {
+      active: locale === "en" ? "Active" : locale === "zh-TW" ? "啟用" : "启用",
+      inactive: locale === "en" ? "Inactive" : locale === "zh-TW" ? "停用" : "停用",
+    },
+    localePreview: locale === "en" ? "Locale preview" : locale === "zh-TW" ? "多語預覽" : "多语预览",
+    answerLabel: locale === "en" ? "Answer" : locale === "zh-TW" ? "答案" : "答案",
+    routeLabel: locale === "en" ? "Route" : locale === "zh-TW" ? "路由" : "路由",
+    updatedAt: locale === "en" ? "Updated" : locale === "zh-TW" ? "更新時間" : "更新时间",
+  };
+  const assistantPendingCount = assistantHandoffRequests.filter((item) => item.status === "pending").length;
+  const assistantResolvedCount = assistantHandoffRequests.filter((item) => item.status === "resolved").length;
+  const assistantKnowledgeActiveCount = supportKnowledgeItems.filter((item) => item.status === "active").length;
   const sortedMatches = [...matches].sort((left, right) => new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime());
   const matchLookup = new Map(sortedMatches.map((match) => [match.id, match]));
+  const currentFeaturedSlotMatchValue =
+    currentFeaturedSlot?.match?.id ?? currentFeaturedSlot?.matchRef ?? currentFeaturedSlot?.matchId ?? "";
   const authorLookup = new Map(authorTeams.map((author) => [author.id, author.name]));
   const predictionMatchValue = currentPrediction?.matchId ?? currentPrediction?.matchRef ?? aiImportPanelCopy.defaults.matchId;
   const predictionMatchOptionExists = sortedMatches.some((match) => match.id === predictionMatchValue);
@@ -836,6 +1153,103 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         </section>
       ) : null}
 
+      {tab === "overview" ? (
+        <section className="glass-panel rounded-[2rem] p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <SectionHeading
+              eyebrow={assistantSupportCopy.eyebrow}
+              title={assistantSupportCopy.title}
+              description={assistantSupportCopy.description}
+            />
+            <div className="flex flex-wrap gap-3 text-xs text-slate-200">
+              <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1.5">
+                {assistantSupportCopy.pending}: {assistantPendingCount}
+              </span>
+              <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1.5">
+                {assistantSupportCopy.resolved}: {assistantResolvedCount}
+              </span>
+            </div>
+          </div>
+          {assistantHandoffNotice ? (
+            <div
+              className={`mt-5 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                saved === "assistant-handoff"
+                  ? "border-lime-300/20 bg-lime-300/10 text-lime-100"
+                  : "border-rose-300/20 bg-rose-400/10 text-rose-100"
+              }`}
+            >
+              {assistantHandoffNotice}
+            </div>
+          ) : null}
+          <div className="mt-6 grid gap-4">
+            {assistantHandoffRequests.length > 0 ? (
+              assistantHandoffRequests.map((item) => (
+                <div key={item.id} className="rounded-[1.35rem] border border-white/8 bg-slate-950/40 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-white">
+                          {item.conversationTitle ?? `${assistantSupportCopy.conversation} ${item.conversationId.slice(0, 8)}`}
+                        </span>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs ${
+                            item.status === "resolved"
+                              ? "bg-lime-300/12 text-lime-100"
+                              : "bg-orange-300/12 text-orange-100"
+                          }`}
+                        >
+                          {item.status === "resolved" ? assistantSupportCopy.resolved : assistantSupportCopy.pending}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {assistantSupportCopy.requester}: {item.requesterName ?? "--"}
+                        {item.requesterEmail ? ` / ${item.requesterEmail}` : ""}
+                      </p>
+                    </div>
+                    {item.status !== "resolved" ? (
+                      <form action="/api/admin/operations/site-assistant-handoffs" method="post">
+                        <input type="hidden" name="intent" value="resolve" />
+                        <input type="hidden" name="id" value={item.id} />
+                        <button
+                          type="submit"
+                          className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
+                        >
+                          {assistantSupportCopy.markResolved}
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantSupportCopy.contact}</p>
+                      <p className="mt-2">{item.contactMethod ?? "--"}</p>
+                      {item.contactName ? <p className="mt-1 text-slate-400">{item.contactName}</p> : null}
+                    </div>
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantSupportCopy.note}</p>
+                      <p className="mt-2">{item.note ?? "--"}</p>
+                    </div>
+                  </div>
+                  {item.conversationSummary ? (
+                    <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm text-slate-300">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantSupportCopy.conversation}</p>
+                      <p className="mt-2">{item.conversationSummary}</p>
+                    </div>
+                  ) : null}
+                  <p className="mt-4 text-xs text-slate-500">
+                    {formatDateTime(item.createdAt, locale)} / {item.locale}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-[1.35rem] border border-dashed border-white/10 bg-white/[0.02] px-5 py-8 text-sm text-slate-400">
+                {assistantSupportCopy.empty}
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       {tab === "events" ? (
         <section className="glass-panel rounded-[2rem] p-6">
           <SectionHeading eyebrow={adminPageCopy.events.eyebrow} title={adminPageCopy.events.title} />
@@ -879,6 +1293,52 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             <p className="mt-3 text-xs text-sky-100/75">{opsCopy.sync.cronHint}</p>
           </div>
           <div className="mt-6 rounded-[1.35rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-label">{opsCopy.sync.rotationLabel}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">{opsCopy.sync.rotationLabel}</h3>
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs text-slate-300">
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
+                  {opsCopy.sync.currentWindowLabel} {formatDateTime(syncRotationPlan.currentSlotStartedAt, locale)}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
+                  {opsCopy.sync.nextWindowLabel} {formatDateTime(syncRotationPlan.nextSlotStartsAt, locale)}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
+                  {opsCopy.sync.cooldownLabel} {syncRotationPlan.cooldownSeconds}s
+                </span>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              {syncRotationPlan.sports.map((item) => (
+                <div key={`rotation-${item.sport}`} className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-200">{item.sport}</p>
+                  <div className="mt-4">
+                    <p className="text-xs text-slate-500">{opsCopy.sync.currentWindowLabel}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {item.currentLeagues.map((leagueName) => (
+                        <span key={`${item.sport}-current-${leagueName}`} className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-xs text-lime-100">
+                          {leagueName}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <p className="text-xs text-slate-500">{opsCopy.sync.nextWindowLabel}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {item.nextLeagues.map((leagueName) => (
+                        <span key={`${item.sport}-next-${leagueName}`} className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">
+                          {leagueName}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-6 rounded-[1.35rem] border border-white/8 bg-white/[0.03] p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="section-label">{opsCopy.sync.latestRuns}</p>
@@ -913,6 +1373,21 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     {run.finishedAt ? <span>{opsCopy.sync.finishedAt} {formatDateTime(run.finishedAt, locale)}</span> : null}
                     {run.countsSummary ? <span>{opsCopy.sync.counts} {run.countsSummary}</span> : null}
                   </div>
+                  {run.sports && run.sports.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
+                      <span className="text-slate-500">{opsCopy.sync.coverageLabel}</span>
+                      {run.sports.map((item) =>
+                        item.coveredLeagues.map((leagueName) => (
+                          <span
+                            key={`${run.id}-${item.sport}-${leagueName}`}
+                            className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-slate-200"
+                          >
+                            {item.sport} · {leagueName}
+                          </span>
+                        )),
+                      )}
+                    </div>
+                  ) : null}
                   {run.failures.length > 0 ? (
                     <p className="mt-3 text-xs text-orange-200">
                       {opsCopy.sync.failures}: {run.failures.join(" | ")}
@@ -972,6 +1447,399 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {contentNotice}
             </div>
           ) : null}
+
+          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-label">{adminPageCopy.content.homepageOverview.sectionLabel}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">{adminPageCopy.content.homepageOverview.title}</h3>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">{adminPageCopy.content.homepageOverview.description}</p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-3">
+              <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  {adminPageCopy.content.homepageOverview.cards.banners.title}
+                </p>
+                <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-xl border border-lime-300/15 bg-lime-300/8 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-lime-100/70">
+                      {adminPageCopy.content.homepageOverview.cards.banners.live}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">{activeLiveBannerCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-sky-300/15 bg-sky-300/8 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-sky-100/70">
+                      {adminPageCopy.content.homepageOverview.cards.banners.scheduled}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">{scheduledBannerCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-white/[0.04] p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                      {adminPageCopy.content.homepageOverview.cards.banners.inactive}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">{inactiveBannerCount}</p>
+                  </div>
+                </div>
+                <p className="mt-4 text-sm text-slate-400">
+                  {adminPageCopy.content.homepageOverview.cards.banners.sourceLabel}:{" "}
+                  <span className="text-white">{homepageHeroSourceLabel}</span>
+                </p>
+              </div>
+
+              <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  {adminPageCopy.content.homepageOverview.cards.featured.title}
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-xl border border-orange-300/15 bg-orange-300/8 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-orange-100/70">
+                      {adminPageCopy.content.homepageOverview.cards.featured.slotsLabel}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">{homepageFeaturedSlots.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-sky-300/15 bg-sky-300/8 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-sky-100/70">
+                      {adminPageCopy.content.homepageOverview.cards.featured.previewLabel}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">{homepageFeaturedMatches.length}</p>
+                  </div>
+                </div>
+                <p className="mt-4 text-sm text-slate-400">
+                  {adminPageCopy.content.homepageOverview.cards.featured.sourceLabel}:{" "}
+                  <span className="text-white">
+                    {adminPageCopy.content.featuredMatchesPreview.sourceLabels[homepageFeaturedPreview.source]}
+                  </span>
+                </p>
+              </div>
+
+              <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  {adminPageCopy.content.homepageOverview.cards.modules.title}
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-xl border border-white/8 bg-white/[0.04] p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                      {adminPageCopy.content.homepageOverview.cards.modules.totalLabel}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">{homepageModules.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-white/[0.04] p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                      {adminPageCopy.content.homepageOverview.cards.modules.customLabel}
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-white">{customHomepageModuleCount}</p>
+                  </div>
+                </div>
+                <p className="mt-4 text-sm text-slate-400">
+                  {adminPageCopy.content.homepageOverview.cards.modules.seedLabel}:{" "}
+                  <span className="text-white">{homepageModuleCoverageLabel}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-label">{adminPageCopy.content.homepageReadiness.sectionLabel}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">{adminPageCopy.content.homepageReadiness.title}</h3>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">{adminPageCopy.content.homepageReadiness.description}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-200">
+                <span
+                  className={`rounded-full border px-3 py-1.5 ${
+                    homepageReadinessIssueCount === 0
+                      ? "border-lime-300/20 bg-lime-300/10 text-lime-100"
+                      : "border-orange-300/20 bg-orange-300/10 text-orange-100"
+                  }`}
+                >
+                  {homepageReadinessSummaryLabel}
+                </span>
+                <span className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5">
+                  {adminPageCopy.content.homepageReadiness.summary.issues(homepageReadinessIssueCount)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              {homepageReadinessItems.map((item) => {
+                const stateMeta = getReadinessStateMeta(item.state, locale);
+
+                return (
+                  <div
+                    key={item.key}
+                    className={`rounded-[1.2rem] border p-4 ${stateMeta.ringClassName}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className={`h-2.5 w-2.5 rounded-full ${stateMeta.dotClassName}`} />
+                        <p className="font-medium text-white">{item.title}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${stateMeta.badgeClassName}`}>
+                        {item.state === "ready"
+                          ? adminPageCopy.content.homepageReadiness.states.ready
+                          : adminPageCopy.content.homepageReadiness.states.attention}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-300">{item.description}</p>
+                    {item.action ? (
+                      item.action.kind === "link" ? (
+                        <Link
+                          href={item.action.href}
+                          className="mt-4 inline-flex rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
+                        >
+                          {item.action.label}
+                        </Link>
+                      ) : (
+                        <form action={item.action.action} method="post" className="mt-4">
+                          <input type="hidden" name="intent" value={item.action.intent} />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
+                          >
+                            {item.action.label}
+                          </button>
+                        </form>
+                      )
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[1.5rem] border border-sky-300/18 bg-sky-400/10 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-label">{adminPageCopy.content.featuredMatchesPreview.sectionLabel}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">{adminPageCopy.content.featuredMatchesPreview.title}</h3>
+                <p className="mt-2 max-w-3xl text-sm text-sky-100/85">{adminPageCopy.content.featuredMatchesPreview.description}</p>
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs text-slate-200">
+                <span className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5">
+                  {adminPageCopy.content.featuredMatchesPreview.count(homepageFeaturedMatches.length)}
+                </span>
+                <span className="rounded-full border border-sky-300/20 bg-slate-950/35 px-3 py-1.5">
+                  {adminPageCopy.content.featuredMatchesPreview.sourceLabel}{" "}
+                  {adminPageCopy.content.featuredMatchesPreview.sourceLabels[homepageFeaturedPreview.source]}
+                </span>
+              </div>
+            </div>
+
+            {homepageFeaturedMatches.length > 0 ? (
+              <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                {homepageFeaturedMatches.map((match) => (
+                  <div key={`homepage-featured-${match.id}`} className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                          {adminPageCopy.content.planList.filterOptions[match.sport]} · {match.leagueName ?? match.leagueSlug}
+                        </p>
+                        <p className="mt-2 text-lg font-semibold text-white">
+                          {match.homeTeam} <span className="text-slate-500">vs</span> {match.awayTeam}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                        {matchStatusLabels[match.status]}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{adminPageCopy.content.featuredMatchesPreview.scoreLabel}</p>
+                        <p className="mt-2 font-medium text-white">{match.score}</p>
+                      </div>
+                      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{adminPageCopy.content.featuredMatchesPreview.kickoffLabel}</p>
+                        <p className="mt-2 font-medium text-white">{match.clock ? match.clock : formatDateTime(match.kickoff, locale)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+                        <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{adminPageCopy.content.featuredMatchesPreview.matchIdLabel}</p>
+                        <p className="mt-2 break-all font-medium text-white">{match.id}</p>
+                      </div>
+                    </div>
+
+                    <p className="mt-4 text-sm leading-6 text-slate-400">{match.statLine}</p>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <Link
+                        href={`/matches/${encodeURIComponent(match.id)}`}
+                        className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
+                      >
+                        {adminPageCopy.content.featuredMatchesPreview.openMatch}
+                      </Link>
+                      <Link
+                        href={`/live/${match.sport}`}
+                        className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/14"
+                      >
+                        {adminPageCopy.content.featuredMatchesPreview.openLive}
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                {adminPageCopy.content.featuredMatchesPreview.empty}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-[0.92fr,1.08fr]">
+            <form id="homepage-featured-slot-form" action="/api/admin/operations/homepage-featured-match-slots" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminPageCopy.content.featuredSlotForm.sectionLabel}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {currentFeaturedSlot ? adminPageCopy.content.featuredSlotForm.editTitle : adminPageCopy.content.featuredSlotForm.createTitle}
+                  </h3>
+                </div>
+                {currentFeaturedSlot ? (
+                  <Link
+                    href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery })}
+                    className="text-sm text-slate-400 transition hover:text-white"
+                  >
+                    {adminPageCopy.shared.cancelEdit}
+                  </Link>
+                ) : null}
+              </div>
+
+              <input type="hidden" name="intent" value="save" />
+              <input type="hidden" name="id" value={currentFeaturedSlot?.id ?? ""} />
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{adminPageCopy.content.featuredSlotForm.fields.key}</span>
+                  <input
+                    type="text"
+                    name="key"
+                    defaultValue={currentFeaturedSlot?.key ?? ""}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{adminPageCopy.content.featuredSlotForm.fields.sortOrder}</span>
+                  <input
+                    type="number"
+                    name="sortOrder"
+                    defaultValue={currentFeaturedSlot?.sortOrder ?? homepageFeaturedSlots.length}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <span className="text-slate-400">{adminPageCopy.content.featuredSlotForm.fields.matchRef}</span>
+                  <select
+                    name="matchRef"
+                    defaultValue={currentFeaturedSlotMatchValue}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  >
+                    <option value="">{adminPageCopy.content.featuredSlotForm.matchPlaceholder}</option>
+                    {sortedMatches.map((match) => (
+                      <option key={`featured-slot-option-${match.id}`} value={match.id}>
+                        {adminPageCopy.shared.sports[match.sport]} | {match.leagueName ?? match.leagueSlug} | {match.homeTeam} vs {match.awayTeam} | {formatDateTime(match.kickoff, locale)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{adminPageCopy.content.featuredSlotForm.fields.status}</span>
+                  <select
+                    name="status"
+                    defaultValue={currentFeaturedSlot?.status ?? "active"}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  >
+                    <option value="active">{adminPageCopy.content.featuredSlotList.statusLabels.active}</option>
+                    <option value="inactive">{adminPageCopy.content.featuredSlotList.statusLabels.inactive}</option>
+                  </select>
+                </label>
+              </div>
+
+              <button type="submit" className="mt-5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300">
+                {currentFeaturedSlot ? adminPageCopy.content.featuredSlotForm.saveButton : adminPageCopy.content.featuredSlotForm.createButton}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminPageCopy.content.featuredSlotList.sectionLabel}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">{adminPageCopy.content.featuredSlotList.title}</h3>
+                </div>
+                <span className="text-sm text-slate-500">{adminPageCopy.content.featuredSlotList.count(homepageFeaturedSlots.length)}</span>
+              </div>
+
+              <div className="mt-5 grid gap-4">
+                {homepageFeaturedSlots.map((slot) => (
+                  <div key={slot.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{slot.match ? `${slot.match.homeTeam} vs ${slot.match.awayTeam}` : slot.key}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {slot.key} | sort {slot.sortOrder}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${slot.status === "active" ? "bg-lime-300/12 text-lime-100" : "bg-white/8 text-slate-300"}`}>
+                        {adminPageCopy.content.featuredSlotList.statusLabels[slot.status as keyof typeof adminPageCopy.content.featuredSlotList.statusLabels] ?? slot.status}
+                      </span>
+                    </div>
+                    {slot.match ? (
+                      <>
+                        <p className="mt-3 text-sm text-slate-400">
+                          {adminPageCopy.shared.sports[slot.match.sport]} | {slot.match.leagueName ?? slot.match.leagueSlug} | {slot.match.score}
+                        </p>
+                        <p className="mt-2 text-xs text-slate-500">{slot.match.id}</p>
+                      </>
+                    ) : (
+                      <p className="mt-3 text-sm text-amber-200">{adminPageCopy.content.featuredSlotList.matchMissing}</p>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <Link
+                        href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery }, { editFeaturedSlot: slot.id })}
+                        className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
+                      >
+                        {adminPageCopy.content.featuredSlotList.edit}
+                      </Link>
+                      <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <input type="hidden" name="intent" value="move-up" />
+                        <input type="hidden" name="id" value={slot.id} />
+                        <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
+                          {adminPageCopy.content.featuredSlotList.moveUp}
+                        </button>
+                      </form>
+                      <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <input type="hidden" name="intent" value="move-down" />
+                        <input type="hidden" name="id" value={slot.id} />
+                        <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
+                          {adminPageCopy.content.featuredSlotList.moveDown}
+                        </button>
+                      </form>
+                      <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <input type="hidden" name="intent" value="toggle-status" />
+                        <input type="hidden" name="id" value={slot.id} />
+                        <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
+                          {slot.status === "active" ? adminPageCopy.content.featuredSlotList.disable : adminPageCopy.content.featuredSlotList.enable}
+                        </button>
+                      </form>
+                      <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <input type="hidden" name="intent" value="delete" />
+                        <input type="hidden" name="id" value={slot.id} />
+                        <button type="submit" className="rounded-full border border-rose-400/20 px-3 py-1.5 text-sm text-rose-100 transition hover:border-rose-300/40 hover:text-white">
+                          {adminPageCopy.content.featuredSlotList.remove}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ))}
+                {homepageFeaturedSlots.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {adminPageCopy.content.featuredMatchesPreview.empty}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
 
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
             <form action="/api/admin/content/authors" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
@@ -1377,7 +2245,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
+          <div id="homepage-banner-form" className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
             <AdminBannerComposer
               locale={locale}
               currentBanner={currentBanner}
@@ -1722,7 +2590,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           </div>
 
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
-            <form action="/api/admin/operations/homepage-modules" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <form id="homepage-module-form" action="/api/admin/operations/homepage-modules" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminPageCopy.content.moduleForm.sectionLabel}</p>
@@ -1760,6 +2628,24 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   <span className="text-slate-400">{adminPageCopy.content.moduleForm.fields.metric}</span>
                   <input type="text" name="metric" defaultValue={currentModule?.metric ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
                 </label>
+                <div className="rounded-2xl border border-sky-300/14 bg-sky-300/8 px-4 py-3 text-sm text-sky-100 md:col-span-2">
+                  <p className="font-medium text-white">{adminPageCopy.content.moduleForm.runtimePreview}</p>
+                  {currentModule ? (
+                    <p className="mt-2">
+                      {homepageModuleRuntimeMetricMap.get(currentModule.key ?? currentModule.id) ?? currentModule.metric}
+                    </p>
+                  ) : (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {homepageModuleRuntimePreview.slice(0, 5).map((module) => (
+                        <div key={`module-runtime-preview-${module.id}`} className="rounded-xl border border-white/10 bg-slate-950/35 px-3 py-2">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{module.key ?? module.id}</p>
+                          <p className="mt-1 font-medium text-white">{module.metric}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-sky-100/75">{adminPageCopy.content.moduleForm.runtimeHint}</p>
+                </div>
                 <label className="space-y-2 text-sm md:col-span-2">
                   <span className="text-slate-400">{adminPageCopy.content.moduleForm.fields.description}</span>
                   <textarea name="description" rows={3} defaultValue={currentModule?.description ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
@@ -1792,7 +2678,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   <p className="section-label">{adminPageCopy.content.moduleList.sectionLabel}</p>
                   <h3 className="mt-2 text-xl font-semibold text-white">{adminPageCopy.content.moduleList.title}</h3>
                 </div>
-                <span className="text-sm text-slate-500">{adminPageCopy.content.moduleList.count(homepageModules.length)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-500">{adminPageCopy.content.moduleList.count(homepageModules.length)}</span>
+                  <form action="/api/admin/operations/homepage-modules" method="post">
+                    <input type="hidden" name="intent" value="bootstrap" />
+                    <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
+                      {adminPageCopy.content.moduleList.seedButton}
+                    </button>
+                  </form>
+                </div>
               </div>
 
               <div className="mt-5 grid gap-4">
@@ -1811,7 +2705,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     </div>
                     <p className="mt-3 text-sm text-slate-400">{module.description}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-300">
-                      <span>{module.metric}</span>
+                      <span>{adminPageCopy.content.moduleList.savedMetric}: {module.metric}</span>
+                      <span>{adminPageCopy.content.moduleList.runtimeMetric}: {homepageModuleRuntimeMetricMap.get(module.key ?? module.id) ?? module.metric}</span>
                       <span>sort {module.sortOrder}</span>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
@@ -1847,11 +2742,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 ))}
                 {homepageModules.length === 0 ? (
                   <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
-                    {locale === "en"
-                      ? "No homepage modules yet. Create the first module to let the homepage prefer database-managed operation slots."
-                      : locale === "zh-TW"
-                        ? "目前還沒有首頁營運位，建立後首頁會優先讀取資料庫設定。"
-                        : "当前还没有首页运营位，创建后首页会优先读取数据库配置。"}
+                    <p>{adminPageCopy.content.moduleList.empty}</p>
+                    <form action="/api/admin/operations/homepage-modules" method="post" className="mt-4">
+                      <input type="hidden" name="intent" value="bootstrap" />
+                      <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
+                        {adminPageCopy.content.moduleList.seedButton}
+                      </button>
+                    </form>
                   </div>
                 ) : null}
               </div>
@@ -2037,6 +2934,238 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       : locale === "zh-TW"
                         ? "目前還沒有站內公告，建立後會顯示在全站頭部。"
                         : "当前还没有站内公告，创建后会显示在全站头部。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-[0.92fr,1.28fr]">
+            <form action="/api/admin/operations/site-assistant-knowledge" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{assistantKnowledgeCopy.eyebrow}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">{assistantKnowledgeCopy.formTitle}</h3>
+                  <p className="mt-2 text-sm text-slate-400">{assistantKnowledgeCopy.description}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {currentKnowledgeItem ? (
+                    <Link
+                      href={buildAdminAiHrefWithFilters({ aiSport, aiAuthorId, aiResult, aiScope, aiPage: resolvedAiPage })}
+                      className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/25 hover:text-white"
+                    >
+                      {adminPageCopy.shared.cancelEdit}
+                    </Link>
+                  ) : null}
+                  <button
+                    type="submit"
+                    name="intent"
+                    value="seed"
+                    formAction="/api/admin/operations/site-assistant-knowledge"
+                    formMethod="post"
+                    className="rounded-full border border-sky-300/20 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-400/20"
+                  >
+                    {assistantKnowledgeCopy.seed}
+                  </button>
+                </div>
+              </div>
+              <input type="hidden" name="id" value={currentKnowledgeItem?.id ?? ""} />
+              <input type="hidden" name="aiSport" value={aiSport} />
+              <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
+              <input type="hidden" name="aiResult" value={aiResult} />
+              <input type="hidden" name="aiScope" value={aiScope} />
+              <input type="hidden" name="aiPage" value={resolvedAiPage} />
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.key}</span>
+                  <input type="text" name="key" defaultValue={currentKnowledgeItem?.key ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.category}</span>
+                  <input type="text" name="category" defaultValue={currentKnowledgeItem?.category ?? "general"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.href}</span>
+                  <input type="text" name="href" defaultValue={currentKnowledgeItem?.href ?? ""} placeholder="/member" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.tagsText}</span>
+                  <input type="text" name="tagsText" defaultValue={currentKnowledgeItem?.tagsText ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  <p className="text-xs text-slate-500">{assistantKnowledgeCopy.tagsHint}</p>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.sortOrder}</span>
+                  <input type="number" name="sortOrder" defaultValue={currentKnowledgeItem?.sortOrder ?? supportKnowledgeItems.length} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.status}</span>
+                  <select name="status" defaultValue={currentKnowledgeItem?.status ?? "active"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="active">{assistantKnowledgeCopy.statusLabels.active}</option>
+                    <option value="inactive">{assistantKnowledgeCopy.statusLabels.inactive}</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.questionZhCn}</span>
+                  <textarea name="questionZhCn" rows={3} defaultValue={currentKnowledgeItem?.questionZhCn ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.questionZhTw}</span>
+                  <textarea name="questionZhTw" rows={3} defaultValue={currentKnowledgeItem?.questionZhTw ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.questionEn}</span>
+                  <textarea name="questionEn" rows={3} defaultValue={currentKnowledgeItem?.questionEn ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.answerZhCn}</span>
+                  <textarea name="answerZhCn" rows={6} defaultValue={currentKnowledgeItem?.answerZhCn ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.answerZhTw}</span>
+                  <textarea name="answerZhTw" rows={6} defaultValue={currentKnowledgeItem?.answerZhTw ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{assistantKnowledgeCopy.fields.answerEn}</span>
+                  <textarea name="answerEn" rows={6} defaultValue={currentKnowledgeItem?.answerEn ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+              </div>
+
+              <button type="submit" className="mt-5 w-fit rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300">
+                {assistantKnowledgeCopy.save}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{assistantKnowledgeCopy.eyebrow}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">{assistantKnowledgeCopy.title}</h3>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300">
+                    {assistantKnowledgeCopy.count(supportKnowledgeItems.length)}
+                  </span>
+                  <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm text-lime-100">
+                    {assistantKnowledgeActiveCount} {assistantKnowledgeCopy.active}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                {supportKnowledgeItems.map((item) => {
+                  const isEditing = currentKnowledgeItem?.id === item.id;
+
+                  return (
+                    <article
+                      key={item.id}
+                      className={`rounded-[1.2rem] border p-4 ${
+                        isEditing ? "border-orange-300/35 bg-orange-400/6" : "border-white/8 bg-white/[0.03]"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">{item.category}</span>
+                          <span className={`rounded-full px-3 py-1 text-xs ${
+                            item.status === "active" ? "bg-lime-300/12 text-lime-100" : "bg-white/8 text-slate-300"
+                          }`}>
+                            {item.status === "active" ? assistantKnowledgeCopy.statusLabels.active : assistantKnowledgeCopy.statusLabels.inactive}
+                          </span>
+                          <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">
+                            {locale === "en" ? `Order ${item.sortOrder}` : locale === "zh-TW" ? `排序 ${item.sortOrder}` : `排序 ${item.sortOrder}`}
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          {assistantKnowledgeCopy.updatedAt}: {formatDateTime(item.updatedAt, locale)}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantKnowledgeCopy.localePreview}</p>
+                          <p className="mt-3 text-sm font-semibold text-white">CN: {item.questionZhCn}</p>
+                          <p className="mt-2 text-sm text-slate-400">TW: {item.questionZhTw}</p>
+                          <p className="mt-2 text-sm text-slate-400">EN: {item.questionEn}</p>
+                        </div>
+                        <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{assistantKnowledgeCopy.answerLabel}</p>
+                          <p className="mt-3 text-sm leading-7 text-slate-300">{item.answerZhCn}</p>
+                          {item.href ? (
+                            <p className="mt-3 text-xs text-slate-500">
+                              {assistantKnowledgeCopy.routeLabel}: <span className="text-slate-300">{item.href}</span>
+                            </p>
+                          ) : null}
+                          {item.tagsText ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {item.tagsText.split("|").filter(Boolean).map((tag) => (
+                                <span key={`${item.id}-${tag}`} className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Link
+                          href={buildAdminAiHrefWithFilters({
+                            aiSport,
+                            aiAuthorId,
+                            aiResult,
+                            aiScope,
+                            aiPage: resolvedAiPage,
+                            editKnowledgeId: item.id,
+                          })}
+                          className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white"
+                        >
+                          {assistantKnowledgeCopy.edit}
+                        </Link>
+                        <form action="/api/admin/operations/site-assistant-knowledge" method="post">
+                          <input type="hidden" name="intent" value="move-up" />
+                          <input type="hidden" name="id" value={item.id} />
+                          <input type="hidden" name="aiSport" value={aiSport} />
+                          <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
+                          <input type="hidden" name="aiResult" value={aiResult} />
+                          <input type="hidden" name="aiScope" value={aiScope} />
+                          <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                          <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                            {assistantKnowledgeCopy.moveUp}
+                          </button>
+                        </form>
+                        <form action="/api/admin/operations/site-assistant-knowledge" method="post">
+                          <input type="hidden" name="intent" value="move-down" />
+                          <input type="hidden" name="id" value={item.id} />
+                          <input type="hidden" name="aiSport" value={aiSport} />
+                          <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
+                          <input type="hidden" name="aiResult" value={aiResult} />
+                          <input type="hidden" name="aiScope" value={aiScope} />
+                          <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                          <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                            {assistantKnowledgeCopy.moveDown}
+                          </button>
+                        </form>
+                        <form action="/api/admin/operations/site-assistant-knowledge" method="post">
+                          <input type="hidden" name="intent" value="toggle-status" />
+                          <input type="hidden" name="id" value={item.id} />
+                          <input type="hidden" name="aiSport" value={aiSport} />
+                          <input type="hidden" name="aiAuthorId" value={aiAuthorId} />
+                          <input type="hidden" name="aiResult" value={aiResult} />
+                          <input type="hidden" name="aiScope" value={aiScope} />
+                          <input type="hidden" name="aiPage" value={resolvedAiPage} />
+                          <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white">
+                            {item.status === "active" ? assistantKnowledgeCopy.disable : assistantKnowledgeCopy.enable}
+                          </button>
+                        </form>
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {supportKnowledgeItems.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {assistantKnowledgeCopy.empty}
                   </div>
                 ) : null}
               </div>

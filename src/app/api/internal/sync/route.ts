@@ -33,12 +33,13 @@ export async function POST(request: NextRequest) {
       summary,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Sync failed.";
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "Sync failed.",
+        message,
       },
-      { status: 500 },
+      { status: message === "SYNC_ALREADY_RUNNING" || message === "SYNC_COOLDOWN_ACTIVE" ? 409 : 500 },
     );
   }
 }

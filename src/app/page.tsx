@@ -1,29 +1,47 @@
 import Link from "next/link";
 import { HomepageBannerShowcase } from "@/components/homepage-banner-showcase";
 import { SectionHeading } from "@/components/section-heading";
-import { getArticlePlans, getAuthorTeams, getHomepageBanners, getHomepageModules, getPredictions } from "@/lib/content-data";
+import { applyHomepageModuleMetrics, getArticlePlans, getAuthorTeams, getHomepageBanners, getHomepageModules, getPredictions } from "@/lib/content-data";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { getCurrentLocale } from "@/lib/i18n";
 import { localizeMembershipPlan } from "@/lib/localized-content";
 import { membershipPlans } from "@/lib/mock-data";
+import { getStoredMatchesBySport } from "@/lib/repositories/sports-repository";
 import { getFeaturedMatches, getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
 import { getSiteCopy } from "@/lib/ui-copy";
 
 export default async function HomePage() {
   const locale = await getCurrentLocale();
   const { homePageCopy, matchStatusLabels } = getSiteCopy(locale);
-  const [featuredMatches, homepageBanners, homepageModules, articlePlans, predictions, authorTeams, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues] = await Promise.all([
+  const [featuredMatches, homepageBanners, homepageModules, articlePlans, predictions, authorTeams, footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues] = await Promise.all([
     getFeaturedMatches(locale),
     getHomepageBanners(locale),
     getHomepageModules(locale),
     getArticlePlans(undefined, locale),
     getPredictions(undefined, locale),
     getAuthorTeams(locale),
+    getStoredMatchesBySport("football"),
+    getStoredMatchesBySport("basketball"),
     getMatchesBySport("cricket", locale),
     getTrackedLeagues("cricket", locale),
     getMatchesBySport("esports", locale),
     getTrackedLeagues("esports", locale),
   ]);
+  const homepageModulesWithMetrics = applyHomepageModuleMetrics(
+    homepageModules,
+    {
+      footballMatches,
+      basketballMatches,
+      cricketMatches,
+      esportsMatches,
+      cricketLeagueCount: cricketLeagues.length,
+      esportsLeagueCount: esportsLeagues.length,
+      authorCount: authorTeams.length,
+      articlePlanCount: articlePlans.length,
+      predictions,
+    },
+    locale,
+  );
   const localizedMembershipPlans = membershipPlans.map((plan) => localizeMembershipPlan(plan, locale));
   const cricketSpotlightMatches = cricketMatches.slice(0, 3);
   const cricketLiveCount = cricketMatches.filter((match) => match.status === "live").length;
@@ -39,18 +57,30 @@ export default async function HomePage() {
             <p className="section-label">{homePageCopy.commandFeed}</p>
             <div className="mt-4 space-y-4">
               {featuredMatches.map((match) => (
-                <div key={match.id} className="rounded-[1.25rem] border border-white/8 bg-white/[0.04] p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-sm font-medium text-white">
-                      {match.homeTeam} <span className="text-slate-500">vs</span> {match.awayTeam}
-                    </p>
+                <Link
+                  key={match.id}
+                  href={`/matches/${encodeURIComponent(match.id)}`}
+                  className="block rounded-[1.25rem] border border-white/8 bg-white/[0.04] p-4 transition hover:border-orange-300/25 hover:bg-white/[0.07]"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="section-label">{match.leagueName ?? match.leagueSlug}</p>
+                      <p className="mt-2 text-sm font-medium text-white">
+                        {match.homeTeam} <span className="text-slate-500">vs</span> {match.awayTeam}
+                      </p>
+                    </div>
                     <span className="rounded-full border border-white/10 px-2 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-400">
                       {matchStatusLabels[match.status]}
                     </span>
                   </div>
-                  <p className="mt-3 text-2xl font-semibold text-orange-200">{match.score}</p>
+                  <div className="mt-3 flex items-end justify-between gap-4">
+                    <p className="text-2xl font-semibold text-orange-200">{match.score}</p>
+                    <p className="text-xs text-slate-500">
+                      {match.clock ? match.clock : formatDateTime(match.kickoff, locale)}
+                    </p>
+                  </div>
                   <p className="mt-2 text-xs leading-6 text-slate-400">{match.statLine}</p>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
@@ -80,7 +110,7 @@ export default async function HomePage() {
           }
         />
         <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {homepageModules.map((module) => (
+          {homepageModulesWithMetrics.map((module) => (
             <Link
               key={module.id}
               href={module.href}

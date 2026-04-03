@@ -31,7 +31,7 @@ async function runSync() {
     const message = error instanceof Error ? error.message : "Sync failed.";
     return {
       ok: false as const,
-      status: message === "SYNC_ALREADY_RUNNING" ? 409 : 500,
+      status: message === "SYNC_ALREADY_RUNNING" || message === "SYNC_COOLDOWN_ACTIVE" ? 409 : 500,
       message,
     };
   }
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   const url = new URL("/admin?tab=events", request.url);
 
   if (!result.ok) {
-    url.searchParams.set("error", result.message === "SYNC_ALREADY_RUNNING" ? "sync-running" : "sync");
+    url.searchParams.set("error", result.message === "SYNC_ALREADY_RUNNING" || result.message === "SYNC_COOLDOWN_ACTIVE" ? "sync-running" : "sync");
     return NextResponse.redirect(url);
   }
 

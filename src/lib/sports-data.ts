@@ -31,6 +31,7 @@ import {
   getNowscoreDatabaseSnapshot,
 } from "@/lib/nowscore-provider";
 import {
+  getStoredConfiguredFeaturedMatches,
   getStoredDatabaseSnapshot,
   getStoredFeaturedMatches,
   getStoredLeaguesBySport,
@@ -167,6 +168,26 @@ function sortMatches(matches: Match[]) {
   });
 }
 
+function mergeFeaturedMatches(primary: Match[], fallback: Match[], limit: number) {
+  const merged: Match[] = [];
+  const seen = new Set<string>();
+
+  for (const match of [...primary, ...fallback]) {
+    if (seen.has(match.id)) {
+      continue;
+    }
+
+    seen.add(match.id);
+    merged.push(match);
+
+    if (merged.length >= limit) {
+      break;
+    }
+  }
+
+  return merged;
+}
+
 function fallbackLeagues(sport: Sport, locale: Locale) {
   return mockLeagues.filter((league) => league.sport === sport).map((league) => localizeLeague(league, locale));
 }
@@ -272,10 +293,35 @@ export async function getMatchesBySport(sport: Sport, locale: Locale = defaultLo
 }
 
 export async function getFeaturedMatches(locale: Locale = defaultLocale) {
+  const configuredMatches = await getStoredConfiguredFeaturedMatches(4);
+  const localizedConfiguredMatches = sortMatches(configuredMatches.map((match) => withLeagueName(match, locale))).slice(0, 4);
   const storedMatches = await getStoredFeaturedMatches(4);
+  const localizedStoredMatches = sortMatches(storedMatches.map((match) => withLeagueName(match, locale))).slice(0, 4);
 
-  if (storedMatches.length > 0) {
-    return sortMatches(storedMatches.map((match) => withLeagueName(match, locale))).slice(0, 4);
+  if (localizedConfiguredMatches.length >= 4) {
+    return localizedConfiguredMatches;
+  }
+
+  if (localizedStoredMatches.length > 0) {
+    const mergedStoredMatches = mergeFeaturedMatches(localizedConfiguredMatches, localizedStoredMatches, 4);
+
+    if (mergedStoredMatches.length >= 4 || localizedConfiguredMatches.length > 0) {
+      return mergedStoredMatches;
+    }
+  }
+
+  try {
+    const [football, basketball] = await Promise.all([
+      getMatchesBySport("football", locale),
+      getMatchesBySport("basketball", locale),
+    ]);
+    const liveMatches = sortMatches([...football, ...basketball]);
+
+    if (liveMatches.length > 0) {
+      return mergeFeaturedMatches(localizedConfiguredMatches, liveMatches, 4);
+    }
+  } catch {
+    // Fall through to broader multi-sport fallback below.
   }
 
   try {
@@ -287,9 +333,13 @@ export async function getFeaturedMatches(locale: Locale = defaultLocale) {
     ]);
     const liveMatches = sortMatches([...football, ...basketball, ...cricket, ...esports]);
 
-    return liveMatches.slice(0, 4);
+    return mergeFeaturedMatches(localizedConfiguredMatches, liveMatches, 4);
   } catch {
-    return getMockFeaturedMatches().map((match) => withLeagueName(match, locale));
+    return mergeFeaturedMatches(
+      localizedConfiguredMatches,
+      getMockFeaturedMatches().map((match) => withLeagueName(match, locale)),
+      4,
+    );
   }
 }
 

@@ -2,6 +2,7 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import type {
   HeadToHeadRow,
+  HomepageFeaturedMatchSlot,
   League,
   Match,
   OddsSnapshot,
@@ -11,12 +12,20 @@ import type {
   Team,
 } from "@/lib/types";
 
+const HOMEPAGE_PRIMARY_SPORTS: Sport[] = ["football", "basketball"];
+const HOMEPAGE_LOOKBACK_MS = 18 * 60 * 60 * 1000;
+const HOMEPAGE_LOOKAHEAD_MS = 36 * 60 * 60 * 1000;
+
 type StoredDatabaseSnapshot = {
   leagues: League[];
   standings: StandingRow[];
   schedule: ScheduleRow[];
   teams: Team[];
   h2h: HeadToHeadRow[];
+};
+
+type StoredHomepageFeaturedMatchSlotRecord = HomepageFeaturedMatchSlot & {
+  match?: Match;
 };
 
 function mapMovement(value: string | null | undefined): OddsSnapshot["movement"] {
@@ -151,6 +160,34 @@ function mapOdds(record: {
   };
 }
 
+function getHomepageStatusPriority(status: string) {
+  switch (status) {
+    case "live":
+      return 0;
+    case "upcoming":
+      return 1;
+    case "finished":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function getHomepageSportPriority(sport: string) {
+  switch (sport) {
+    case "football":
+      return 0;
+    case "basketball":
+      return 1;
+    case "cricket":
+      return 2;
+    case "esports":
+      return 3;
+    default:
+      return 4;
+  }
+}
+
 function mapMatch(record: {
   id: string;
   sourceKey: string | null;
@@ -199,6 +236,79 @@ function mapMatch(record: {
     insight: record.insight ?? "--",
     odds: mapOdds(record.oddsSnapshots[0] ?? null),
   };
+}
+
+type HomepageFeaturedMatchRecord = {
+  id: string;
+  sourceKey: string | null;
+  sport: string;
+  status: string;
+  kickoff: Date;
+  clock: string | null;
+  venue: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  scoreText: string | null;
+  statLine: string | null;
+  insight: string | null;
+  lastSyncedAt: Date | null;
+  league: {
+    slug: string;
+    name: string;
+    displayName: string | null;
+    featured: boolean;
+  };
+  oddsSnapshots: {
+    home: number | null;
+    draw: number | null;
+    away: number | null;
+    spread: string | null;
+    total: string | null;
+    movement: string | null;
+  }[];
+};
+
+function sortHomepageFeaturedMatches(
+  matches: HomepageFeaturedMatchRecord[],
+  now = Date.now(),
+) {
+  return [...matches].sort((left, right) => {
+    const statusDiff = getHomepageStatusPriority(left.status) - getHomepageStatusPriority(right.status);
+
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+
+    const leagueDiff = Number(right.league.featured) - Number(left.league.featured);
+
+    if (leagueDiff !== 0) {
+      return leagueDiff;
+    }
+
+    const sportDiff = getHomepageSportPriority(left.sport) - getHomepageSportPriority(right.sport);
+
+    if (sportDiff !== 0) {
+      return sportDiff;
+    }
+
+    const leftKickoffDistance = Math.abs(left.kickoff.getTime() - now);
+    const rightKickoffDistance = Math.abs(right.kickoff.getTime() - now);
+
+    if (leftKickoffDistance !== rightKickoffDistance) {
+      return leftKickoffDistance - rightKickoffDistance;
+    }
+
+    const leftFreshness = left.lastSyncedAt?.getTime() ?? 0;
+    const rightFreshness = right.lastSyncedAt?.getTime() ?? 0;
+
+    if (leftFreshness !== rightFreshness) {
+      return rightFreshness - leftFreshness;
+    }
+
+    return left.kickoff.getTime() - right.kickoff.getTime();
+  });
 }
 
 async function getLatestCapturedAt(model: "standingSnapshot" | "scheduleSnapshot" | "headToHeadSnapshot", leagueId: string) {
@@ -267,22 +377,94 @@ export const getStoredMatchesBySport = cache(async (sport: Sport): Promise<Match
 
 export const getStoredFeaturedMatches = cache(async (limit = 4): Promise<Match[]> => {
   try {
+    const now = Date.now();
+    const upcomingWindowEnd = new Date(now + HOMEPAGE_LOOKAHEAD_MS);
+    const recentKickoffStart = new Date(now - HOMEPAGE_LOOKBACK_MS);
     const matches = await prisma.match.findMany({
+      where: {
+        sport: {
+          in: HOMEPAGE_PRIMARY_SPORTS,
+        },
+        OR: [
+          { status: "live" },
+          {
+            status: "upcoming",
+            kickoff: {
+              lte: upcomingWindowEnd,
+            },
+          },
+          {
+            status: "finished",
+            kickoff: {
+              gte: recentKickoffStart,
+            },
+          },
+        ],
+      },
       include: {
-        league: true,
+        league: {
+          select: {
+            slug: true,
+            name: true,
+            displayName: true,
+            featured: true,
+          },
+        },
         oddsSnapshots: {
           orderBy: { capturedAt: "desc" },
           take: 1,
         },
       },
-      orderBy: [{ status: "asc" }, { kickoff: "asc" }],
-      take: limit,
+      take: 48,
     });
 
-    return matches.map(mapMatch);
+    return sortHomepageFeaturedMatches(matches, now).slice(0, limit).map(mapMatch);
   } catch {
     return [];
   }
+});
+
+export const getStoredHomepageFeaturedMatchSlots = cache(
+  async (limit = 4): Promise<StoredHomepageFeaturedMatchSlotRecord[]> => {
+    try {
+      const slots = await prisma.homepageFeaturedMatchSlot.findMany({
+        where: { status: "active" },
+        include: {
+          match: {
+            include: {
+              league: true,
+              oddsSnapshots: {
+                orderBy: { capturedAt: "desc" },
+                take: 1,
+              },
+            },
+          },
+        },
+        orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+        take: limit,
+      });
+
+      return slots.map((slot) => ({
+        id: slot.id,
+        key: slot.key,
+        matchRef: slot.matchRef,
+        matchId: slot.matchId ?? undefined,
+        status: slot.status,
+        sortOrder: slot.sortOrder,
+        match: slot.match ? mapMatch(slot.match) : undefined,
+      }));
+    } catch {
+      return [];
+    }
+  },
+);
+
+export const getStoredConfiguredFeaturedMatches = cache(async (limit = 4): Promise<Match[]> => {
+  const slots = await getStoredHomepageFeaturedMatchSlots(limit);
+  return slots
+    .map((slot) => slot.match)
+    .filter((match): match is Match => Boolean(match))
+    .slice(0, limit);
 });
 
 export const getStoredMatchById = cache(async (id: string): Promise<Match | undefined> => {

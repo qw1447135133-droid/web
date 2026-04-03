@@ -442,6 +442,20 @@ db.exec(`
       ON DELETE SET NULL ON UPDATE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS "HomepageFeaturedMatchSlot" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "key" TEXT NOT NULL,
+    "matchRef" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "matchId" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "HomepageFeaturedMatchSlot_matchId_fkey"
+      FOREIGN KEY ("matchId") REFERENCES "Match" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS "HomepageBanner" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "key" TEXT NOT NULL,
@@ -534,6 +548,76 @@ db.exec(`
     "expiresAt" DATETIME NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS "AssistantConversation" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "sessionKey" TEXT NOT NULL,
+    "locale" TEXT NOT NULL DEFAULT 'zh-CN',
+    "title" TEXT,
+    "summary" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "handoffRequestedAt" DATETIME,
+    "resolvedAt" DATETIME,
+    "lastMessageAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT,
+    CONSTRAINT "AssistantConversation_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "AssistantMessage" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "role" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "linksJson" TEXT,
+    "provider" TEXT,
+    "model" TEXT,
+    "finishReason" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "conversationId" TEXT NOT NULL,
+    CONSTRAINT "AssistantMessage_conversationId_fkey"
+      FOREIGN KEY ("conversationId") REFERENCES "AssistantConversation" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "SupportKnowledgeItem" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "key" TEXT NOT NULL,
+    "category" TEXT NOT NULL DEFAULT 'general',
+    "questionZhCn" TEXT NOT NULL,
+    "questionZhTw" TEXT NOT NULL,
+    "questionEn" TEXT NOT NULL,
+    "answerZhCn" TEXT NOT NULL,
+    "answerZhTw" TEXT NOT NULL,
+    "answerEn" TEXT NOT NULL,
+    "href" TEXT,
+    "tagsText" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "AssistantHandoffRequest" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "locale" TEXT NOT NULL DEFAULT 'zh-CN',
+    "contactName" TEXT,
+    "contactMethod" TEXT,
+    "note" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "conversationId" TEXT NOT NULL,
+    "userId" TEXT,
+    CONSTRAINT "AssistantHandoffRequest_conversationId_fkey"
+      FOREIGN KEY ("conversationId") REFERENCES "AssistantConversation" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "AssistantHandoffRequest_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
   CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
   CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token");
   CREATE UNIQUE INDEX IF NOT EXISTS "League_slug_key" ON "League"("slug");
@@ -547,8 +631,10 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS "ArticlePlan_slug_key" ON "ArticlePlan"("slug");
   CREATE UNIQUE INDEX IF NOT EXISTS "ArticlePlan_source_sourceKey_key" ON "ArticlePlan"("source", "sourceKey");
   CREATE UNIQUE INDEX IF NOT EXISTS "HomepageModule_key_key" ON "HomepageModule"("key");
+  CREATE UNIQUE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_key_key" ON "HomepageFeaturedMatchSlot"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "HomepageBanner_key_key" ON "HomepageBanner"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "SiteAnnouncement_key_key" ON "SiteAnnouncement"("key");
+  CREATE UNIQUE INDEX IF NOT EXISTS "SupportKnowledgeItem_key_key" ON "SupportKnowledgeItem"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "PaymentCallbackEvent_eventKey_key" ON "PaymentCallbackEvent"("eventKey");
   CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId");
   CREATE INDEX IF NOT EXISTS "MembershipOrder_userId_idx" ON "MembershipOrder"("userId");
@@ -574,6 +660,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "ArticlePlan_sport_status_kickoff_idx" ON "ArticlePlan"("sport", "status", "kickoff");
   CREATE INDEX IF NOT EXISTS "ArticlePlan_authorId_status_idx" ON "ArticlePlan"("authorId", "status");
   CREATE INDEX IF NOT EXISTS "HomepageModule_status_sortOrder_idx" ON "HomepageModule"("status", "sortOrder");
+  CREATE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_status_sortOrder_idx" ON "HomepageFeaturedMatchSlot"("status", "sortOrder");
+  CREATE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_matchId_idx" ON "HomepageFeaturedMatchSlot"("matchId");
   CREATE INDEX IF NOT EXISTS "HomepageBanner_status_sortOrder_idx" ON "HomepageBanner"("status", "sortOrder");
   CREATE INDEX IF NOT EXISTS "HomepageBanner_startsAt_endsAt_idx" ON "HomepageBanner"("startsAt", "endsAt");
   CREATE INDEX IF NOT EXISTS "HomepageBannerDailyStat_metricDate_idx" ON "HomepageBannerDailyStat"("metricDate");
@@ -582,6 +670,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "SyncRun_source_startedAt_idx" ON "SyncRun"("source", "startedAt");
   CREATE INDEX IF NOT EXISTS "SyncRun_status_startedAt_idx" ON "SyncRun"("status", "startedAt");
   CREATE INDEX IF NOT EXISTS "SyncLock_expiresAt_idx" ON "SyncLock"("expiresAt");
+  CREATE INDEX IF NOT EXISTS "AssistantConversation_sessionKey_updatedAt_idx" ON "AssistantConversation"("sessionKey", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantConversation_status_updatedAt_idx" ON "AssistantConversation"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantConversation_userId_updatedAt_idx" ON "AssistantConversation"("userId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantMessage_conversationId_createdAt_idx" ON "AssistantMessage"("conversationId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SupportKnowledgeItem_status_sortOrder_idx" ON "SupportKnowledgeItem"("status", "sortOrder");
+  CREATE INDEX IF NOT EXISTS "AssistantHandoffRequest_status_updatedAt_idx" ON "AssistantHandoffRequest"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantHandoffRequest_conversationId_updatedAt_idx" ON "AssistantHandoffRequest"("conversationId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantHandoffRequest_userId_updatedAt_idx" ON "AssistantHandoffRequest"("userId", "updatedAt");
 `);
 
 ensureColumn("MembershipOrder", "paymentReference", "TEXT");
@@ -624,6 +720,7 @@ ensureColumn("PaymentCallbackEvent", "lastSeenAt", "DATETIME");
 ensureColumn("PaymentCallbackEvent", "createdAt", "DATETIME");
 ensureColumn("PaymentCallbackEvent", "updatedAt", "DATETIME");
 ensureColumn("ArticlePlan", "matchId", "TEXT");
+ensureColumn("HomepageFeaturedMatchSlot", "matchRef", "TEXT");
 ensureColumn("HomepageBanner", "impressionCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "clickCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "primaryImpressionCount", "INTEGER NOT NULL DEFAULT 0");
@@ -634,11 +731,53 @@ ensureColumn("HomepageBanner", "lastImpressionAt", "DATETIME");
 ensureColumn("HomepageBanner", "lastClickAt", "DATETIME");
 ensureColumn("SyncRun", "triggerSource", "TEXT DEFAULT 'manual-admin'");
 ensureColumn("SyncRun", "requestedByUserId", "TEXT");
+ensureColumn("AssistantConversation", "locale", "TEXT DEFAULT 'zh-CN'");
+ensureColumn("AssistantConversation", "title", "TEXT");
+ensureColumn("AssistantConversation", "summary", "TEXT");
+ensureColumn("AssistantConversation", "status", "TEXT DEFAULT 'open'");
+ensureColumn("AssistantConversation", "handoffRequestedAt", "DATETIME");
+ensureColumn("AssistantConversation", "resolvedAt", "DATETIME");
+ensureColumn("AssistantConversation", "lastMessageAt", "DATETIME");
+ensureColumn("AssistantConversation", "createdAt", "DATETIME");
+ensureColumn("AssistantConversation", "updatedAt", "DATETIME");
+ensureColumn("AssistantConversation", "userId", "TEXT");
+ensureColumn("AssistantMessage", "linksJson", "TEXT");
+ensureColumn("AssistantMessage", "provider", "TEXT");
+ensureColumn("AssistantMessage", "model", "TEXT");
+ensureColumn("AssistantMessage", "finishReason", "TEXT");
+ensureColumn("SupportKnowledgeItem", "category", "TEXT DEFAULT 'general'");
+ensureColumn("SupportKnowledgeItem", "href", "TEXT");
+ensureColumn("SupportKnowledgeItem", "tagsText", "TEXT");
+ensureColumn("SupportKnowledgeItem", "status", "TEXT DEFAULT 'active'");
+ensureColumn("SupportKnowledgeItem", "sortOrder", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("SupportKnowledgeItem", "createdAt", "DATETIME");
+ensureColumn("SupportKnowledgeItem", "updatedAt", "DATETIME");
+ensureColumn("AssistantHandoffRequest", "locale", "TEXT DEFAULT 'zh-CN'");
+ensureColumn("AssistantHandoffRequest", "contactName", "TEXT");
+ensureColumn("AssistantHandoffRequest", "contactMethod", "TEXT");
+ensureColumn("AssistantHandoffRequest", "note", "TEXT");
+ensureColumn("AssistantHandoffRequest", "status", "TEXT DEFAULT 'pending'");
+ensureColumn("AssistantHandoffRequest", "createdAt", "DATETIME");
+ensureColumn("AssistantHandoffRequest", "updatedAt", "DATETIME");
+ensureColumn("AssistantHandoffRequest", "userId", "TEXT");
 db.exec(`CREATE INDEX IF NOT EXISTS "ArticlePlan_matchId_idx" ON "ArticlePlan"("matchId");`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_key_key" ON "HomepageFeaturedMatchSlot"("key");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_status_sortOrder_idx" ON "HomepageFeaturedMatchSlot"("status", "sortOrder");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_matchId_idx" ON "HomepageFeaturedMatchSlot"("matchId");`);
 db.exec(
   `CREATE UNIQUE INDEX IF NOT EXISTS "HomepageBannerDailyStat_bannerId_metricDate_key" ON "HomepageBannerDailyStat"("bannerId", "metricDate");`,
 );
 db.exec(`
+  UPDATE "HomepageFeaturedMatchSlot"
+  SET "matchRef" = COALESCE(
+    NULLIF("matchRef", ''),
+    (
+      SELECT COALESCE("sourceKey", "id")
+      FROM "Match"
+      WHERE "Match"."id" = "HomepageFeaturedMatchSlot"."matchId"
+    )
+  )
+  WHERE "matchRef" IS NULL OR "matchRef" = '';
   UPDATE "MembershipOrder"
   SET "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
   WHERE "updatedAt" IS NULL;
@@ -656,6 +795,43 @@ db.exec(`
     OR "createdAt" IS NULL
     OR "updatedAt" IS NULL
     OR "duplicateCount" IS NULL;
+  UPDATE "AssistantConversation"
+  SET
+    "locale" = COALESCE("locale", 'zh-CN'),
+    "status" = COALESCE("status", 'open'),
+    "lastMessageAt" = COALESCE("lastMessageAt", "updatedAt", "createdAt", CURRENT_TIMESTAMP),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "locale" IS NULL
+    OR "status" IS NULL
+    OR "lastMessageAt" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL;
+  UPDATE "SupportKnowledgeItem"
+  SET
+    "category" = COALESCE("category", 'general'),
+    "status" = COALESCE("status", 'active'),
+    "sortOrder" = COALESCE("sortOrder", 0),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "category" IS NULL
+    OR "status" IS NULL
+    OR "sortOrder" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL;
+  UPDATE "AssistantHandoffRequest"
+  SET
+    "locale" = COALESCE("locale", 'zh-CN'),
+    "status" = COALESCE("status", 'pending'),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "locale" IS NULL
+    OR "status" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL;
 `);
 db.exec(`
   CREATE INDEX IF NOT EXISTS "MembershipOrder_status_updatedAt_idx" ON "MembershipOrder"("status", "updatedAt");
@@ -666,6 +842,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_orderType_orderId_idx" ON "PaymentCallbackEvent"("orderType", "orderId");
+  CREATE UNIQUE INDEX IF NOT EXISTS "SupportKnowledgeItem_key_key" ON "SupportKnowledgeItem"("key");
+  CREATE INDEX IF NOT EXISTS "AssistantConversation_sessionKey_updatedAt_idx" ON "AssistantConversation"("sessionKey", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantConversation_status_updatedAt_idx" ON "AssistantConversation"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantConversation_userId_updatedAt_idx" ON "AssistantConversation"("userId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantMessage_conversationId_createdAt_idx" ON "AssistantMessage"("conversationId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SupportKnowledgeItem_status_sortOrder_idx" ON "SupportKnowledgeItem"("status", "sortOrder");
+  CREATE INDEX IF NOT EXISTS "AssistantHandoffRequest_status_updatedAt_idx" ON "AssistantHandoffRequest"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantHandoffRequest_conversationId_updatedAt_idx" ON "AssistantHandoffRequest"("conversationId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AssistantHandoffRequest_userId_updatedAt_idx" ON "AssistantHandoffRequest"("userId", "updatedAt");
 `);
 
 db.close();

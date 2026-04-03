@@ -149,6 +149,23 @@ curl -X POST http://127.0.0.1/api/internal/sync \
 
 建议在服务器上每 `5-10` 分钟调用一次。
 
+### 回归测试与同步压测
+
+部署完成后，建议至少执行一次：
+
+```bash
+pnpm typecheck
+pnpm qa:smoke -- --base-url http://127.0.0.1
+node scripts/sync-stability-check.mjs --base-url http://127.0.0.1 --token ${SYNC_TRIGGER_TOKEN} --mode burst --requests 4
+curl -s http://127.0.0.1/api/health
+```
+
+如果已经切到公网域名，也可以直接改成你的正式访问地址。
+
+更完整的回归、健康检查和同步稳定性说明，参考：
+
+- [`docs/qa-regression-and-sync-ops.md`](./qa-regression-and-sync-ops.md)
+
 ### 支付回调接入
 
 当前项目已经提供统一支付回调入口：

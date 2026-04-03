@@ -1,10 +1,19 @@
 import { revalidatePath } from "next/cache";
+import { localizeMatch } from "@/lib/localized-content";
+import { bootstrapSupportKnowledgeBase, type AssistantHandoffRecord } from "@/lib/site-assistant-service";
 import {
   homepageBannerSeeds,
   homepageModules as mockHomepageModules,
   siteAnnouncementSeeds,
 } from "@/lib/mock-data";
 import { prisma } from "@/lib/prisma";
+import {
+  getStoredConfiguredFeaturedMatches,
+  getStoredFeaturedMatches,
+} from "@/lib/repositories/sports-repository";
+import { getFeaturedMatches } from "@/lib/sports-data";
+import { defaultLocale, type Locale } from "@/lib/i18n-config";
+import type { Match } from "@/lib/types";
 
 export type AdminHomepageModuleRecord = {
   id: string;
@@ -27,6 +36,21 @@ export type AdminSyncRunRecord = {
   failureCount: number;
   countsSummary: string;
   errorText?: string;
+};
+
+export type AdminHomepageFeaturedMatchesPreview = {
+  source: "manual-slots" | "sync-cache" | "live-fallback" | "mock-fallback";
+  matches: Match[];
+};
+
+export type AdminHomepageFeaturedMatchSlotRecord = {
+  id: string;
+  key: string;
+  matchRef: string;
+  matchId?: string;
+  status: string;
+  sortOrder: number;
+  match?: Match;
 };
 
 export type AdminHomepageBannerRecord = {
@@ -88,6 +112,25 @@ export type AdminSiteAnnouncementRecord = {
   sortOrder: number;
 };
 
+export type AdminAssistantHandoffRequestRecord = AssistantHandoffRecord;
+
+export type AdminSupportKnowledgeItemRecord = {
+  id: string;
+  key: string;
+  category: string;
+  questionZhCn: string;
+  questionZhTw: string;
+  questionEn: string;
+  answerZhCn: string;
+  answerZhTw: string;
+  answerEn: string;
+  href?: string;
+  tagsText?: string;
+  status: string;
+  sortOrder: number;
+  updatedAt: string;
+};
+
 const siteSurfacePaths = [
   "/",
   "/live/football",
@@ -128,6 +171,29 @@ async function ensureUniqueModuleKey(baseValue: string, ignoreId?: string) {
 
   while (true) {
     const existing = await prisma.homepageModule.findFirst({
+      where: {
+        key: candidate,
+        ...(ignoreId ? { NOT: { id: ignoreId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return candidate;
+    }
+
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+}
+
+async function ensureUniqueFeaturedMatchSlotKey(baseValue: string, ignoreId?: string) {
+  const base = slugify(baseValue) || "featured-match";
+  let candidate = base;
+  let suffix = 2;
+
+  while (true) {
+    const existing = await prisma.homepageFeaturedMatchSlot.findFirst({
       where: {
         key: candidate,
         ...(ignoreId ? { NOT: { id: ignoreId } } : {}),
@@ -219,6 +285,100 @@ function parseSyncSummary(summaryJson: string | null, startedAt: Date, finishedA
       countsSummary: "-",
     };
   }
+}
+
+export async function getAdminHomepageFeaturedMatches(
+  locale: Locale = defaultLocale,
+  limit = 6,
+): Promise<AdminHomepageFeaturedMatchesPreview> {
+  const configuredMatches = await getStoredConfiguredFeaturedMatches(limit);
+
+  if (configuredMatches.length > 0) {
+    return {
+      source: "manual-slots",
+      matches: configuredMatches.map((match) => localizeMatch(match, locale)).slice(0, limit),
+    };
+  }
+
+  const storedMatches = await getStoredFeaturedMatches(limit);
+
+  if (storedMatches.length > 0) {
+    return {
+      source: "sync-cache",
+      matches: storedMatches.map((match) => localizeMatch(match, locale)).slice(0, limit),
+    };
+  }
+
+  const fallbackMatches = await getFeaturedMatches(locale);
+  const hasApiSportsIds = fallbackMatches.some((match) => match.id.includes(":"));
+
+  return {
+    source: hasApiSportsIds ? "live-fallback" : "mock-fallback",
+    matches: fallbackMatches.slice(0, limit),
+  };
+}
+
+export async function getAdminHomepageFeaturedMatchSlots(
+  locale: Locale = defaultLocale,
+): Promise<AdminHomepageFeaturedMatchSlotRecord[]> {
+  const slots = await prisma.homepageFeaturedMatchSlot.findMany({
+    include: {
+      match: {
+        include: {
+          league: true,
+          oddsSnapshots: {
+            orderBy: { capturedAt: "desc" },
+            take: 1,
+          },
+        },
+      },
+    },
+    orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+    take: 24,
+  });
+
+  return slots.map((slot) => ({
+    id: slot.id,
+    key: slot.key,
+    matchRef: slot.matchRef,
+    matchId: slot.matchId ?? undefined,
+    status: slot.status,
+    sortOrder: slot.sortOrder,
+    match: slot.match ? localizeMatch({
+      id: slot.match.sourceKey ?? slot.match.id,
+      sport:
+        slot.match.sport === "basketball" || slot.match.sport === "cricket" || slot.match.sport === "esports"
+          ? slot.match.sport
+          : "football",
+      leagueSlug: slot.match.league.slug,
+      leagueName: slot.match.league.displayName ?? slot.match.league.name,
+      kickoff: slot.match.kickoff.toISOString(),
+      status:
+        slot.match.status === "live" || slot.match.status === "finished" || slot.match.status === "upcoming"
+          ? slot.match.status
+          : "upcoming",
+      clock: slot.match.clock ?? undefined,
+      venue: slot.match.venue,
+      homeTeam: slot.match.homeTeamName,
+      awayTeam: slot.match.awayTeamName,
+      score:
+        slot.match.scoreText ??
+        (slot.match.homeScore == null || slot.match.awayScore == null ? "-" : `${slot.match.homeScore} - ${slot.match.awayScore}`),
+      statLine: slot.match.statLine ?? "--",
+      insight: slot.match.insight ?? "--",
+      odds: {
+        home: slot.match.oddsSnapshots[0]?.home ?? null,
+        draw: slot.match.oddsSnapshots[0]?.draw ?? null,
+        away: slot.match.oddsSnapshots[0]?.away ?? null,
+        spread: slot.match.oddsSnapshots[0]?.spread ?? "--",
+        total: slot.match.oddsSnapshots[0]?.total ?? "--",
+        movement:
+          slot.match.oddsSnapshots[0]?.movement === "up" || slot.match.oddsSnapshots[0]?.movement === "down"
+            ? slot.match.oddsSnapshots[0].movement
+            : "flat",
+      },
+    }, locale) : undefined,
+  }));
 }
 
 export async function getAdminHomepageModules(): Promise<AdminHomepageModuleRecord[]> {
@@ -338,6 +498,41 @@ export async function bootstrapMockHomepageModules() {
   safeRevalidate(siteSurfacePaths);
 }
 
+export async function bootstrapHomepageFeaturedMatchSlots() {
+  const existingCount = await prisma.homepageFeaturedMatchSlot.count();
+
+  if (existingCount > 0) {
+    return;
+  }
+
+  const matches = await getStoredFeaturedMatches(3);
+
+  for (const [index, match] of matches.entries()) {
+    const matchRecord = await prisma.match.findFirst({
+      where: {
+        OR: [{ id: match.id }, { sourceKey: match.id }],
+      },
+      select: { id: true },
+    });
+
+    if (!matchRecord) {
+      continue;
+    }
+
+    await prisma.homepageFeaturedMatchSlot.create({
+      data: {
+        key: `homepage-featured-${index + 1}`,
+        matchRef: match.id,
+        matchId: matchRecord.id,
+        status: "active",
+        sortOrder: index,
+      },
+    });
+  }
+
+  safeRevalidate(siteSurfacePaths);
+}
+
 export async function bootstrapMockHomepageBanners() {
   for (const banner of homepageBannerSeeds) {
     await prisma.homepageBanner.upsert({
@@ -440,6 +635,38 @@ async function ensureUniqueAnnouncementKey(baseValue: string, ignoreId?: string)
   }
 }
 
+async function ensureUniqueSupportKnowledgeKey(baseValue: string, ignoreId?: string) {
+  const base = slugify(baseValue) || "assistant-knowledge";
+  let candidate = base;
+  let suffix = 2;
+
+  while (true) {
+    const existing = await prisma.supportKnowledgeItem.findFirst({
+      where: {
+        key: candidate,
+        ...(ignoreId ? { NOT: { id: ignoreId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return candidate;
+    }
+
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+}
+
+function normalizeSupportKnowledgeTags(value: string) {
+  const parts = value
+    .split(/[\n,|]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return parts.join("|");
+}
+
 export async function bootstrapMockSiteAnnouncements() {
   for (const announcement of siteAnnouncementSeeds) {
     await prisma.siteAnnouncement.upsert({
@@ -485,6 +712,71 @@ export async function bootstrapMockSiteAnnouncements() {
   safeRevalidate(siteSurfacePaths);
 }
 
+export async function getAdminAssistantHandoffRequests(limit = 12): Promise<AdminAssistantHandoffRequestRecord[]> {
+  await bootstrapSupportKnowledgeBase();
+
+  const requests = await prisma.assistantHandoffRequest.findMany({
+    orderBy: [{ updatedAt: "desc" }],
+    take: limit,
+    include: {
+      conversation: {
+        select: {
+          id: true,
+          title: true,
+          summary: true,
+        },
+      },
+      user: {
+        select: {
+          displayName: true,
+          email: true,
+        },
+      },
+    },
+  });
+
+  return requests.map((item) => ({
+    id: item.id,
+    status: item.status,
+    locale: item.locale,
+    contactName: item.contactName ?? undefined,
+    contactMethod: item.contactMethod ?? undefined,
+    note: item.note ?? undefined,
+    conversationId: item.conversationId,
+    conversationTitle: item.conversation.title ?? undefined,
+    conversationSummary: item.conversation.summary ?? undefined,
+    requesterName: item.user?.displayName ?? undefined,
+    requesterEmail: item.user?.email ?? undefined,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  }));
+}
+
+export async function getAdminSupportKnowledgeItems(): Promise<AdminSupportKnowledgeItemRecord[]> {
+  await bootstrapSupportKnowledgeBase();
+
+  const items = await prisma.supportKnowledgeItem.findMany({
+    orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+  });
+
+  return items.map((item) => ({
+    id: item.id,
+    key: item.key,
+    category: item.category,
+    questionZhCn: item.questionZhCn,
+    questionZhTw: item.questionZhTw,
+    questionEn: item.questionEn,
+    answerZhCn: item.answerZhCn,
+    answerZhTw: item.answerZhTw,
+    answerEn: item.answerEn,
+    href: item.href ?? undefined,
+    tagsText: item.tagsText ?? undefined,
+    status: item.status,
+    sortOrder: item.sortOrder,
+    updatedAt: item.updatedAt.toISOString(),
+  }));
+}
+
 export async function saveHomepageModule(formData: FormData) {
   const id = String(formData.get("id") || "").trim();
   const title = String(formData.get("title") || "").trim();
@@ -528,6 +820,62 @@ export async function saveHomepageModule(formData: FormData) {
       description,
       href,
       metric,
+      status,
+      sortOrder,
+    },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+  return created;
+}
+
+export async function saveHomepageFeaturedMatchSlot(formData: FormData) {
+  const id = String(formData.get("id") || "").trim();
+  const matchRef = String(formData.get("matchRef") || "").trim();
+
+  if (!matchRef) {
+    throw new Error("首页焦点比赛槽位需要绑定比赛。");
+  }
+
+  const matchRecord = await prisma.match.findFirst({
+    where: {
+      OR: [{ id: matchRef }, { sourceKey: matchRef }],
+    },
+    select: { id: true, sourceKey: true, homeTeamName: true, awayTeamName: true },
+  });
+
+  if (!matchRecord) {
+    throw new Error("所选比赛暂时不存在或尚未同步入库。");
+  }
+
+  const key = await ensureUniqueFeaturedMatchSlotKey(
+    String(formData.get("key") || `${matchRecord.homeTeamName}-${matchRecord.awayTeamName}`),
+    id || undefined,
+  );
+  const status = String(formData.get("status") || "active").trim() || "active";
+  const sortOrder = parseSortOrder(formData.get("sortOrder"));
+
+  if (id) {
+    const updated = await prisma.homepageFeaturedMatchSlot.update({
+      where: { id },
+      data: {
+        key,
+        matchRef,
+        matchId: matchRecord.id,
+        status,
+        sortOrder,
+      },
+    });
+
+    safeRevalidate(siteSurfacePaths);
+    return updated;
+  }
+
+  const created = await prisma.homepageFeaturedMatchSlot.create({
+    data: {
+      key,
+      matchRef,
+      matchId: matchRecord.id,
       status,
       sortOrder,
     },
@@ -635,6 +983,44 @@ export async function toggleHomepageModuleStatus(id: string) {
   return updated;
 }
 
+export async function toggleHomepageFeaturedMatchSlotStatus(id: string) {
+  const current = await prisma.homepageFeaturedMatchSlot.findUnique({
+    where: { id },
+    select: { id: true, status: true },
+  });
+
+  if (!current) {
+    throw new Error("首页焦点比赛槽位不存在。");
+  }
+
+  const updated = await prisma.homepageFeaturedMatchSlot.update({
+    where: { id },
+    data: {
+      status: current.status === "active" ? "inactive" : "active",
+    },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+  return updated;
+}
+
+export async function deleteHomepageFeaturedMatchSlot(id: string) {
+  const current = await prisma.homepageFeaturedMatchSlot.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+
+  if (!current) {
+    throw new Error("首页焦点比赛槽位不存在。");
+  }
+
+  await prisma.homepageFeaturedMatchSlot.delete({
+    where: { id },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+}
+
 export async function toggleHomepageBannerStatus(id: string) {
   const current = await prisma.homepageBanner.findUnique({
     where: { id },
@@ -732,6 +1118,41 @@ export async function moveHomepageModule(id: string, direction: "up" | "down") {
       data: { sortOrder: target.sortOrder },
     }),
     prisma.homepageModule.update({
+      where: { id: target.id },
+      data: { sortOrder: current.sortOrder },
+    }),
+  ]);
+
+  safeRevalidate(siteSurfacePaths);
+}
+
+export async function moveHomepageFeaturedMatchSlot(id: string, direction: "up" | "down") {
+  const slots = await prisma.homepageFeaturedMatchSlot.findMany({
+    orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+    select: { id: true, sortOrder: true },
+  });
+
+  const index = slots.findIndex((slot) => slot.id === id);
+
+  if (index === -1) {
+    throw new Error("首页焦点比赛槽位不存在。");
+  }
+
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+
+  if (targetIndex < 0 || targetIndex >= slots.length) {
+    return;
+  }
+
+  const current = slots[index];
+  const target = slots[targetIndex];
+
+  await prisma.$transaction([
+    prisma.homepageFeaturedMatchSlot.update({
+      where: { id: current.id },
+      data: { sortOrder: target.sortOrder },
+    }),
+    prisma.homepageFeaturedMatchSlot.update({
       where: { id: target.id },
       data: { sortOrder: current.sortOrder },
     }),
@@ -891,6 +1312,121 @@ export async function moveSiteAnnouncement(id: string, direction: "up" | "down")
       data: { sortOrder: target.sortOrder },
     }),
     prisma.siteAnnouncement.update({
+      where: { id: target.id },
+      data: { sortOrder: current.sortOrder },
+    }),
+  ]);
+
+  safeRevalidate(siteSurfacePaths);
+}
+
+export async function saveSupportKnowledgeItem(formData: FormData) {
+  const id = String(formData.get("id") || "").trim();
+  const questionZhCn = String(formData.get("questionZhCn") || "").trim();
+  const answerZhCn = String(formData.get("answerZhCn") || "").trim();
+  const questionZhTw = String(formData.get("questionZhTw") || "").trim() || questionZhCn;
+  const answerZhTw = String(formData.get("answerZhTw") || "").trim() || answerZhCn;
+  const questionEn = String(formData.get("questionEn") || "").trim() || questionZhCn;
+  const answerEn = String(formData.get("answerEn") || "").trim() || answerZhCn;
+
+  if (!questionZhCn || !answerZhCn) {
+    throw new Error("客服知识库至少需要简体中文问题和答案。");
+  }
+
+  const key = await ensureUniqueSupportKnowledgeKey(
+    String(formData.get("key") || questionZhCn),
+    id || undefined,
+  );
+  const category = String(formData.get("category") || "general").trim() || "general";
+  const href = String(formData.get("href") || "").trim();
+  const tagsText = normalizeSupportKnowledgeTags(String(formData.get("tagsText") || ""));
+  const status = String(formData.get("status") || "active").trim() || "active";
+  const sortOrder = parseSortOrder(formData.get("sortOrder"));
+
+  const payload = {
+    key,
+    category,
+    questionZhCn,
+    questionZhTw,
+    questionEn,
+    answerZhCn,
+    answerZhTw,
+    answerEn,
+    href: href || null,
+    tagsText: tagsText || null,
+    status,
+    sortOrder,
+  };
+
+  if (id) {
+    const updated = await prisma.supportKnowledgeItem.update({
+      where: { id },
+      data: payload,
+      select: { id: true },
+    });
+
+    safeRevalidate(siteSurfacePaths);
+    return updated;
+  }
+
+  const created = await prisma.supportKnowledgeItem.create({
+    data: payload,
+    select: { id: true },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+  return created;
+}
+
+export async function toggleSupportKnowledgeItemStatus(id: string) {
+  const current = await prisma.supportKnowledgeItem.findUnique({
+    where: { id },
+    select: { id: true, status: true },
+  });
+
+  if (!current) {
+    throw new Error("客服知识条目不存在。");
+  }
+
+  const updated = await prisma.supportKnowledgeItem.update({
+    where: { id },
+    data: {
+      status: current.status === "active" ? "inactive" : "active",
+    },
+    select: { id: true },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+  return updated;
+}
+
+export async function moveSupportKnowledgeItem(id: string, direction: "up" | "down") {
+  const items = await prisma.supportKnowledgeItem.findMany({
+    orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+    select: { id: true, sortOrder: true },
+  });
+
+  const index = items.findIndex((item) => item.id === id);
+
+  if (index === -1) {
+    throw new Error("客服知识条目不存在。");
+  }
+
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+
+  if (targetIndex < 0 || targetIndex >= items.length) {
+    return;
+  }
+
+  const current = items[index];
+  const target = items[targetIndex];
+
+  await prisma.$transaction([
+    prisma.supportKnowledgeItem.update({
+      where: { id: current.id },
+      data: { sortOrder: target.sortOrder },
+    }),
+    prisma.supportKnowledgeItem.update({
       where: { id: target.id },
       data: { sortOrder: current.sortOrder },
     }),

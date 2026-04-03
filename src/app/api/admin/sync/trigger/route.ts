@@ -22,6 +22,9 @@ export async function POST(request: NextRequest) {
     return redirectToEvents(request, "&saved=sync");
   } catch (error) {
     const message = error instanceof Error ? error.message : "SYNC_FAILED";
-    return redirectToEvents(request, message === "SYNC_ALREADY_RUNNING" ? "&error=sync-running" : "&error=sync");
+    return redirectToEvents(
+      request,
+      message === "SYNC_ALREADY_RUNNING" || message === "SYNC_COOLDOWN_ACTIVE" ? "&error=sync-running" : "&error=sync",
+    );
   }
 }

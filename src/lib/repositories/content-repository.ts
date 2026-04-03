@@ -4,6 +4,7 @@ import type {
   ArticlePlan,
   AuthorTeam,
   HomepageBanner,
+  HomepageFeaturedMatchSlot,
   HomepageModule,
   PredictionRecord,
   SiteAnnouncement,
@@ -145,6 +146,7 @@ function mapArticlePlan(record: {
 
 function mapHomepageModule(record: {
   id: string;
+  key?: string;
   eyebrow: string;
   title: string;
   description: string;
@@ -153,11 +155,30 @@ function mapHomepageModule(record: {
 }): HomepageModule {
   return {
     id: record.id,
+    key: record.key,
     eyebrow: record.eyebrow,
     title: record.title,
     description: record.description,
     href: record.href,
     metric: record.metric,
+  };
+}
+
+function mapHomepageFeaturedMatchSlot(record: {
+  id: string;
+  key: string;
+  matchRef: string;
+  matchId: string | null;
+  status: string;
+  sortOrder: number;
+}): HomepageFeaturedMatchSlot {
+  return {
+    id: record.id,
+    key: record.key,
+    matchRef: record.matchRef,
+    matchId: record.matchId ?? undefined,
+    status: record.status,
+    sortOrder: record.sortOrder,
   };
 }
 
@@ -332,6 +353,19 @@ export const getStoredHomepageModules = cache(async (): Promise<HomepageModule[]
     });
 
     return modules.map(mapHomepageModule);
+  } catch {
+    return [];
+  }
+});
+
+export const getStoredHomepageFeaturedMatchSlots = cache(async (): Promise<HomepageFeaturedMatchSlot[]> => {
+  try {
+    const slots = await prisma.homepageFeaturedMatchSlot.findMany({
+      where: { status: "active" },
+      orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+    });
+
+    return slots.map(mapHomepageFeaturedMatchSlot);
   } catch {
     return [];
   }

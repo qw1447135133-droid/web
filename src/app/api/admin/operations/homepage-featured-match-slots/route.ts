@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  bootstrapMockHomepageModules,
-  moveHomepageModule,
-  saveHomepageModule,
-  toggleHomepageModuleStatus,
+  deleteHomepageFeaturedMatchSlot,
+  moveHomepageFeaturedMatchSlot,
+  saveHomepageFeaturedMatchSlot,
+  toggleHomepageFeaturedMatchSlotStatus,
 } from "@/lib/admin-operations";
 import { getSessionContext } from "@/lib/session";
 
@@ -27,21 +27,21 @@ export async function POST(request: NextRequest) {
   const id = String(formData.get("id") || "");
 
   try {
-    if (intent === "bootstrap") {
-      await bootstrapMockHomepageModules();
-      return redirectToAdmin(request, "&saved=module-seeded");
+    if (intent === "delete") {
+      await deleteHomepageFeaturedMatchSlot(id);
+      return redirectToAdmin(request, "&saved=featured-slot-deleted");
     } else if (intent === "toggle-status") {
-      await toggleHomepageModuleStatus(id);
+      await toggleHomepageFeaturedMatchSlotStatus(id);
     } else if (intent === "move-up") {
-      await moveHomepageModule(id, "up");
+      await moveHomepageFeaturedMatchSlot(id, "up");
     } else if (intent === "move-down") {
-      await moveHomepageModule(id, "down");
+      await moveHomepageFeaturedMatchSlot(id, "down");
     } else {
-      await saveHomepageModule(formData);
+      await saveHomepageFeaturedMatchSlot(formData);
     }
   } catch {
-    return redirectToAdmin(request, "&error=module");
+    return redirectToAdmin(request, "&error=featured-slot");
   }
 
-  return redirectToAdmin(request, "&saved=module");
+  return redirectToAdmin(request, "&saved=featured-slot");
 }

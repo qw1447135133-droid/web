@@ -1,0 +1,149 @@
+
+> web@0.1.0 dev C:\Users\14471\Documents\GitHub\web
+> next dev
+
+▲ Next.js 16.2.2 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.170:3000
+- Environments: .env
+✓ Ready in 300ms
+Creating turbopack project { dir: 'C:\\Users\\14471\\Documents\\GitHub\\web', testMode: true }
+
+ GET /live/football 200 in 548ms (next.js: 105ms, application-code: 442ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 49ms (next.js: 38ms, application-code: 12ms)
+ GET / 200 in 451ms (next.js: 24ms, application-code: 428ms)
+ GET /live/football 200 in 134ms (next.js: 7ms, application-code: 127ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 18ms (next.js: 6ms, application-code: 12ms)
+ GET /api/site-assistant/session?locale=zh-TW 200 in 69ms (next.js: 52ms, application-code: 17ms)
+ POST /api/site-assistant/chat 200 in 101ms (next.js: 47ms, application-code: 54ms)
+ GET /live/football 200 in 19ms (next.js: 6ms, application-code: 14ms)
+ GET /live/football 200 in 64ms (next.js: 6ms, application-code: 59ms)
+ GET /live/basketball 200 in 218ms (next.js: 50ms, application-code: 168ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+ GET /api/site/announcements?locale=zh-TW 200 in 23ms (next.js: 6ms, application-code: 17ms)
+ GET /live/esports 200 in 120ms (next.js: 46ms, application-code: 74ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 4ms, application-code: 9ms)
+ GET /live/cricket 200 in 189ms (next.js: 47ms, application-code: 142ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 16ms (next.js: 4ms, application-code: 12ms)
+ POST /api/site-assistant/chat 200 in 55ms (next.js: 3ms, application-code: 52ms)
+ GET /member 200 in 93ms (next.js: 37ms, application-code: 55ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 15ms (next.js: 5ms, application-code: 10ms)
+ GET /plans 200 in 126ms (next.js: 36ms, application-code: 90ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+ GET /live/cricket 200 in 110ms (next.js: 4ms, application-code: 106ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+✓ Compiled in 186ms
+ GET /live/cricket 200 in 1581ms (next.js: 94ms, application-code: 1488ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 16ms (next.js: 5ms, application-code: 11ms)
+ GET /api/site-assistant/session?locale=zh-TW 200 in 16ms (next.js: 5ms, application-code: 11ms)
+ POST /api/site-assistant/chat 200 in 60ms (next.js: 4ms, application-code: 56ms)
+ GET /live/basketball 200 in 304ms (next.js: 89ms, application-code: 215ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+ GET /api/site/announcements?locale=zh-TW 200 in 15ms (next.js: 4ms, application-code: 11ms)
+ GET /live/cricket 200 in 96ms (next.js: 4ms, application-code: 92ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+ GET /plans 200 in 191ms (next.js: 89ms, application-code: 103ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 4ms, application-code: 9ms)
+ GET /ai-predictions 200 in 131ms (next.js: 45ms, application-code: 86ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 3ms, application-code: 10ms)
+ GET /database 200 in 197ms (next.js: 43ms, application-code: 155ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+ GET /live/esports 200 in 194ms (next.js: 89ms, application-code: 105ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 5ms, application-code: 9ms)
+ GET /database 200 in 124ms (next.js: 6ms, application-code: 118ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 17ms (next.js: 5ms, application-code: 13ms)
+ GET /live/esports 200 in 65ms (next.js: 4ms, application-code: 61ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 4ms, application-code: 9ms)
+ GET /live/cricket 200 in 91ms (next.js: 4ms, application-code: 86ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 15ms (next.js: 4ms, application-code: 10ms)
+ GET /member 200 in 225ms (next.js: 112ms, application-code: 113ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 15ms (next.js: 4ms, application-code: 11ms)
+ GET /plans 200 in 70ms (next.js: 4ms, application-code: 67ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 12ms (next.js: 4ms, application-code: 8ms)
+✓ Compiled in 154ms
+ GET / 200 in 281ms (next.js: 95ms, application-code: 186ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 148ms (next.js: 11ms, application-code: 137ms)
+ GET /api/site/banners?locale=zh-TW 200 in 150ms (next.js: 62ms, application-code: 89ms)
+ GET /api/site/banners?locale=zh-TW 200 in 150ms (next.js: 71ms, application-code: 79ms)
+ POST /api/site/banners/track 200 in 157ms (next.js: 115ms, application-code: 42ms)
+ POST /api/site/banners/track 200 in 159ms (next.js: 125ms, application-code: 33ms)
+ POST /api/site/banners/track 200 in 159ms (next.js: 133ms, application-code: 26ms)
+ POST /api/site/banners/track 200 in 25ms (next.js: 4ms, application-code: 20ms)
+ POST /api/site/banners/track 200 in 26ms (next.js: 14ms, application-code: 12ms)
+ GET /live/football 200 in 211ms (next.js: 95ms, application-code: 116ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+ GET / 200 in 108ms (next.js: 4ms, application-code: 104ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 29ms (next.js: 7ms, application-code: 22ms)
+ GET /api/site/banners?locale=zh-TW 200 in 41ms (next.js: 17ms, application-code: 24ms)
+ GET /api/site/banners?locale=zh-TW 200 in 59ms (next.js: 20ms, application-code: 39ms)
+ POST /api/site/banners/track 200 in 47ms (next.js: 17ms, application-code: 31ms)
+ POST /api/site/banners/track 200 in 49ms (next.js: 25ms, application-code: 24ms)
+ POST /api/site/banners/track 200 in 50ms (next.js: 34ms, application-code: 16ms)
+ GET /live/esports 200 in 201ms (next.js: 91ms, application-code: 110ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 17ms (next.js: 4ms, application-code: 12ms)
+ GET /live/cricket 200 in 227ms (next.js: 102ms, application-code: 126ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 12ms (next.js: 4ms, application-code: 8ms)
+ GET /api/site-assistant/session?locale=zh-TW 200 in 22ms (next.js: 4ms, application-code: 18ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 4ms, application-code: 9ms)
+✓ Compiled in 145ms
+ GET /live/esports 200 in 246ms (next.js: 110ms, application-code: 136ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+ GET /live/football 200 in 238ms (next.js: 108ms, application-code: 130ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 15ms (next.js: 4ms, application-code: 10ms)
+ POST /api/site-assistant/chat 200 in 66ms (next.js: 8ms, application-code: 58ms)
+ GET /live/esports 200 in 72ms (next.js: 4ms, application-code: 69ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 33ms (next.js: 5ms, application-code: 28ms)
+ GET /live/cricket 200 in 250ms (next.js: 108ms, application-code: 142ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 15ms (next.js: 4ms, application-code: 11ms)
+ GET /live/cricket 200 in 351ms (next.js: 4ms, application-code: 348ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 17ms (next.js: 7ms, application-code: 9ms)
+ GET /live/basketball 200 in 288ms (next.js: 105ms, application-code: 183ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 4ms, application-code: 9ms)
+ GET /live/football 200 in 57ms (next.js: 3ms, application-code: 54ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 9ms)
+ GET /live/esports 200 in 65ms (next.js: 5ms, application-code: 60ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 4ms, application-code: 10ms)
+ GET /database 200 in 287ms (next.js: 106ms, application-code: 181ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 12ms (next.js: 3ms, application-code: 9ms)
+ GET /ai-predictions 200 in 218ms (next.js: 100ms, application-code: 118ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 3ms, application-code: 9ms)
+ GET /plans 200 in 220ms (next.js: 97ms, application-code: 124ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 13ms (next.js: 4ms, application-code: 9ms)
+ GET /ai-predictions 200 in 79ms (next.js: 4ms, application-code: 75ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+ GET /api/site-assistant/session?locale=zh-TW 200 in 27ms (next.js: 3ms, application-code: 24ms)
+ GET /live/basketball 200 in 150ms (next.js: 7ms, application-code: 143ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 14ms (next.js: 5ms, application-code: 10ms)
+✓ Compiled in 139ms
+ GET /live/basketball 200 in 926ms (next.js: 137ms, application-code: 789ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 17ms (next.js: 6ms, application-code: 11ms)
+ GET /api/site-assistant/session?locale=zh-TW 200 in 14ms (next.js: 4ms, application-code: 10ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 12ms (next.js: 3ms, application-code: 9ms)
+✓ Compiled in 131ms
+✓ Compiled in 167ms
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+✓ Compiled in 83ms
+ GET /api/site/announcements?locale=zh-TW 200 in 147ms (next.js: 46ms, application-code: 101ms)
+ GET /live/basketball 200 in 493ms (next.js: 121ms, application-code: 372ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 11ms (next.js: 3ms, application-code: 8ms)
+ GET /api/site-assistant/session?locale=zh-TW 200 in 32ms (next.js: 8ms, application-code: 24ms)
+ GET /live/cricket 200 in 264ms (next.js: 113ms, application-code: 151ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+ GET /api/site/announcements?locale=zh-TW 200 in 16ms (next.js: 5ms, application-code: 12ms)
+ GET /live/esports 200 in 228ms (next.js: 107ms, application-code: 122ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 17ms (next.js: 5ms, application-code: 12ms)
+✓ Compiled in 79ms
+✓ Compiled in 82ms
+✓ Compiled in 86ms
+✓ Compiled in 85ms
+✓ Compiled in 84ms
+✓ Compiled in 92ms
+ GET /live/esports 200 in 949ms (next.js: 126ms, application-code: 823ms)
+ GET /api/site/announcements?locale=zh-TW 200 in 16ms (next.js: 4ms, application-code: 11ms)
+ GET /api/site-assistant/session?locale=zh-TW 200 in 14ms (next.js: 3ms, application-code: 10ms)
+ POST /api/site-assistant/chat 200 in 68ms (next.js: 4ms, application-code: 64ms)
+ POST /api/site-assistant/chat 200 in 57ms (next.js: 4ms, application-code: 53ms)
+ POST /api/site-assistant/chat 200 in 59ms (next.js: 4ms, application-code: 55ms)
+[?25h
+ ELIFECYCLE  Command failed with exit code 4294967295.

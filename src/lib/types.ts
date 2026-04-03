@@ -179,11 +179,21 @@ export interface ContentOrder {
 
 export interface HomepageModule {
   id: string;
+  key?: string;
   eyebrow: string;
   title: string;
   description: string;
   href: string;
   metric: string;
+}
+
+export interface HomepageFeaturedMatchSlot {
+  id: string;
+  key: string;
+  matchRef: string;
+  matchId?: string;
+  status: string;
+  sortOrder: number;
 }
 
 export interface HomepageBanner {

@@ -17,6 +17,7 @@ import type {
 export const homepageModules: HomepageModule[] = [
   {
     id: "scores",
+    key: "scores",
     eyebrow: "Live Intelligence",
     title: "即时比分与赔率摘要",
     description: "覆盖足球、篮球、板球与电竞主赛道，支持热门联赛、开赛状态与赔率摘要联动浏览。",
@@ -25,6 +26,7 @@ export const homepageModules: HomepageModule[] = [
   },
   {
     id: "plans",
+    key: "plans",
     eyebrow: "Paid Insight",
     title: "计划单与作者团队",
     description: "支持会员套餐和单条解锁，展示热门赛事、作者榜单与近期表现。",
@@ -33,6 +35,7 @@ export const homepageModules: HomepageModule[] = [
   },
   {
     id: "ai",
+    key: "ai",
     eyebrow: "Model Blend",
     title: "AI 预测与因子解释",
     description: "将规则引擎与轻模型结果组合成可读预测卡片，展示信心区间、因子和历史命中记录。",
@@ -41,6 +44,7 @@ export const homepageModules: HomepageModule[] = [
   },
   {
     id: "cricket",
+    key: "cricket",
     eyebrow: "Cricket Dispatch",
     title: "板球比分与赛程入口",
     description: "先覆盖 IPL、PSL 等热门赛事的即时比分、赛果和联赛入口，作为板球板块的一期主入口。",
@@ -49,6 +53,7 @@ export const homepageModules: HomepageModule[] = [
   },
   {
     id: "esports",
+    key: "esports",
     eyebrow: "Esports Grid",
     title: "电竞赛事入口",
     description: "新增 LoL、Dota 2、CS2 三条电竞分线，先覆盖重点赛事比分、赛程和资料库入口。",

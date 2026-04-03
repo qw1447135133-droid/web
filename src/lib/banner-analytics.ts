@@ -12,6 +12,15 @@ export async function recordHomepageBannerMetric(
   type: HomepageBannerMetricType,
   placement: HomepageBannerPlacement,
 ) {
+  const banner = await prisma.homepageBanner.findUnique({
+    where: { id: bannerId },
+    select: { id: true },
+  });
+
+  if (!banner) {
+    return;
+  }
+
   const now = new Date();
   const metricDate = getMetricDateBucket(now);
   const placementCounters =

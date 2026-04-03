@@ -35,6 +35,7 @@ type SportSyncBreakdown = {
   sport: Sport;
   leagues: number;
   matches: number;
+  coveredLeagues: string[];
 };
 
 export type RecentSyncRun = {
@@ -47,6 +48,7 @@ export type RecentSyncRun = {
   finishedAt?: string;
   durationMs?: number;
   countsSummary?: string;
+  sports?: SportSyncBreakdown[];
   failures: string[];
   errorText?: string;
 };
@@ -63,6 +65,19 @@ export type SportsSyncSummary = {
   counts: SyncCounts;
   sports: SportSyncBreakdown[];
   failures: string[];
+};
+
+export type SyncRotationPlan = {
+  source: "api-sports-free";
+  windowMinutes: number;
+  cooldownSeconds: number;
+  currentSlotStartedAt: string;
+  nextSlotStartsAt: string;
+  sports: Array<{
+    sport: Extract<Sport, "football" | "basketball">;
+    currentLeagues: string[];
+    nextLeagues: string[];
+  }>;
 };
 
 type StoredLeagueRef = {
@@ -110,9 +125,11 @@ const syncRunStore = prisma as typeof prisma & {
       orderBy: { startedAt: "asc" | "desc" };
       select: {
         id: true;
+        status?: true;
         startedAt: true;
+        finishedAt?: true;
       };
-    }): Promise<{ id: string; startedAt: Date } | null>;
+    }): Promise<{ id: string; status?: string; startedAt: Date; finishedAt?: Date | null } | null>;
     findMany(args: {
       take: number;
       orderBy: { startedAt: "asc" | "desc" };
@@ -199,6 +216,8 @@ const SNAPSHOT_ROTATION_LIMITS: Record<Extract<Sport, "football" | "basketball">
   football: 1,
   basketball: 1,
 };
+const API_RETRY_DELAYS_MS = [1200, 2800];
+const MIN_SYNC_INTERVAL_MS = 70 * 1000;
 
 const RUNNING_SYNC_STALE_MS = 30 * 60 * 1000;
 const SYNC_LOCK_TTL_MS = 20 * 60 * 1000;
@@ -362,6 +381,43 @@ function pickRotatingLeagues<T>(items: T[], seed: number, limit: number) {
 function buildRotationSeed(sport: Extract<Sport, "football" | "basketball">, startedAt: Date) {
   const slot = Math.floor(startedAt.getTime() / SNAPSHOT_ROTATION_WINDOW_MS);
   return sport === "football" ? slot : slot + 1;
+}
+
+function buildSlotStart(date: Date) {
+  return new Date(Math.floor(date.getTime() / SNAPSHOT_ROTATION_WINDOW_MS) * SNAPSHOT_ROTATION_WINDOW_MS);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableApiError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("api-sports") || message.includes("rate") || message.includes("fetch");
+}
+
+async function runWithApiRetry<T>(task: () => Promise<T>) {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= API_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= API_RETRY_DELAYS_MS.length || !isRetryableApiError(error)) {
+        throw error;
+      }
+
+      await sleep(API_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("API retry failed");
 }
 
 function parseScore(score: string) {
@@ -605,9 +661,11 @@ async function syncSportMatches(
   syncedAt: Date,
   counts: SyncCounts,
 ) {
-  const matches = await getApiSportsMatchesBySport(sport, {
-    includeLiveOverlay: sport !== "football" ? true : false,
-  });
+  const matches = await runWithApiRetry(() =>
+    getApiSportsMatchesBySport(sport, {
+      includeLiveOverlay: sport !== "football" ? true : false,
+    }),
+  );
 
   for (const match of matches) {
     const league = leaguesBySlug.get(match.leagueSlug);
@@ -734,6 +792,28 @@ export async function runTrackedSportsSync(input?: {
     });
   }
 
+  const recentRun = await syncRunStore.syncRun.findFirst({
+    where: {
+      source: SYNC_PROVIDER_SOURCE,
+      scope: SYNC_SCOPE,
+    },
+    orderBy: { startedAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      startedAt: true,
+      finishedAt: true,
+    },
+  });
+
+  if (
+    recentRun &&
+    recentRun.status !== "running" &&
+    startedAt.getTime() - (recentRun.finishedAt?.getTime() ?? recentRun.startedAt.getTime()) < MIN_SYNC_INTERVAL_MS
+  ) {
+    throw new Error("SYNC_COOLDOWN_ACTIVE");
+  }
+
   await acquireSyncLock(runId, input?.triggerSource, input?.requestedByUserId);
 
   const syncRun = await syncRunStore.syncRun.create({
@@ -775,7 +855,7 @@ export async function runTrackedSportsSync(input?: {
         }
 
         try {
-          const snapshot = await getApiSportsDatabaseSnapshot(sport, league.slug);
+          const snapshot = await runWithApiRetry(() => getApiSportsDatabaseSnapshot(sport, league.slug));
 
           if (!snapshot) {
             failures.push(`${sport}:${league.slug}: snapshot unavailable`);
@@ -800,6 +880,7 @@ export async function runTrackedSportsSync(input?: {
         sport,
         leagues: selectedLeagues.length,
         matches: 0,
+        coveredLeagues: selectedLeagues.map((league) => league.name),
       });
     }
 
@@ -862,6 +943,42 @@ export async function runTrackedSportsSync(input?: {
   }
 }
 
+export async function getSyncRotationPlan(at = new Date()): Promise<SyncRotationPlan> {
+  const sports: Array<Extract<Sport, "football" | "basketball">> = ["football", "basketball"];
+  const currentSlotStartedAt = buildSlotStart(at);
+  const nextSlotStartsAt = new Date(currentSlotStartedAt.getTime() + SNAPSHOT_ROTATION_WINDOW_MS);
+  const sportPlans = await Promise.all(
+    sports.map(async (sport) => {
+      const trackedLeagues = await getApiSportsTrackedLeagues(sport);
+      const currentLeagues = pickRotatingLeagues(
+        trackedLeagues,
+        buildRotationSeed(sport, at),
+        SNAPSHOT_ROTATION_LIMITS[sport],
+      ).map((league) => league.name);
+      const nextLeagues = pickRotatingLeagues(
+        trackedLeagues,
+        buildRotationSeed(sport, nextSlotStartsAt),
+        SNAPSHOT_ROTATION_LIMITS[sport],
+      ).map((league) => league.name);
+
+      return {
+        sport,
+        currentLeagues,
+        nextLeagues,
+      };
+    }),
+  );
+
+  return {
+    source: SYNC_PROVIDER_SOURCE,
+    windowMinutes: Math.round(SNAPSHOT_ROTATION_WINDOW_MS / 60_000),
+    cooldownSeconds: Math.round(MIN_SYNC_INTERVAL_MS / 1000),
+    currentSlotStartedAt: currentSlotStartedAt.toISOString(),
+    nextSlotStartsAt: nextSlotStartsAt.toISOString(),
+    sports: sportPlans,
+  };
+}
+
 export async function getRecentSyncRuns(limit = 8): Promise<RecentSyncRun[]> {
   const runs = await syncRunStore.syncRun.findMany({
     take: limit,
@@ -892,6 +1009,7 @@ export async function getRecentSyncRuns(limit = 8): Promise<RecentSyncRun[]> {
       finishedAt: run.finishedAt?.toISOString(),
       durationMs: summary?.durationMs ?? (run.finishedAt ? run.finishedAt.getTime() - run.startedAt.getTime() : undefined),
       countsSummary: summary ? buildCountsSummary(summary.counts) : undefined,
+      sports: summary?.sports,
       failures: summary?.failures ?? [],
       errorText: run.errorText ?? undefined,
     };

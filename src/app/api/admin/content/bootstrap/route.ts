@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrapMockContent } from "@/lib/admin-content";
 import {
+  bootstrapHomepageFeaturedMatchSlots,
   bootstrapMockHomepageBanners,
   bootstrapMockHomepageModules,
   bootstrapMockSiteAnnouncements,
 } from "@/lib/admin-operations";
+import { bootstrapSupportKnowledgeBase } from "@/lib/site-assistant-service";
 import { getSessionContext } from "@/lib/session";
 
 function redirectToAdmin(request: NextRequest, suffix = "") {
@@ -26,7 +28,9 @@ export async function POST(request: NextRequest) {
     await bootstrapMockContent();
     await bootstrapMockHomepageBanners();
     await bootstrapMockHomepageModules();
+    await bootstrapHomepageFeaturedMatchSlots();
     await bootstrapMockSiteAnnouncements();
+    await bootstrapSupportKnowledgeBase();
   } catch {
     return redirectToAdmin(request, "&error=bootstrap");
   }
