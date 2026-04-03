@@ -171,6 +171,25 @@ db.exec(`
       ON DELETE CASCADE ON UPDATE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS "PaymentCallbackEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "provider" TEXT NOT NULL DEFAULT 'mock',
+    "providerEventId" TEXT,
+    "eventKey" TEXT NOT NULL,
+    "orderType" TEXT NOT NULL,
+    "orderId" TEXT,
+    "providerOrderId" TEXT,
+    "paymentReference" TEXT,
+    "state" TEXT NOT NULL,
+    "processingStatus" TEXT NOT NULL DEFAULT 'received',
+    "processingMessage" TEXT,
+    "payload" TEXT,
+    "duplicateCount" INTEGER NOT NULL DEFAULT 0,
+    "lastSeenAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS "League" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "source" TEXT NOT NULL DEFAULT 'nowscore',
@@ -447,10 +466,27 @@ db.exec(`
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "impressionCount" INTEGER NOT NULL DEFAULT 0,
     "clickCount" INTEGER NOT NULL DEFAULT 0,
+    "primaryImpressionCount" INTEGER NOT NULL DEFAULT 0,
+    "primaryClickCount" INTEGER NOT NULL DEFAULT 0,
+    "secondaryImpressionCount" INTEGER NOT NULL DEFAULT 0,
+    "secondaryClickCount" INTEGER NOT NULL DEFAULT 0,
     "lastImpressionAt" DATETIME,
     "lastClickAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "HomepageBannerDailyStat" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "metricDate" DATETIME NOT NULL,
+    "impressionCount" INTEGER NOT NULL DEFAULT 0,
+    "clickCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "bannerId" TEXT NOT NULL,
+    CONSTRAINT "HomepageBannerDailyStat_bannerId_fkey"
+      FOREIGN KEY ("bannerId") REFERENCES "HomepageBanner" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS "SiteAnnouncement" (
@@ -513,9 +549,13 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS "HomepageModule_key_key" ON "HomepageModule"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "HomepageBanner_key_key" ON "HomepageBanner"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "SiteAnnouncement_key_key" ON "SiteAnnouncement"("key");
+  CREATE UNIQUE INDEX IF NOT EXISTS "PaymentCallbackEvent_eventKey_key" ON "PaymentCallbackEvent"("eventKey");
   CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId");
   CREATE INDEX IF NOT EXISTS "MembershipOrder_userId_idx" ON "MembershipOrder"("userId");
   CREATE INDEX IF NOT EXISTS "ContentOrder_userId_idx" ON "ContentOrder"("userId");
+  CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
+  CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");
+  CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_orderType_orderId_idx" ON "PaymentCallbackEvent"("orderType", "orderId");
   CREATE INDEX IF NOT EXISTS "League_sport_featured_sortOrder_idx" ON "League"("sport", "featured", "sortOrder");
   CREATE INDEX IF NOT EXISTS "Team_leagueId_ranking_idx" ON "Team"("leagueId", "ranking");
   CREATE INDEX IF NOT EXISTS "Match_sport_kickoff_idx" ON "Match"("sport", "kickoff");
@@ -536,6 +576,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "HomepageModule_status_sortOrder_idx" ON "HomepageModule"("status", "sortOrder");
   CREATE INDEX IF NOT EXISTS "HomepageBanner_status_sortOrder_idx" ON "HomepageBanner"("status", "sortOrder");
   CREATE INDEX IF NOT EXISTS "HomepageBanner_startsAt_endsAt_idx" ON "HomepageBanner"("startsAt", "endsAt");
+  CREATE INDEX IF NOT EXISTS "HomepageBannerDailyStat_metricDate_idx" ON "HomepageBannerDailyStat"("metricDate");
   CREATE INDEX IF NOT EXISTS "SiteAnnouncement_status_sortOrder_idx" ON "SiteAnnouncement"("status", "sortOrder");
   CREATE INDEX IF NOT EXISTS "SiteAnnouncement_startsAt_endsAt_idx" ON "SiteAnnouncement"("startsAt", "endsAt");
   CREATE INDEX IF NOT EXISTS "SyncRun_source_startedAt_idx" ON "SyncRun"("source", "startedAt");
@@ -567,14 +608,36 @@ ensureColumn("ContentOrder", "closedAt", "DATETIME");
 ensureColumn("ContentOrder", "refundedAt", "DATETIME");
 ensureColumn("ContentOrder", "refundReason", "TEXT");
 ensureColumn("ContentOrder", "updatedAt", "DATETIME");
+ensureColumn("PaymentCallbackEvent", "provider", "TEXT DEFAULT 'mock'");
+ensureColumn("PaymentCallbackEvent", "providerEventId", "TEXT");
+ensureColumn("PaymentCallbackEvent", "eventKey", "TEXT");
+ensureColumn("PaymentCallbackEvent", "orderType", "TEXT");
+ensureColumn("PaymentCallbackEvent", "orderId", "TEXT");
+ensureColumn("PaymentCallbackEvent", "providerOrderId", "TEXT");
+ensureColumn("PaymentCallbackEvent", "paymentReference", "TEXT");
+ensureColumn("PaymentCallbackEvent", "state", "TEXT");
+ensureColumn("PaymentCallbackEvent", "processingStatus", "TEXT DEFAULT 'received'");
+ensureColumn("PaymentCallbackEvent", "processingMessage", "TEXT");
+ensureColumn("PaymentCallbackEvent", "payload", "TEXT");
+ensureColumn("PaymentCallbackEvent", "duplicateCount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("PaymentCallbackEvent", "lastSeenAt", "DATETIME");
+ensureColumn("PaymentCallbackEvent", "createdAt", "DATETIME");
+ensureColumn("PaymentCallbackEvent", "updatedAt", "DATETIME");
 ensureColumn("ArticlePlan", "matchId", "TEXT");
 ensureColumn("HomepageBanner", "impressionCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "clickCount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("HomepageBanner", "primaryImpressionCount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("HomepageBanner", "primaryClickCount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("HomepageBanner", "secondaryImpressionCount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("HomepageBanner", "secondaryClickCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "lastImpressionAt", "DATETIME");
 ensureColumn("HomepageBanner", "lastClickAt", "DATETIME");
 ensureColumn("SyncRun", "triggerSource", "TEXT DEFAULT 'manual-admin'");
 ensureColumn("SyncRun", "requestedByUserId", "TEXT");
 db.exec(`CREATE INDEX IF NOT EXISTS "ArticlePlan_matchId_idx" ON "ArticlePlan"("matchId");`);
+db.exec(
+  `CREATE UNIQUE INDEX IF NOT EXISTS "HomepageBannerDailyStat_bannerId_metricDate_key" ON "HomepageBannerDailyStat"("bannerId", "metricDate");`,
+);
 db.exec(`
   UPDATE "MembershipOrder"
   SET "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
@@ -582,12 +645,27 @@ db.exec(`
   UPDATE "ContentOrder"
   SET "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
   WHERE "updatedAt" IS NULL;
+  UPDATE "PaymentCallbackEvent"
+  SET
+    "lastSeenAt" = COALESCE("lastSeenAt", "createdAt", CURRENT_TIMESTAMP),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "lastSeenAt", "createdAt", CURRENT_TIMESTAMP),
+    "duplicateCount" = COALESCE("duplicateCount", 0)
+  WHERE
+    "lastSeenAt" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL
+    OR "duplicateCount" IS NULL;
 `);
 db.exec(`
   CREATE INDEX IF NOT EXISTS "MembershipOrder_status_updatedAt_idx" ON "MembershipOrder"("status", "updatedAt");
   CREATE INDEX IF NOT EXISTS "ContentOrder_status_updatedAt_idx" ON "ContentOrder"("status", "updatedAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "MembershipOrder_provider_providerOrderId_key" ON "MembershipOrder"("provider", "providerOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "ContentOrder_provider_providerOrderId_key" ON "ContentOrder"("provider", "providerOrderId");
+  CREATE UNIQUE INDEX IF NOT EXISTS "PaymentCallbackEvent_eventKey_key" ON "PaymentCallbackEvent"("eventKey");
+  CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
+  CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");
+  CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_orderType_orderId_idx" ON "PaymentCallbackEvent"("orderType", "orderId");
 `);
 
 db.close();

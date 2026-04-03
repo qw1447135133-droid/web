@@ -164,6 +164,165 @@ function getCricketMatchCopy(locale: string) {
   };
 }
 
+function getEsportsMatchCopy(locale: string) {
+  if (locale === "en") {
+    return {
+      pulseEyebrow: "Esports Pulse",
+      pulseTitle: "Series pulse",
+      pulseDescription: "Expose current series state, market lean, total line, and movement so the esports detail page behaves like a real channel layer instead of a plain score view.",
+      progressLabel: "Current state",
+      favoriteLabel: "Market lean",
+      totalLabel: "Map / round total",
+      movementLabel: "Line move",
+      featureTitle: "Game keys",
+      featureDescription: "Switch the metric cards by title while keeping one unified esports detail route.",
+      contentTitle: "Related coverage",
+      contentDescription: "Bring the linked esports plans and AI angle directly onto the match page.",
+      openPlan: "Open plan",
+      noRelatedPlans: "No related esports plans are available right now.",
+      archiveTitle: "Archive context",
+      archiveDescription: "Bring league samples, team form, and database links into the match detail flow.",
+      archivePulseTitle: "Team form",
+      archiveSamplesTitle: "Series samples",
+      openDatabase: "Open esports database",
+      openAi: "Open esports AI",
+      movement: {
+        up: "Up",
+        flat: "Flat",
+        down: "Down",
+      },
+    };
+  }
+
+  if (locale === "zh-TW") {
+    return {
+      pulseEyebrow: "Esports Pulse",
+      pulseTitle: "系列賽脈搏",
+      pulseDescription: "把目前系列賽狀態、熱門方、總盤和盤口方向直接放進詳情頁，讓電競詳情頁更像真正的頻道層。",
+      progressLabel: "目前狀態",
+      favoriteLabel: "市場傾向",
+      totalLabel: "地圖 / 回合總盤",
+      movementLabel: "盤口方向",
+      featureTitle: "項目指標",
+      featureDescription: "保持同一路由骨架，只按不同項目切換關鍵指標卡內容。",
+      contentTitle: "相關內容",
+      contentDescription: "把對應電競計畫單與 AI 角度直接承接到比賽詳情頁。",
+      openPlan: "查看計畫",
+      noRelatedPlans: "目前沒有可顯示的相關電競計畫單。",
+      archiveTitle: "檔案脈絡",
+      archiveDescription: "把聯賽樣本、戰隊狀態和資料庫入口一起帶進電競詳情鏈路。",
+      archivePulseTitle: "戰隊狀態",
+      archiveSamplesTitle: "系列賽樣本",
+      openDatabase: "打開電競資料庫",
+      openAi: "打開電競 AI",
+      movement: {
+        up: "上行",
+        flat: "持平",
+        down: "下行",
+      },
+    };
+  }
+
+  return {
+    pulseEyebrow: "Esports Pulse",
+    pulseTitle: "系列赛脉搏",
+    pulseDescription: "把当前系列赛状态、热门方、总盘和盘口方向直接放进详情页，让电竞详情页更像真正的频道层。",
+    progressLabel: "当前状态",
+    favoriteLabel: "市场倾向",
+    totalLabel: "地图 / 回合总盘",
+    movementLabel: "盘口方向",
+    featureTitle: "项目指标",
+    featureDescription: "保持同一路由骨架，只按不同项目切换关键指标卡内容。",
+    contentTitle: "相关内容",
+    contentDescription: "把对应电竞计划单与 AI 角度直接承接到比赛详情页。",
+    openPlan: "查看计划",
+    noRelatedPlans: "当前没有可显示的相关电竞计划单。",
+    archiveTitle: "档案脉络",
+    archiveDescription: "把联赛样本、战队状态和资料库入口一起带进电竞详情链路。",
+    archivePulseTitle: "战队状态",
+    archiveSamplesTitle: "系列赛样本",
+    openDatabase: "打开电竞资料库",
+    openAi: "打开电竞 AI",
+    movement: {
+      up: "上行",
+      flat: "持平",
+      down: "下行",
+    },
+  };
+}
+
+function getEsportsMetricCards(match: Match, locale: string) {
+  if (match.leagueSlug === "lpl") {
+    if (locale === "en") {
+      return [
+        { label: "Gold delta", value: "2.1k @ 20m", detail: "T1's Herald setups keep creating a cleaner mid-game economy lead." },
+        { label: "Resource control", value: "Herald 2 | Drake 3", detail: "The first two neutral cycles are usually deciding the lane swap tempo." },
+        { label: "Series score", value: match.score, detail: "Track whether BLG can slow the side-lane bleed before map point arrives." },
+      ];
+    }
+
+    if (locale === "zh-TW") {
+      return [
+        { label: "經濟差", value: "20 分鐘 2.1k", detail: "T1 的先鋒落點讓中期經濟優勢更容易滾大。" },
+        { label: "資源控制", value: "先鋒 2 | 小龍 3", detail: "前兩波中立資源幾乎決定這組對局的轉線節奏。" },
+        { label: "系列賽比分", value: match.score, detail: "觀察 BLG 能否在賽點前先把邊線失血壓住。" },
+      ];
+    }
+
+    return [
+      { label: "经济差", value: "20 分钟 2.1k", detail: "T1 的先锋落点让中期经济优势更容易滚大。" },
+      { label: "资源控制", value: "先锋 2 | 小龙 3", detail: "前两波中立资源几乎决定这组对局的转线节奏。" },
+      { label: "系列赛比分", value: match.score, detail: "观察 BLG 能否在赛点前先把边线失血压住。" },
+    ];
+  }
+
+  if (match.leagueSlug === "dreamleague") {
+    if (locale === "en") {
+      return [
+        { label: "Kill pace", value: "1.08 KPM", detail: "The series is drifting toward long teamfight chains rather than early snowball drafts." },
+        { label: "Objective control", value: "Roshan 2 | Towers 16", detail: "Roshan windows are the cleanest read on which side owns the map." },
+        { label: "Series score", value: match.score, detail: "Map count matters more here because both teams remain strong in buyback-heavy finishes." },
+      ];
+    }
+
+    if (locale === "zh-TW") {
+      return [
+        { label: "擊殺節奏", value: "1.08 KPM", detail: "這組系列賽更偏向長團與拉扯，而不是前期雪球陣容。" },
+        { label: "目標控制", value: "Roshan 2 | 塔 16", detail: "Roshan 視窗通常是判斷哪一方掌控地圖的最佳指標。" },
+        { label: "系列賽比分", value: match.score, detail: "這組對局更要關注地圖數，因為雙方都很擅長買活後的終盤處理。" },
+      ];
+    }
+
+    return [
+      { label: "击杀节奏", value: "1.08 KPM", detail: "这组系列赛更偏向长团与拉扯，而不是前期雪球阵容。" },
+      { label: "目标控制", value: "Roshan 2 | 塔 16", detail: "Roshan 窗口通常是判断哪一方掌控地图的最佳指标。" },
+      { label: "系列赛比分", value: match.score, detail: "这组对局更要关注地图数，因为双方都很擅长买活后的终盘处理。" },
+    ];
+  }
+
+  if (locale === "en") {
+    return [
+      { label: "Pistol rounds", value: "2-0", detail: "Early round control is shaping the whole economy tree in this series." },
+      { label: "Side split", value: "CT 71%", detail: "Vitality's stronger defensive halves are still the most repeatable edge." },
+      { label: "Series score", value: match.score, detail: "Watch whether NAVI can recover the late-round trade discipline before the next map." },
+    ];
+  }
+
+  if (locale === "zh-TW") {
+    return [
+      { label: "手槍局", value: "2-0", detail: "開局回合控制正在決定整組系列賽的經濟樹。" },
+      { label: "攻防側分佈", value: "CT 71%", detail: "Vitality 更穩的防守半場仍是最容易重複兌現的優勢。" },
+      { label: "系列賽比分", value: match.score, detail: "觀察 NAVI 能否在下一張地圖前修回殘局交易紀律。" },
+    ];
+  }
+
+  return [
+    { label: "手枪局", value: "2-0", detail: "开局回合控制正在决定整组系列赛的经济树。" },
+    { label: "攻防侧分布", value: "CT 71%", detail: "Vitality 更稳的防守半场仍是最容易重复兑现的优势。" },
+    { label: "系列赛比分", value: match.score, detail: "观察 NAVI 能否在下一张地图前修回残局交易纪律。" },
+  ];
+}
+
 function getFavorite(match: Match) {
   const candidates = [
     { team: match.homeTeam, odd: match.odds.home },
@@ -181,6 +340,7 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
   const locale = await getCurrentLocale();
   const { matchDetailCopy, matchStatusLabels } = getSiteCopy(locale);
   const cricketMatchCopy = getCricketMatchCopy(locale);
+  const esportsMatchCopy = getEsportsMatchCopy(locale);
   const { id } = await params;
   const match = await getMatchById(id, locale);
 
@@ -190,16 +350,18 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
 
   const [prediction, plans, authors] = await Promise.all([
     getPredictionByMatchId(match.id, locale),
-    match.sport === "cricket" ? getArticlePlans("cricket", locale) : Promise.resolve([]),
-    match.sport === "cricket" ? getAuthorTeams(locale) : Promise.resolve([]),
+    match.sport === "cricket" || match.sport === "esports" ? getArticlePlans(match.sport, locale) : Promise.resolve([]),
+    match.sport === "cricket" || match.sport === "esports" ? getAuthorTeams(locale) : Promise.resolve([]),
   ]);
   const cricketSnapshot = match.sport === "cricket" ? await getDatabaseSnapshot("cricket", match.leagueSlug, locale) : null;
+  const esportsSnapshot = match.sport === "esports" ? await getDatabaseSnapshot("esports", match.leagueSlug, locale) : null;
   const cricketDepth = match.sport === "cricket" ? getCricketMatchDepth(match.id, locale) : null;
+  const esportsMetricCards = match.sport === "esports" ? getEsportsMetricCards(match, locale) : [];
   const spreadLabel = locale === "en" ? "Spread" : locale === "zh-TW" ? "讓分" : "让分";
   const totalLabel = locale === "en" ? "Total" : locale === "zh-TW" ? "總分" : "总分";
-  const favorite = match.sport === "cricket" ? getFavorite(match) : null;
+  const favorite = match.sport === "cricket" || match.sport === "esports" ? getFavorite(match) : null;
   const relatedPlans =
-    match.sport === "cricket"
+    match.sport === "cricket" || match.sport === "esports"
       ? plans.filter((plan) => plan.matchId === match.id).slice(0, 2)
       : [];
   const archiveTeams =
@@ -233,6 +395,19 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
           ...(relatedPlans[0]
             ? [{ href: `/plans/${relatedPlans[0].slug}`, label: cricketMatchCopy.watchLinks.plan }]
             : []),
+        ]
+      : [];
+  const esportsArchiveTeams =
+    match.sport === "esports"
+      ? (esportsSnapshot?.teams ?? []).filter((team) => team.name === match.homeTeam || team.name === match.awayTeam)
+      : [];
+  const esportsArchiveH2H = match.sport === "esports" ? (esportsSnapshot?.h2h ?? []).slice(0, 2) : [];
+  const esportsArchiveActionLinks =
+    match.sport === "esports"
+      ? [
+          { href: `/database?sport=esports&league=${match.leagueSlug}&view=standings`, label: esportsMatchCopy.openDatabase },
+          { href: `/database?sport=esports&league=${match.leagueSlug}&view=teams`, label: locale === "en" ? "Team profiles" : locale === "zh-TW" ? "戰隊資料" : "战队资料" },
+          { href: `/database?sport=esports&league=${match.leagueSlug}&view=h2h`, label: locale === "en" ? "Series samples" : locale === "zh-TW" ? "系列賽樣本" : "系列赛样本" },
         ]
       : [];
 
@@ -518,6 +693,162 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
             )}
           </div>
         </section>
+      ) : null}
+
+      {match.sport === "esports" ? (
+        <>
+          <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+            <div className="glass-panel rounded-[2rem] p-6">
+              <SectionHeading
+                eyebrow={esportsMatchCopy.pulseEyebrow}
+                title={esportsMatchCopy.pulseTitle}
+                description={esportsMatchCopy.pulseDescription}
+              />
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                  <p className="text-sm text-slate-500">{esportsMatchCopy.progressLabel}</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{match.clock ?? matchStatusLabels[match.status]}</p>
+                </div>
+                <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                  <p className="text-sm text-slate-500">{esportsMatchCopy.favoriteLabel}</p>
+                  <p className="mt-2 text-lg font-semibold text-orange-200">
+                    {favorite ? `${favorite.team} ${formatOdd(favorite.odd)}` : "--"}
+                  </p>
+                </div>
+                <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                  <p className="text-sm text-slate-500">{esportsMatchCopy.totalLabel}</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{match.odds.total}</p>
+                </div>
+                <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                  <p className="text-sm text-slate-500">{esportsMatchCopy.movementLabel}</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{esportsMatchCopy.movement[match.odds.movement]}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel rounded-[2rem] p-6">
+              <SectionHeading
+                eyebrow={esportsMatchCopy.pulseEyebrow}
+                title={esportsMatchCopy.contentTitle}
+                description={esportsMatchCopy.contentDescription}
+              />
+              {relatedPlans.length > 0 ? (
+                <div className="mt-6 space-y-4">
+                  {relatedPlans.map((plan) => {
+                    const author = authors.find((item) => item.id === plan.authorId);
+
+                    return (
+                      <article key={plan.id} className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">{plan.performance}</span>
+                          <span className="text-sm font-semibold text-orange-200">{plan.marketSummary}</span>
+                        </div>
+                        <h3 className="mt-4 text-lg font-semibold text-white">{plan.title}</h3>
+                        <p className="mt-3 text-sm leading-7 text-slate-400">{plan.teaser}</p>
+                        <p className="mt-4 text-sm text-slate-500">{author?.name ?? "--"}</p>
+                        <div className="mt-4 flex items-center justify-between gap-3">
+                          <div className="flex flex-wrap gap-2">
+                            {plan.tags.slice(0, 2).map((tag) => (
+                              <span key={tag} className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-300">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                          <Link
+                            href={`/plans/${plan.slug}`}
+                            className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white"
+                          >
+                            {esportsMatchCopy.openPlan}
+                          </Link>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-6 rounded-[1.25rem] border border-dashed border-white/12 bg-white/[0.02] p-4 text-sm text-slate-400">
+                  {esportsMatchCopy.noRelatedPlans}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+            <div className="glass-panel rounded-[2rem] p-6">
+              <SectionHeading
+                eyebrow={esportsMatchCopy.pulseEyebrow}
+                title={esportsMatchCopy.featureTitle}
+                description={esportsMatchCopy.featureDescription}
+              />
+              <div className="mt-6 grid gap-4">
+                {esportsMetricCards.map((card) => (
+                  <article key={card.label} className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{card.label}</p>
+                    <p className="mt-3 text-xl font-semibold text-white">{card.value}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">{card.detail}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass-panel rounded-[2rem] p-6">
+              <SectionHeading
+                eyebrow={esportsMatchCopy.pulseEyebrow}
+                title={esportsMatchCopy.archiveTitle}
+                description={esportsMatchCopy.archiveDescription}
+              />
+              {esportsArchiveActionLinks.length > 0 ? (
+                <div className="mt-6 flex flex-wrap gap-3">
+                  {esportsArchiveActionLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:bg-white/[0.07] hover:text-white"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                  <Link
+                    href="/ai-predictions?sport=esports"
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:bg-white/[0.07] hover:text-white"
+                  >
+                    {esportsMatchCopy.openAi}
+                  </Link>
+                </div>
+              ) : null}
+              <div className="mt-6 space-y-4">
+                <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
+                  <p className="section-label">{esportsMatchCopy.archivePulseTitle}</p>
+                  <div className="mt-4 grid gap-3">
+                    {esportsArchiveTeams.map((team) => (
+                      <div key={team.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-950/35 px-4 py-3">
+                        <div>
+                          <p className="font-medium text-white">{team.name}</p>
+                          <p className="mt-1 text-sm text-slate-400">{team.form}</p>
+                        </div>
+                        <span className="rounded-full bg-sky-300/10 px-3 py-1 text-xs text-sky-100">#{team.ranking}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[1.2rem] border border-white/8 bg-white/[0.03] p-4">
+                  <p className="section-label">{esportsMatchCopy.archiveSamplesTitle}</p>
+                  <div className="mt-4 space-y-3">
+                    {esportsArchiveH2H.map((row) => (
+                      <article key={`${row.season}-${row.fixture}`} className="rounded-2xl bg-slate-950/35 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="font-medium text-white">{row.fixture}</p>
+                          <span className="rounded-full bg-orange-400/12 px-3 py-1 text-xs text-orange-200">{row.tag}</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-400">{row.season}</p>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </>
       ) : null}
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">

@@ -11,7 +11,7 @@ import type {
 } from "@/lib/types";
 
 function mapSport(value: string): Sport {
-  if (value === "basketball" || value === "cricket") {
+  if (value === "basketball" || value === "cricket" || value === "esports") {
     return value;
   }
 
@@ -34,6 +34,18 @@ function splitTags(value: string) {
     .split("|")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function parsePredictionPayload(value: string | null | undefined) {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(value) as { matchRef?: string };
+  } catch {
+    return {};
+  }
 }
 
 function mapAuthor(record: {
@@ -62,6 +74,8 @@ function mapPrediction(record: {
   id: string;
   sport: string;
   matchId: string | null;
+  sourceKey: string | null;
+  sourcePayload?: string | null;
   market: string;
   pick: string;
   confidence: string;
@@ -71,10 +85,15 @@ function mapPrediction(record: {
   result: string;
   match: { sourceKey: string | null } | null;
 }): PredictionRecord {
+  const payload = parsePredictionPayload(record.sourcePayload);
+  const manualMatchKey = record.sourceKey?.startsWith("prediction:")
+    ? record.sourceKey.slice("prediction:".length)
+    : null;
+
   return {
     id: record.id,
     sport: mapSport(record.sport),
-    matchId: record.match?.sourceKey ?? record.matchId ?? "",
+    matchId: record.match?.sourceKey ?? payload.matchRef ?? manualMatchKey ?? record.matchId ?? "",
     market: record.market,
     pick: record.pick,
     confidence: record.confidence,
@@ -394,7 +413,13 @@ export const getStoredPredictions = cache(async (sport?: Sport): Promise<Predict
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
     });
 
-    return predictions.map(mapPrediction);
+    return predictions.map((prediction) =>
+      mapPrediction({
+        ...prediction,
+        sourceKey: prediction.sourceKey,
+        sourcePayload: prediction.sourcePayload,
+      }),
+    );
   } catch {
     return [];
   }
@@ -404,7 +429,11 @@ export const getStoredPredictionByMatchId = cache(async (matchId: string): Promi
   try {
     const prediction = await prisma.predictionRecord.findFirst({
       where: {
-        OR: [{ matchId }, { match: { sourceKey: matchId } }],
+        OR: [
+          { matchId },
+          { sourceKey: `prediction:${matchId}` },
+          { match: { sourceKey: matchId } },
+        ],
       },
       include: {
         match: {
@@ -414,7 +443,35 @@ export const getStoredPredictionByMatchId = cache(async (matchId: string): Promi
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
     });
 
-    return prediction ? mapPrediction(prediction) : undefined;
+    if (prediction) {
+      return mapPrediction({
+        ...prediction,
+        sourceKey: prediction.sourceKey,
+        sourcePayload: prediction.sourcePayload,
+      });
+    }
+
+    const manualPrediction = await prisma.predictionRecord.findFirst({
+      where: {
+        sourcePayload: {
+          contains: `"matchRef":"${matchId}"`,
+        },
+      },
+      include: {
+        match: {
+          select: { sourceKey: true },
+        },
+      },
+      orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+    });
+
+    return manualPrediction
+      ? mapPrediction({
+          ...manualPrediction,
+          sourceKey: manualPrediction.sourceKey,
+          sourcePayload: manualPrediction.sourcePayload,
+        })
+      : undefined;
   } catch {
     return undefined;
   }

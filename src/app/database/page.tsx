@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SectionHeading } from "@/components/section-heading";
 import { getArticlePlans } from "@/lib/content-data";
 import { getCricketLeagueDepth, type CricketNarrative, type CricketTeamIntel } from "@/lib/cricket-depth";
+import { getEsportsLeagueDepth } from "@/lib/esports-depth";
 import { getCurrentLocale } from "@/lib/i18n";
 import { getDatabaseSnapshot } from "@/lib/sports-data";
 import type { HeadToHeadRow, ScheduleRow, StandingRow, Team } from "@/lib/types";
@@ -34,7 +35,37 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function getCricketDatabaseCopy(locale: string) {
+function getSpecialDatabaseCopy(locale: string, sport: "cricket" | "esports") {
+  if (sport === "esports") {
+    if (locale === "en") {
+      return {
+        sportLabel: "Esports",
+        standingsDescription: "Review record, form, and map-level momentum for the active esports league.",
+        scheduleDescription: "Scan esports fixtures, completed series, and tactical note tags.",
+        teamsDescription: "Review esports team rank, form, and venue split in one place.",
+        h2hDescription: "Review recent series samples and key tags for the active esports league.",
+      };
+    }
+
+    if (locale === "zh-TW") {
+      return {
+        sportLabel: "電競",
+        standingsDescription: "查看目前電競聯賽的戰績、狀態與地圖/小局走勢。",
+        scheduleDescription: "查看電競賽程、完場比分與戰術重點標籤。",
+        teamsDescription: "集中查看電競戰隊排名、近期狀態與主客場分佈。",
+        h2hDescription: "回看目前電競聯賽的近期系列賽樣本與關鍵標籤。",
+      };
+    }
+
+    return {
+      sportLabel: "电竞",
+      standingsDescription: "查看当前电竞联赛的战绩、状态和地图/小局走势。",
+      scheduleDescription: "查看电竞赛程、完场比分和战术重点标签。",
+      teamsDescription: "集中查看电竞战队排名、近期状态和主客场分布。",
+      h2hDescription: "回看当前电竞联赛的近期系列赛样本与关键标签。",
+    };
+  }
+
   if (locale === "en") {
     return {
       sportLabel: "Cricket",
@@ -404,20 +435,34 @@ export default async function DatabasePage({
 }) {
   const locale = await getCurrentLocale();
   const { databasePageCopy, livePageCopy, siteNavItems, uiCopy } = getSiteCopy(locale);
-  const cricketDatabaseCopy = getCricketDatabaseCopy(locale);
   const resolved = await searchParams;
   const sport = pickValue(resolved.sport, "football");
-  const normalizedSport = sport === "basketball" ? "basketball" : sport === "cricket" ? "cricket" : "football";
+  const normalizedSport =
+    sport === "basketball"
+      ? "basketball"
+      : sport === "cricket"
+        ? "cricket"
+        : sport === "esports"
+          ? "esports"
+          : "football";
   const leagueSlug = pickValue(
     resolved.league,
-    normalizedSport === "football" ? "premier-league" : normalizedSport === "basketball" ? "cba" : "ipl",
+    normalizedSport === "football"
+      ? "premier-league"
+      : normalizedSport === "basketball"
+        ? "cba"
+        : normalizedSport === "cricket"
+          ? "ipl"
+          : "lpl",
   );
   const view = pickValue(resolved.view, "standings");
   const isBasketball = normalizedSport === "basketball";
   const isCricket = normalizedSport === "cricket";
+  const isEsports = normalizedSport === "esports";
+  const specialDatabaseCopy = isCricket || isEsports ? getSpecialDatabaseCopy(locale, isCricket ? "cricket" : "esports") : null;
   const [snapshot, articlePlans] = await Promise.all([
     getDatabaseSnapshot(normalizedSport, leagueSlug, locale),
-    view === "schedule" || isCricket ? getArticlePlans(normalizedSport, locale) : Promise.resolve([]),
+    view === "schedule" || isCricket || isEsports ? getArticlePlans(normalizedSport, locale) : Promise.resolve([]),
   ]);
   const availableLeagues = snapshot.leagues.filter((item) => item.sport === normalizedSport);
   const leagueMeta = availableLeagues.find((item) => item.slug === leagueSlug) ?? availableLeagues[0];
@@ -430,13 +475,22 @@ export default async function DatabasePage({
     }),
   );
   const cricketDepth = isCricket ? getCricketLeagueDepth(leagueSlug, locale) : null;
-  const sportLabel = isCricket ? livePageCopy.cricket.sportLabel : isBasketball ? databasePageCopy.basketball : databasePageCopy.football;
+  const esportsDepth = isEsports ? getEsportsLeagueDepth(leagueSlug, locale) : null;
+  const sportLabel = isCricket
+    ? livePageCopy.cricket.sportLabel
+    : isEsports
+      ? livePageCopy.esports.sportLabel
+      : isBasketball
+        ? databasePageCopy.basketball
+        : databasePageCopy.football;
   const leagueName = leagueMeta?.name ?? leagueSlug;
   const standingsTitle = isCricket
-    ? cricketDatabaseCopy.standingsDescription
+    ? specialDatabaseCopy?.standingsDescription ?? databasePageCopy.cricketStandingsDescription
+    : isEsports
+      ? specialDatabaseCopy?.standingsDescription ?? databasePageCopy.esportsStandingsDescription
     : isBasketball
-    ? databasePageCopy.basketballStandingsDescription
-    : databasePageCopy.footballStandingsDescription;
+      ? databasePageCopy.basketballStandingsDescription
+      : databasePageCopy.footballStandingsDescription;
   const viewEyebrow =
     view === "schedule"
       ? locale === "en"
@@ -466,6 +520,12 @@ export default async function DatabasePage({
     { href: "/plans", label: siteNavItems.find((item) => item.href === "/plans")?.label ?? "计划单" },
     { href: "/ai-predictions", label: siteNavItems.find((item) => item.href === "/ai-predictions")?.label ?? "AI 预测" },
   ];
+  const esportsQuickLinks = [
+    { href: "/live/esports", label: siteNavItems.find((item) => item.href === "/live/esports")?.label ?? "电竞比分" },
+    { href: `/database?sport=esports&league=${leagueSlug}&view=standings`, label: databasePageCopy.defaultViewTitle },
+    { href: "/plans?sport=esports", label: siteNavItems.find((item) => item.href === "/plans")?.label ?? "计划单" },
+    { href: "/ai-predictions?sport=esports", label: siteNavItems.find((item) => item.href === "/ai-predictions")?.label ?? "AI 预测" },
+  ];
   const openNextMatchLabel = locale === "en" ? "Open match" : locale === "zh-TW" ? "查看比賽" : "查看比赛";
   const planActionLabel = getPlanActionLabel(locale);
   const firstLeaguePlanHref = leagueMatchIds.map((matchId) => planHrefByMatchId[matchId]).find(Boolean);
@@ -474,6 +534,12 @@ export default async function DatabasePage({
         { href: `/database?sport=cricket&league=${leagueSlug}&view=schedule`, label: uiCopy.scheduleResults },
         ...(firstLeaguePlanHref ? [{ href: firstLeaguePlanHref, label: planActionLabel }] : []),
       ]
+    : isEsports
+      ? [
+          { href: `/database?sport=esports&league=${leagueSlug}&view=schedule`, label: uiCopy.scheduleResults },
+          { href: `/database?sport=esports&league=${leagueSlug}&view=teams`, label: uiCopy.teamProfile },
+          ...(firstLeaguePlanHref ? [{ href: firstLeaguePlanHref, label: planActionLabel }] : []),
+        ]
     : undefined;
 
   return (
@@ -501,7 +567,8 @@ export default async function DatabasePage({
             >
               <option value="football">{databasePageCopy.football}</option>
               <option value="basketball">{databasePageCopy.basketball}</option>
-              <option value="cricket">{cricketDatabaseCopy.sportLabel}</option>
+              <option value="cricket">{getSpecialDatabaseCopy(locale, "cricket").sportLabel}</option>
+              <option value="esports">{getSpecialDatabaseCopy(locale, "esports").sportLabel}</option>
             </select>
           </label>
 
@@ -552,15 +619,15 @@ export default async function DatabasePage({
             view === "standings"
               ? standingsTitle
               : view === "schedule"
-                ? isCricket
-                  ? cricketDatabaseCopy.scheduleDescription
+                ? isCricket || isEsports
+                  ? specialDatabaseCopy?.scheduleDescription ?? databasePageCopy.scheduleDescription
                   : databasePageCopy.scheduleDescription
                 : view === "teams"
-                  ? isCricket
-                    ? cricketDatabaseCopy.teamsDescription
+                  ? isCricket || isEsports
+                    ? specialDatabaseCopy?.teamsDescription ?? databasePageCopy.teamsDescription
                     : databasePageCopy.teamsDescription
-                  : isCricket
-                    ? cricketDatabaseCopy.h2hDescription
+                  : isCricket || isEsports
+                    ? specialDatabaseCopy?.h2hDescription ?? databasePageCopy.h2hDescription
                     : databasePageCopy.h2hDescription
           }
         />
@@ -592,10 +659,37 @@ export default async function DatabasePage({
           </>
         ) : null}
 
+        {isEsports ? (
+          <>
+            <div className="mt-6 flex flex-wrap gap-3">
+              {esportsQuickLinks.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/30 hover:bg-white/[0.07] hover:text-white"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+            {esportsDepth?.overviewCards && esportsDepth.overviewCards.length > 0 ? (
+              <div className="mt-6 grid gap-4 md:grid-cols-3">
+                {esportsDepth.overviewCards.map((card) => (
+                  <article key={card.label} className="rounded-[1.2rem] border border-sky-300/12 bg-sky-300/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.18em] text-sky-100/75">{card.label}</p>
+                    <p className="mt-3 text-2xl font-semibold text-white">{card.value}</p>
+                    <p className="mt-2 text-sm text-slate-300">{card.detail}</p>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+
         {view === "standings" && snapshot.standings.length > 0 ? (
           isCricket ? (
             <CricketStandingsTable rows={snapshot.standings} columns={databasePageCopy.standingsColumns} />
-          ) : isBasketball ? (
+          ) : isBasketball || isEsports ? (
             <BasketballStandingsTable rows={snapshot.standings} columns={databasePageCopy.standingsColumns} />
           ) : (
             <FootballStandingsTable rows={snapshot.standings} columns={databasePageCopy.standingsColumns} />
@@ -615,7 +709,7 @@ export default async function DatabasePage({
             matchActionLabel={uiCopy.viewMatch}
             secondaryActionLabel={planActionLabel}
             planHrefByMatchId={planHrefByMatchId}
-            supplementalNoteByMatchId={cricketDepth?.scheduleNotesByMatchId}
+            supplementalNoteByMatchId={cricketDepth?.scheduleNotesByMatchId ?? esportsDepth?.scheduleNotesByMatchId}
           />
         ) : null}
 
@@ -630,9 +724,9 @@ export default async function DatabasePage({
           <TeamCards
             teams={leagueTeams}
             columns={databasePageCopy.standingsColumns}
-            teamIntelById={cricketDepth?.teamIntelById}
-            nextMatchActionLabel={isCricket ? openNextMatchLabel : undefined}
-            planActionLabel={isCricket ? planActionLabel : undefined}
+            teamIntelById={cricketDepth?.teamIntelById ?? esportsDepth?.teamIntelById}
+            nextMatchActionLabel={isCricket || isEsports ? openNextMatchLabel : undefined}
+            planActionLabel={isCricket || isEsports ? planActionLabel : undefined}
             planHrefByMatchId={planHrefByMatchId}
           />
         ) : null}
@@ -642,7 +736,7 @@ export default async function DatabasePage({
         ) : null}
 
         {view === "h2h" && snapshot.h2h.length > 0 ? (
-          <HeadToHeadList rows={snapshot.h2h} storylines={cricketDepth?.storylines} actionLinks={h2hActionLinks} />
+          <HeadToHeadList rows={snapshot.h2h} storylines={cricketDepth?.storylines ?? esportsDepth?.storylines} actionLinks={h2hActionLinks} />
         ) : null}
 
         {view === "h2h" && snapshot.h2h.length === 0 ? (

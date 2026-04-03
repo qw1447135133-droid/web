@@ -101,6 +101,27 @@ function translateTeamName(value: string, locale: Locale) {
     case "卡拉奇国王":
     case "卡拉奇國王":
       return pickLocale({ "zh-CN": "卡拉奇国王", "zh-TW": "卡拉奇國王", en: "Karachi Kings" }, locale);
+    case "T1":
+      return pickLocale({ "zh-CN": "T1", "zh-TW": "T1", en: "T1" }, locale);
+    case "Bilibili Gaming":
+    case "哔哩哔哩电竞":
+    case "嗶哩嗶哩電競":
+      return pickLocale({ "zh-CN": "哔哩哔哩电竞", "zh-TW": "嗶哩嗶哩電競", en: "Bilibili Gaming" }, locale);
+    case "Gaimin Gladiators":
+    case "盖米格斗士":
+    case "蓋米格鬥士":
+      return pickLocale({ "zh-CN": "盖米格斗士", "zh-TW": "蓋米格鬥士", en: "Gaimin Gladiators" }, locale);
+    case "Team Liquid":
+    case "液体战队":
+    case "液體戰隊":
+      return pickLocale({ "zh-CN": "液体战队", "zh-TW": "液體戰隊", en: "Team Liquid" }, locale);
+    case "Natus Vincere":
+    case "NaVi":
+    case "NAVI":
+      return pickLocale({ "zh-CN": "Natus Vincere", "zh-TW": "Natus Vincere", en: "Natus Vincere" }, locale);
+    case "Team Vitality":
+    case "Vitality":
+      return pickLocale({ "zh-CN": "Team Vitality", "zh-TW": "Team Vitality", en: "Team Vitality" }, locale);
     default:
       return value;
   }
@@ -152,6 +173,21 @@ const leagueTranslations: Record<string, Localized<{ name: string; region: strin
     "zh-TW": { name: "The Hundred", region: "歐洲" },
     en: { name: "The Hundred", region: "Europe" },
   },
+  lpl: {
+    "zh-CN": { name: "LPL", region: "亚洲" },
+    "zh-TW": { name: "LPL", region: "亞洲" },
+    en: { name: "LPL", region: "Asia" },
+  },
+  dreamleague: {
+    "zh-CN": { name: "DreamLeague", region: "国际" },
+    "zh-TW": { name: "DreamLeague", region: "國際" },
+    en: { name: "DreamLeague", region: "International" },
+  },
+  "blast-premier": {
+    "zh-CN": { name: "BLAST Premier", region: "欧洲" },
+    "zh-TW": { name: "BLAST Premier", region: "歐洲" },
+    en: { name: "BLAST Premier", region: "Europe" },
+  },
 };
 
 const moduleTranslations: Record<string, Localized<Omit<HomepageModule, "id" | "href">>> = {
@@ -159,19 +195,19 @@ const moduleTranslations: Record<string, Localized<Omit<HomepageModule, "id" | "
     "zh-CN": {
       eyebrow: "Live Intelligence",
       title: "即时比分与赔率摘要",
-      description: "覆盖足球、篮球与板球核心赛道，支持热门联赛、状态与赔率的联动浏览。",
+      description: "覆盖足球、篮球、板球与电竞核心赛道，支持热门联赛、状态与赔率的联动浏览。",
       metric: "256 场比赛在线",
     },
     "zh-TW": {
       eyebrow: "Live Intelligence",
       title: "即時比分與賠率摘要",
-      description: "覆蓋足球、籃球與板球核心賽道，支援熱門聯賽、狀態與賠率的聯動瀏覽。",
+      description: "覆蓋足球、籃球、板球與電競核心賽道，支援熱門聯賽、狀態與賠率的聯動瀏覽。",
       metric: "256 場比賽在線",
     },
     en: {
       eyebrow: "Live Intelligence",
       title: "Live scores and odds snapshots",
-      description: "Cover football, basketball, and cricket fixtures with league, status, and odds context in one surface.",
+      description: "Cover football, basketball, cricket, and esports fixtures with league, status, and odds context in one surface.",
       metric: "256 matches online",
     },
   },
@@ -233,6 +269,26 @@ const moduleTranslations: Record<string, Localized<Omit<HomepageModule, "id" | "
       title: "Cricket scores and schedule entry",
       description: "Expose IPL, PSL, and other cricket fixtures as a dedicated phase-one entry for live scores, results, and league discovery.",
       metric: "3 cricket fixtures in view",
+    },
+  },
+  esports: {
+    "zh-CN": {
+      eyebrow: "Esports Grid",
+      title: "电竞赛事入口",
+      description: "补齐 LoL、Dota 2、CS2 三条电竞主线，把重点赛事、赛程和资料入口接进首页模块层。",
+      metric: "3 条电竞主线",
+    },
+    "zh-TW": {
+      eyebrow: "Esports Grid",
+      title: "電競賽事入口",
+      description: "補齊 LoL、Dota 2、CS2 三條電競主線，把重點賽事、賽程與資料入口接進首頁模組層。",
+      metric: "3 條電競主線",
+    },
+    en: {
+      eyebrow: "Esports Grid",
+      title: "Esports match hub",
+      description: "Add LoL, Dota 2, and CS2 as first-class modules across the homepage, live board, and database entry.",
+      metric: "3 esports circuits live",
     },
   },
 };
@@ -472,6 +528,84 @@ const matchTranslations: Record<string, Localized<MatchTranslation>> = {
       insight: "Lahore's late acceleration made the difference after Karachi's middle-order collapse.",
     },
   },
+  m10: {
+    "zh-CN": {
+      leagueName: "LPL",
+      venue: "上海电竞中心",
+      homeTeam: "T1",
+      awayTeam: "哔哩哔哩电竞",
+      statLine: "小龙 2:1，先锋 1:0，经济差 2.4k。",
+      insight: "BLG 前中期控图更稳，但 T1 团战切后排的成功率更高。",
+    },
+    "zh-TW": {
+      leagueName: "LPL",
+      venue: "上海電競中心",
+      homeTeam: "T1",
+      awayTeam: "嗶哩嗶哩電競",
+      statLine: "小龍 2:1，先鋒 1:0，經濟差 2.4k。",
+      insight: "BLG 前中期控圖更穩，但 T1 團戰切後排的成功率更高。",
+    },
+    en: {
+      leagueName: "LPL",
+      venue: "Shanghai Esports Center",
+      homeTeam: "T1",
+      awayTeam: "Bilibili Gaming",
+      statLine: "Dragons 2:1, Herald 1:0, gold lead 2.4k.",
+      insight: "BLG are controlling the map better early, but T1 have been cleaner at diving the back line in teamfights.",
+    },
+  },
+  m11: {
+    "zh-CN": {
+      leagueName: "DreamLeague",
+      venue: "DreamHack Studio",
+      homeTeam: "盖米格斗士",
+      awayTeam: "液体战队",
+      statLine: "近 10 场一塔控制率 62% 对 55%，中期 Roshan 控制是关键差异。",
+      insight: "GG 的中期节奏更成熟，Liquid 需要在对线期建立资源领先。",
+    },
+    "zh-TW": {
+      leagueName: "DreamLeague",
+      venue: "DreamHack Studio",
+      homeTeam: "蓋米格鬥士",
+      awayTeam: "液體戰隊",
+      statLine: "近 10 場一塔控制率 62% 對 55%，中期 Roshan 控制是關鍵差異。",
+      insight: "GG 的中期節奏更成熟，Liquid 需要在對線期建立資源領先。",
+    },
+    en: {
+      leagueName: "DreamLeague",
+      venue: "DreamHack Studio",
+      homeTeam: "Gaimin Gladiators",
+      awayTeam: "Team Liquid",
+      statLine: "First-tower control is 62% versus 55% across the last ten matches, with Roshan control as the major separator.",
+      insight: "GG have the cleaner mid-game cadence, while Liquid need to bank lane-phase resources early.",
+    },
+  },
+  m12: {
+    "zh-CN": {
+      leagueName: "BLAST Premier",
+      venue: "哥本哈根 BLAST Arena",
+      homeTeam: "Natus Vincere",
+      awayTeam: "Team Vitality",
+      statLine: "首杀 17:14，平均回合时长 1:41，Vitality CT 端胜率 71%。",
+      insight: "Vitality 在关键长枪局的残局处理更稳，NAVI 后两图进攻停滞明显。",
+    },
+    "zh-TW": {
+      leagueName: "BLAST Premier",
+      venue: "哥本哈根 BLAST Arena",
+      homeTeam: "Natus Vincere",
+      awayTeam: "Team Vitality",
+      statLine: "首殺 17:14，平均回合時長 1:41，Vitality CT 端勝率 71%。",
+      insight: "Vitality 在關鍵長槍局的殘局處理更穩，NAVI 後兩圖進攻停滯明顯。",
+    },
+    en: {
+      leagueName: "BLAST Premier",
+      venue: "BLAST Arena Copenhagen",
+      homeTeam: "Natus Vincere",
+      awayTeam: "Team Vitality",
+      statLine: "Opening kills 17:14, average round time 1:41, and Vitality posted a 71% CT-side win rate.",
+      insight: "Vitality handled the late-round rifle situations better, while NAVI stalled badly on the last two attacking halves.",
+    },
+  },
 };
 
 const authorTranslations: Record<string, Localized<Omit<AuthorTeam, "id">>> = {
@@ -499,6 +633,21 @@ const authorTranslations: Record<string, Localized<Omit<AuthorTeam, "id">>> = {
     "zh-CN": { name: "板球长局研究室", focus: "IPL / PSL", streak: "11 连红", winRate: "61%", monthlyRoi: "73%", followers: "7.8k", badge: "回合节奏" },
     "zh-TW": { name: "板球長局研究室", focus: "IPL / PSL", streak: "11 連紅", winRate: "61%", monthlyRoi: "73%", followers: "7.8k", badge: "回合節奏" },
     en: { name: "Cricket Long-Overs Lab", focus: "IPL / PSL", streak: "11 straight wins", winRate: "61%", monthlyRoi: "73%", followers: "7.8k", badge: "Over Tempo" },
+  },
+  a6: {
+    "zh-CN": { name: "峡谷资源布控台", focus: "LoL / LPL / 国际赛", streak: "14 连红", winRate: "64%", monthlyRoi: "92%", followers: "8.6k", badge: "资源置换" },
+    "zh-TW": { name: "峽谷資源布控台", focus: "LoL / LPL / 國際賽", streak: "14 連紅", winRate: "64%", monthlyRoi: "92%", followers: "8.6k", badge: "資源置換" },
+    en: { name: "Rift Resource Desk", focus: "LoL / LPL / international events", streak: "14 straight wins", winRate: "64%", monthlyRoi: "92%", followers: "8.6k", badge: "Resource Trade" },
+  },
+  a7: {
+    "zh-CN": { name: "Roshan 节奏研究室", focus: "Dota 2 / DreamLeague", streak: "9 连红", winRate: "62%", monthlyRoi: "71%", followers: "6.1k", badge: "团战转折" },
+    "zh-TW": { name: "Roshan 節奏研究室", focus: "Dota 2 / DreamLeague", streak: "9 連紅", winRate: "62%", monthlyRoi: "71%", followers: "6.1k", badge: "團戰轉折" },
+    en: { name: "Roshan Tempo Lab", focus: "Dota 2 / DreamLeague", streak: "9 straight wins", winRate: "62%", monthlyRoi: "71%", followers: "6.1k", badge: "Fight Swing" },
+  },
+  a8: {
+    "zh-CN": { name: "爆头回合实验室", focus: "CS2 / BLAST / IEM", streak: "12 连红", winRate: "65%", monthlyRoi: "84%", followers: "7.4k", badge: "回合拆解" },
+    "zh-TW": { name: "爆頭回合實驗室", focus: "CS2 / BLAST / IEM", streak: "12 連紅", winRate: "65%", monthlyRoi: "84%", followers: "7.4k", badge: "回合拆解" },
+    en: { name: "Headshot Round Lab", focus: "CS2 / BLAST / IEM", streak: "12 straight wins", winRate: "65%", monthlyRoi: "84%", followers: "7.4k", badge: "Round Breakdown" },
   },
 };
 
@@ -550,6 +699,21 @@ const predictionTranslations: Record<string, Localized<Pick<PredictionRecord, "m
     "zh-CN": { market: "独赢", pick: "加尔各答骑士", explanation: "客队近阶段追分效率和后段火力都更稳定，主队前六回合防守泄压问题仍未解决。", factors: ["追分效率", "前六回合失分", "终盘长打储备"] },
     "zh-TW": { market: "獨贏", pick: "加爾各答騎士", explanation: "客隊近階段追分效率和後段火力都更穩定，主隊前六回合防守洩壓問題仍未解決。", factors: ["追分效率", "前六回合失分", "終盤長打儲備"] },
     en: { market: "Moneyline", pick: "Kolkata Knight Riders", explanation: "Kolkata are more stable late in the chase and Bengaluru still have not solved their powerplay leakage.", factors: ["Chasing efficiency", "Powerplay leakage", "Late hitting depth"] },
+  },
+  p7: {
+    "zh-CN": { market: "系列赛让图", pick: "T1 -1.5", explanation: "T1 的前期线权和二先锋转换更稳，BLG 如果无法在第二条小龙前打开边路，系列赛容易被直接带走。", factors: ["先锋节奏", "边线压制", "系列赛经验"] },
+    "zh-TW": { market: "系列賽讓圖", pick: "T1 -1.5", explanation: "T1 的前期線權和第二隻先鋒轉換更穩，BLG 如果無法在第二條小龍前打開邊路，系列賽很容易被直接帶走。", factors: ["先鋒節奏", "邊線壓制", "系列賽經驗"] },
+    en: { market: "Series Handicap", pick: "T1 -1.5", explanation: "T1 are cleaner in lane control and second-Herald conversion. If BLG fail to crack side lanes before the second drake, the series can get away from them quickly.", factors: ["Herald tempo", "Side-lane pressure", "Series experience"] },
+  },
+  p8: {
+    "zh-CN": { market: "总地图数", pick: "2.5 大图", explanation: "两队近期都更依赖后期团战和买活节奏，系列赛拉满三图的概率高于盘口定价。", factors: ["Roshan 控制拉锯", "后期决策", "英雄池对冲"] },
+    "zh-TW": { market: "總地圖數", pick: "2.5 大圖", explanation: "兩隊近期都更依賴後期團戰和買活節奏，系列賽打滿三圖的機率高於盤口定價。", factors: ["Roshan 控制拉鋸", "後期決策", "英雄池對沖"] },
+    en: { market: "Total Maps", pick: "Over 2.5 Maps", explanation: "Both teams are leaning harder on late-fight execution and buyback control, so a full three-map series is more likely than the line suggests.", factors: ["Roshan tug-of-war", "Late-game decisions", "Draft counterplay"] },
+  },
+  p9: {
+    "zh-CN": { market: "让分局", pick: "Team Vitality -3.5", explanation: "Vitality 在手枪局和中段道具转换的稳定性更高，NAVI 近期在 T 侧默认阶段经常掉第一波资源。", factors: ["手枪局优势", "CT 端稳态", "残局终结"] },
+    "zh-TW": { market: "讓分局", pick: "Team Vitality -3.5", explanation: "Vitality 在手槍局和中段道具轉換的穩定性更高，NAVI 近期在 T 側預設階段經常掉第一波資源。", factors: ["手槍局優勢", "CT 端穩態", "殘局終結"] },
+    en: { market: "Round Handicap", pick: "Team Vitality -3.5", explanation: "Vitality are cleaner in pistol rounds and mid-round utility conversion, while NAVI keep leaking the first layer of map control on T sides.", factors: ["Pistol edge", "Stable CT halves", "Late-round closeouts"] },
   },
 };
 
@@ -699,6 +863,93 @@ const planTranslations: Record<string, Localized<Pick<ArticlePlan, "title" | "le
       tags: ["Chasing efficiency", "Powerplay", "Moneyline angle"],
     },
   },
+  "plan-6": {
+    "zh-CN": {
+      title: "T1 vs Bilibili Gaming：资源置换与系列赛压制",
+      league: "LPL",
+      teaser: "这组对局的核心不是单点操作，而是谁能先把先锋、小龙和边路线权串成连续收益。",
+      marketSummary: "倾向 T1 系列赛让图，次看小龙节奏压制。",
+      analysis: ["T1 最近的中野联动把第一条先锋后的推进收益兑现得更完整，尤其擅长用视野提前锁死第二波资源交换。", "BLG 的团战爆发力仍在，但如果前十五分钟没打出足够的线优，边路会被 T1 的转线效率持续压缩。", "盘口若继续维持在 T1 -1.5 附近，说明市场也在承认双方系列赛稳定性的差距。"],
+      performance: "近 18 中 12",
+      tags: ["先锋节奏", "系列赛让图", "线权压制"],
+    },
+    "zh-TW": {
+      title: "T1 vs Bilibili Gaming：資源置換與系列賽壓制",
+      league: "LPL",
+      teaser: "這組對局的核心不是單點操作，而是誰能先把先鋒、小龍與邊線權串成連續收益。",
+      marketSummary: "傾向 T1 系列賽讓圖，次看小龍節奏壓制。",
+      analysis: ["T1 近期的中野聯動把第一隻先鋒後的推進收益兌現得更完整，尤其擅長用視野提前鎖死第二波資源交換。", "BLG 的團戰爆發力仍在，但如果前十五分鐘沒有打出足夠線優，邊路會被 T1 的轉線效率持續壓縮。", "如果盤口繼續維持在 T1 -1.5 附近，代表市場也在承認雙方系列賽穩定性的差距。"],
+      performance: "近 18 中 12",
+      tags: ["先鋒節奏", "系列賽讓圖", "線權壓制"],
+    },
+    en: {
+      title: "T1 vs Bilibili Gaming: resource trades and series control",
+      league: "LPL",
+      teaser: "This matchup is less about isolated mechanics and more about who chains Herald, drake, and side-lane pressure into repeatable gains.",
+      marketSummary: "Lean T1 on the series handicap, with a secondary angle on early drake control.",
+      analysis: ["T1 have been converting their first Herald setups into cleaner map progression, especially when they can lock the second resource cycle with vision first.", "BLG still own explosive teamfight windows, but if they fail to build enough lane leverage in the first 15 minutes the side lanes tend to collapse under T1's rotations.", "If the number stays near T1 -1.5, the market is still pricing a visible stability gap across the full series."],
+      performance: "12 wins from last 18",
+      tags: ["Herald tempo", "Series handicap", "Lane control"],
+    },
+  },
+  "plan-7": {
+    "zh-CN": {
+      title: "Gaimin Gladiators vs Team Liquid：Roshan 节奏与买活窗口",
+      league: "DreamLeague",
+      teaser: "DreamLeague 这组对局会更像一场耐心博弈，Roshan 控制权和买活窗口才是真正的胜负手。",
+      marketSummary: "总地图数偏大，第三图决胜概率更高。",
+      analysis: ["GG 近期在一代盾后的地图压制明显增强，但 Liquid 对拖后期和高地防守的处理依然具备顶级样本。", "双方都不愿意在前两波大型目标上过度 all-in，这会让比赛更容易进入拉长的资源博弈。", "如果系列赛第一图打到 40 分钟以上，后续盘口通常会继续抬高大图价值。"],
+      performance: "近 15 中 10",
+      tags: ["Roshan 控制", "买活窗口", "大图方向"],
+    },
+    "zh-TW": {
+      title: "Gaimin Gladiators vs Team Liquid：Roshan 節奏與買活窗口",
+      league: "DreamLeague",
+      teaser: "DreamLeague 這組對局更像一場耐心博弈，Roshan 控制權與買活窗口才是真正的勝負手。",
+      marketSummary: "總地圖數偏大，第三圖決勝機率更高。",
+      analysis: ["GG 近期在一代盾後的地圖壓制明顯增強，但 Liquid 對拖後期和高地防守的處理依然具備頂級樣本。", "雙方都不願意在前兩波大型目標上過度 all-in，這會讓比賽更容易進入拉長的資源博弈。", "如果系列賽第一圖打到 40 分鐘以上，後續盤口通常會繼續抬高大圖價值。"],
+      performance: "近 15 中 10",
+      tags: ["Roshan 控制", "買活窗口", "大圖方向"],
+    },
+    en: {
+      title: "Gaimin Gladiators vs Team Liquid: Roshan tempo and buyback windows",
+      league: "DreamLeague",
+      teaser: "This DreamLeague series is more likely to become a patience test where Roshan control and buyback timing decide the outcome.",
+      marketSummary: "Leaning toward the over on total maps, with map three live in the range.",
+      analysis: ["GG have improved their post-Aegis map control, but Liquid still grade out as an elite team when games stretch into late high-ground sequences.", "Neither side has shown a strong appetite to overcommit on the first two major objective windows, which makes longer resource trades more likely.", "If map one goes beyond the 40-minute mark, the market usually starts repricing the full-series over more aggressively."],
+      performance: "10 wins from last 15",
+      tags: ["Roshan control", "Buyback window", "Over maps"],
+    },
+  },
+  "plan-8": {
+    "zh-CN": {
+      title: "Natus Vincere vs Team Vitality：手枪局与攻防侧切换",
+      league: "BLAST Premier",
+      teaser: "CS2 这场的差异不在明星枪男，而在手枪局兑现率和中段经济管理谁更稳。",
+      marketSummary: "看好 Vitality 让分局，附带 CT 端压制思路。",
+      analysis: ["Vitality 近期在 Mirage 和 Inferno 的 CT 端开局更稳定，往往能把前五回合的经济优势持续滚大。", "NAVI 进攻端默认信息收集偏慢，遇到中段道具不足时，经常被拖进低成功率残局。", "如果赛前盘口仍给到 Vitality -3.5，说明市场对他们中段回合控制力仍然买账。"],
+      performance: "近 17 中 11",
+      tags: ["手枪局", "侧别压制", "残局处理"],
+    },
+    "zh-TW": {
+      title: "Natus Vincere vs Team Vitality：手槍局與攻防側切換",
+      league: "BLAST Premier",
+      teaser: "CS2 這場的差異不在明星槍男，而在手槍局兌現率與中段經濟管理誰更穩。",
+      marketSummary: "看好 Vitality 讓分局，附帶 CT 端壓制思路。",
+      analysis: ["Vitality 近期在 Mirage 和 Inferno 的 CT 端開局更穩定，往往能把前五回合的經濟優勢持續滾大。", "NAVI 進攻端預設資訊收集偏慢，遇到中段道具不足時，經常被拖進低成功率殘局。", "如果賽前盤口仍給到 Vitality -3.5，代表市場對他們中段回合控制力仍然買帳。"],
+      performance: "近 17 中 11",
+      tags: ["手槍局", "側別壓制", "殘局處理"],
+    },
+    en: {
+      title: "Natus Vincere vs Team Vitality: pistol rounds and side-switch control",
+      league: "BLAST Premier",
+      teaser: "The edge in this CS2 matchup is less about star aim and more about pistol conversion plus cleaner mid-game economy control.",
+      marketSummary: "Back Vitality on the round handicap with a supporting CT-side angle.",
+      analysis: ["Vitality have opened Mirage and Inferno CT halves more cleanly of late, often rolling their first-five-round economy edge forward.", "NAVI are still a little slow in default information gathering on T sides, which keeps forcing them into low-percentage late-rounds once utility thins out.", "If the pre-match line remains near Vitality -3.5, the market is still paying respect to their round-to-round control."],
+      performance: "11 wins from last 17",
+      tags: ["Pistol rounds", "Side control", "Late-round execution"],
+    },
+  },
 };
 
 export function localizeHomepageModule(module: HomepageModule, locale: Locale): HomepageModule {
@@ -772,6 +1023,12 @@ export function localizeScheduleRow(row: ScheduleRow, locale: Locale): ScheduleR
     终盘提速兑现: { "zh-CN": "终盘提速兑现", "zh-TW": "終盤提速兌現", en: "Late acceleration delivered" },
     次日焦点战: { "zh-CN": "次日焦点战", "zh-TW": "次日焦點戰", en: "Next-match headline fixture" },
     联赛入口预留: { "zh-CN": "联赛入口预留", "zh-TW": "聯賽入口預留", en: "League entry placeholder" },
+    "LoL 焦点对局": { "zh-CN": "LoL 焦点对局", "zh-TW": "LoL 焦點對局", en: "LoL featured matchup" },
+    中期团战样本: { "zh-CN": "中期团战样本", "zh-TW": "中期團戰樣本", en: "Mid-game teamfight sample" },
+    "Dota 2 焦点系列赛": { "zh-CN": "Dota 2 焦点系列赛", "zh-TW": "Dota 2 焦點系列賽", en: "Dota 2 featured series" },
+    "Roshan 控制样本": { "zh-CN": "Roshan 控制样本", "zh-TW": "Roshan 控制樣本", en: "Roshan control sample" },
+    "CS2 强强对话": { "zh-CN": "CS2 强强对话", "zh-TW": "CS2 強強對話", en: "CS2 heavyweight clash" },
+    残局处理优势: { "zh-CN": "残局处理优势", "zh-TW": "殘局處理優勢", en: "Late-round execution edge" },
   } as const;
 
   return {
@@ -792,6 +1049,12 @@ export function localizeHeadToHeadRow(row: HeadToHeadRow, locale: Locale): HeadT
     终盘得分爆发: { "zh-CN": "终盘得分爆发", "zh-TW": "終盤得分爆發", en: "Late scoring burst" },
     掉门拐点明显: { "zh-CN": "掉门拐点明显", "zh-TW": "掉門拐點明顯", en: "Wicket-loss turning point" },
     联赛样本预留: { "zh-CN": "联赛样本预留", "zh-TW": "聯賽樣本預留", en: "League sample placeholder" },
+    中期团战决胜: { "zh-CN": "中期团战决胜", "zh-TW": "中期團戰決勝", en: "Mid-game teamfights decided it" },
+    前期线权领先: { "zh-CN": "前期线权领先", "zh-TW": "前期線權領先", en: "Early lane control edge" },
+    "Roshan 控制占优": { "zh-CN": "Roshan 控制占优", "zh-TW": "Roshan 控制佔優", en: "Roshan control edge" },
+    后期团战翻盘: { "zh-CN": "后期团战翻盘", "zh-TW": "後期團戰翻盤", en: "Late teamfight comeback" },
+    残局稳定性更强: { "zh-CN": "残局稳定性更强", "zh-TW": "殘局穩定性更強", en: "Stronger late-round stability" },
+    CT端压制明显: { "zh-CN": "CT 端压制明显", "zh-TW": "CT 端壓制明顯", en: "Clear CT-side control" },
   } as const;
 
   return {

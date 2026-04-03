@@ -53,8 +53,19 @@ export type AdminHomepageBannerRecord = {
   sortOrder: number;
   impressionCount: number;
   clickCount: number;
+  primaryImpressionCount: number;
+  primaryClickCount: number;
+  secondaryImpressionCount: number;
+  secondaryClickCount: number;
   lastImpressionAt?: string;
   lastClickAt?: string;
+  recentImpressionCount: number;
+  recentClickCount: number;
+  dailyStats: Array<{
+    date: string;
+    impressionCount: number;
+    clickCount: number;
+  }>;
 };
 
 export type AdminSiteAnnouncementRecord = {
@@ -82,6 +93,7 @@ const siteSurfacePaths = [
   "/live/football",
   "/live/basketball",
   "/live/cricket",
+  "/live/esports",
   "/database",
   "/ai-predictions",
   "/plans",
@@ -228,11 +240,41 @@ export async function getAdminHomepageModules(): Promise<AdminHomepageModuleReco
 }
 
 export async function getAdminHomepageBanners(): Promise<AdminHomepageBannerRecord[]> {
+  const recentSince = new Date();
+  recentSince.setUTCDate(recentSince.getUTCDate() - 6);
+  recentSince.setUTCHours(0, 0, 0, 0);
+
   const banners = await prisma.homepageBanner.findMany({
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+    include: {
+      dailyStats: {
+        where: {
+          metricDate: {
+            gte: recentSince,
+          },
+        },
+        select: {
+          metricDate: true,
+          impressionCount: true,
+          clickCount: true,
+        },
+      },
+    },
   });
 
   return banners.map((banner) => ({
+    dailyStats: Array.from({ length: 7 }, (_, index) => {
+      const metricDate = new Date(recentSince);
+      metricDate.setUTCDate(recentSince.getUTCDate() + index);
+      const metricDateKey = metricDate.toISOString();
+      const snapshot = banner.dailyStats.find((item) => item.metricDate.toISOString() === metricDateKey);
+
+      return {
+        date: metricDateKey,
+        impressionCount: snapshot?.impressionCount ?? 0,
+        clickCount: snapshot?.clickCount ?? 0,
+      };
+    }),
     id: banner.id,
     key: banner.key,
     theme: banner.theme,
@@ -256,8 +298,14 @@ export async function getAdminHomepageBanners(): Promise<AdminHomepageBannerReco
     sortOrder: banner.sortOrder,
     impressionCount: banner.impressionCount,
     clickCount: banner.clickCount,
+    primaryImpressionCount: banner.primaryImpressionCount,
+    primaryClickCount: banner.primaryClickCount,
+    secondaryImpressionCount: banner.secondaryImpressionCount,
+    secondaryClickCount: banner.secondaryClickCount,
     lastImpressionAt: banner.lastImpressionAt?.toISOString(),
     lastClickAt: banner.lastClickAt?.toISOString(),
+    recentImpressionCount: banner.dailyStats.reduce((sum, item) => sum + item.impressionCount, 0),
+    recentClickCount: banner.dailyStats.reduce((sum, item) => sum + item.clickCount, 0),
   }));
 }
 
@@ -606,6 +654,55 @@ export async function toggleHomepageBannerStatus(id: string) {
 
   safeRevalidate(siteSurfacePaths);
   return updated;
+}
+
+export async function duplicateHomepageBanner(id: string) {
+  const current = await prisma.homepageBanner.findUnique({
+    where: { id },
+  });
+
+  if (!current) {
+    throw new Error("首页 Banner 不存在。");
+  }
+
+  const key = await ensureUniqueBannerKey(`${current.key}-copy`);
+
+  const duplicated = await prisma.homepageBanner.create({
+    data: {
+      key,
+      theme: current.theme,
+      titleZhCn: current.titleZhCn,
+      titleZhTw: current.titleZhTw,
+      titleEn: current.titleEn,
+      subtitleZhCn: current.subtitleZhCn,
+      subtitleZhTw: current.subtitleZhTw,
+      subtitleEn: current.subtitleEn,
+      descriptionZhCn: current.descriptionZhCn,
+      descriptionZhTw: current.descriptionZhTw,
+      descriptionEn: current.descriptionEn,
+      href: current.href,
+      ctaLabelZhCn: current.ctaLabelZhCn,
+      ctaLabelZhTw: current.ctaLabelZhTw,
+      ctaLabelEn: current.ctaLabelEn,
+      imageUrl: current.imageUrl,
+      startsAt: current.startsAt,
+      endsAt: current.endsAt,
+      status: "inactive",
+      sortOrder: current.sortOrder + 1,
+      impressionCount: 0,
+      clickCount: 0,
+      primaryImpressionCount: 0,
+      primaryClickCount: 0,
+      secondaryImpressionCount: 0,
+      secondaryClickCount: 0,
+      lastImpressionAt: null,
+      lastClickAt: null,
+    },
+    select: { id: true },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+  return duplicated;
 }
 
 export async function moveHomepageModule(id: string, direction: "up" | "down") {

@@ -19,7 +19,7 @@ export const homepageModules: HomepageModule[] = [
     id: "scores",
     eyebrow: "Live Intelligence",
     title: "即时比分与赔率摘要",
-    description: "覆盖足球、篮球与板球主赛道，支持热门联赛、开赛状态与赔率摘要联动浏览。",
+    description: "覆盖足球、篮球、板球与电竞主赛道，支持热门联赛、开赛状态与赔率摘要联动浏览。",
     href: "/live/football",
     metric: "256 场赛事在线",
   },
@@ -46,6 +46,14 @@ export const homepageModules: HomepageModule[] = [
     description: "先覆盖 IPL、PSL 等热门赛事的即时比分、赛果和联赛入口，作为板球板块的一期主入口。",
     href: "/live/cricket",
     metric: "3 场板球赛事可看",
+  },
+  {
+    id: "esports",
+    eyebrow: "Esports Grid",
+    title: "电竞赛事入口",
+    description: "新增 LoL、Dota 2、CS2 三条电竞分线，先覆盖重点赛事比分、赛程和资料库入口。",
+    href: "/live/esports",
+    metric: "3 条电竞赛事主线",
   },
 ];
 
@@ -98,17 +106,17 @@ export const siteAnnouncementSeeds: SiteAnnouncementSeed[] = [
     translations: {
       "zh-CN": {
         title: "数据同步",
-        message: "足球、篮球、板球数据正在按联赛批次刷新，若出现延迟可先查看最近同步状态。",
+        message: "足球、篮球、板球、电竞数据正在按联赛批次刷新，若出现延迟可先查看最近同步状态。",
         ctaLabel: "查看比分",
       },
       "zh-TW": {
         title: "資料同步",
-        message: "足球、籃球、板球資料正在按聯賽批次刷新，若出現延遲可先查看最近同步狀態。",
+        message: "足球、籃球、板球、電競資料正在按聯賽批次刷新，若出現延遲可先查看最近同步狀態。",
         ctaLabel: "查看比分",
       },
       en: {
         title: "Data sync",
-        message: "Football, basketball, and cricket feeds are refreshed in league batches. Check the live boards if an update looks delayed.",
+        message: "Football, basketball, cricket, and esports feeds are refreshed in league batches. Check the live boards if an update looks delayed.",
         ctaLabel: "Open live scores",
       },
     },
@@ -144,19 +152,19 @@ export const homepageBannerSeeds: HomepageBannerSeed[] = [
       "zh-CN": {
         title: "实时赛况总控台",
         subtitle: "Live Match Command",
-        description: "把足球、篮球、板球的即时比分、赔率摘要与热门比赛入口集中到首页首屏，方便运营直接承接流量。",
+        description: "把足球、篮球、板球、电竞的即时比分、赔率摘要与热门比赛入口集中到首页首屏，方便运营直接承接流量。",
         ctaLabel: "进入比分大厅",
       },
       "zh-TW": {
         title: "即時賽況總控台",
         subtitle: "Live Match Command",
-        description: "把足球、籃球、板球的即時比分、賠率摘要與熱門比賽入口集中到首頁首屏，方便營運直接承接流量。",
+        description: "把足球、籃球、板球、電競的即時比分、賠率摘要與熱門比賽入口集中到首頁首屏，方便營運直接承接流量。",
         ctaLabel: "進入比分大廳",
       },
       en: {
         title: "Live command deck",
         subtitle: "Live Match Command",
-        description: "Bring football, basketball, and cricket live scores, odds snapshots, and hot-match discovery into one front-page command surface.",
+        description: "Bring football, basketball, cricket, and esports live scores, odds snapshots, and hot-match discovery into one front-page command surface.",
         ctaLabel: "Open live scores",
       },
     },
@@ -231,6 +239,9 @@ export const leagues: League[] = [
   { id: "ipl", slug: "ipl", sport: "cricket", name: "IPL", region: "亚洲", season: "2026", featured: true },
   { id: "psl", slug: "psl", sport: "cricket", name: "PSL", region: "亚洲", season: "2026", featured: true },
   { id: "the-hundred", slug: "the-hundred", sport: "cricket", name: "The Hundred", region: "欧洲", season: "2026", featured: false },
+  { id: "lpl", slug: "lpl", sport: "esports", name: "LPL", region: "亚洲", season: "2026 Spring", featured: true },
+  { id: "dreamleague", slug: "dreamleague", sport: "esports", name: "DreamLeague", region: "国际", season: "Season 27", featured: true },
+  { id: "blast-premier", slug: "blast-premier", sport: "esports", name: "BLAST Premier", region: "欧洲", season: "2026 Spring", featured: true },
 ];
 
 export const teams: Team[] = [
@@ -388,6 +399,72 @@ export const teams: Team[] = [
     homeRecord: "4-2",
     awayRecord: "2-3",
   },
+  {
+    id: "t1",
+    leagueSlug: "lpl",
+    sport: "esports",
+    name: "T1",
+    shortName: "T1",
+    ranking: 2,
+    form: "W-W-L-W-W",
+    homeRecord: "6-2",
+    awayRecord: "5-3",
+  },
+  {
+    id: "bilibili-gaming",
+    leagueSlug: "lpl",
+    sport: "esports",
+    name: "Bilibili Gaming",
+    shortName: "BLG",
+    ranking: 1,
+    form: "W-W-W-L-W",
+    homeRecord: "7-1",
+    awayRecord: "6-2",
+  },
+  {
+    id: "gaimin-gladiators",
+    leagueSlug: "dreamleague",
+    sport: "esports",
+    name: "Gaimin Gladiators",
+    shortName: "GG",
+    ranking: 1,
+    form: "W-W-W-W-L",
+    homeRecord: "8-1",
+    awayRecord: "5-2",
+  },
+  {
+    id: "team-liquid",
+    leagueSlug: "dreamleague",
+    sport: "esports",
+    name: "Team Liquid",
+    shortName: "TL",
+    ranking: 3,
+    form: "L-W-W-W-L",
+    homeRecord: "6-3",
+    awayRecord: "4-3",
+  },
+  {
+    id: "natus-vincere",
+    leagueSlug: "blast-premier",
+    sport: "esports",
+    name: "Natus Vincere",
+    shortName: "NAVI",
+    ranking: 2,
+    form: "W-L-W-W-W",
+    homeRecord: "7-2",
+    awayRecord: "5-3",
+  },
+  {
+    id: "team-vitality",
+    leagueSlug: "blast-premier",
+    sport: "esports",
+    name: "Team Vitality",
+    shortName: "VIT",
+    ranking: 1,
+    form: "W-W-W-W-W",
+    homeRecord: "8-1",
+    awayRecord: "6-2",
+  },
 ];
 
 export const matches: Match[] = [
@@ -520,6 +597,49 @@ export const matches: Match[] = [
     insight: "拉合尔在终盘提速成功兑现优势，客队中段掉门成为转折点。",
     odds: { home: 1.81, away: 2.01, spread: "-6.5", total: "349.5", movement: "down" },
   },
+  {
+    id: "m10",
+    sport: "esports",
+    leagueSlug: "lpl",
+    kickoff: "2026-04-02T19:00:00+08:00",
+    status: "live",
+    clock: "Map 2",
+    venue: "Shanghai Esports Center",
+    homeTeam: "T1",
+    awayTeam: "Bilibili Gaming",
+    score: "1 - 0",
+    statLine: "小龙 2:1，先锋 1:0，经济差 2.4k",
+    insight: "BLG 前中期控图更稳，但 T1 团战切后排的成功率更高。",
+    odds: { home: 1.88, away: 1.92, spread: "-1.5", total: "26.5", movement: "up" },
+  },
+  {
+    id: "m11",
+    sport: "esports",
+    leagueSlug: "dreamleague",
+    kickoff: "2026-04-02T21:30:00+08:00",
+    status: "upcoming",
+    venue: "DreamHack Studio",
+    homeTeam: "Gaimin Gladiators",
+    awayTeam: "Team Liquid",
+    score: "-",
+    statLine: "近 10 场一塔控制率 62% 对 55%，中期 Roshan 控制是关键差异。",
+    insight: "GG 的中期节奏更成熟，Liquid 需要在对线期建立资源领先。",
+    odds: { home: 1.74, away: 2.08, spread: "-1.5", total: "2.5", movement: "flat" },
+  },
+  {
+    id: "m12",
+    sport: "esports",
+    leagueSlug: "blast-premier",
+    kickoff: "2026-04-01T23:30:00+08:00",
+    status: "finished",
+    venue: "BLAST Arena Copenhagen",
+    homeTeam: "Natus Vincere",
+    awayTeam: "Team Vitality",
+    score: "1 - 2",
+    statLine: "首杀 17:14，平均回合时长 1:41，Vitality CT 端胜率 71%",
+    insight: "Vitality 在关键长枪局的残局处理更稳，NAVI 后两图进攻停滞明显。",
+    odds: { home: 2.04, away: 1.76, spread: "+1.5", total: "2.5", movement: "down" },
+  },
 ];
 
 export const authorTeams: AuthorTeam[] = [
@@ -528,6 +648,9 @@ export const authorTeams: AuthorTeam[] = [
   { id: "a3", name: "指数工作室", focus: "欧洲主流联赛", streak: "23 连红", winRate: "67%", monthlyRoi: "105%", followers: "12.1k", badge: "盘口追踪" },
   { id: "a4", name: "数据罗盘狙击手", focus: "冷门与单关", streak: "4 连红", winRate: "58%", monthlyRoi: "46%", followers: "6.7k", badge: "冷门解码" },
   { id: "a5", name: "板球长局研究室", focus: "IPL / PSL", streak: "11 连红", winRate: "61%", monthlyRoi: "73%", followers: "7.8k", badge: "回合节奏" },
+  { id: "a6", name: "峡谷资源布控台", focus: "LoL / LPL / 国际赛", streak: "14 连红", winRate: "64%", monthlyRoi: "92%", followers: "8.6k", badge: "资源置换" },
+  { id: "a7", name: "Roshan 节奏研究室", focus: "Dota 2 / DreamLeague", streak: "9 连红", winRate: "62%", monthlyRoi: "71%", followers: "6.1k", badge: "团战转折" },
+  { id: "a8", name: "爆头回合实验室", focus: "CS2 / BLAST / IEM", streak: "12 连红", winRate: "65%", monthlyRoi: "84%", followers: "7.4k", badge: "回合拆解" },
 ];
 
 export const predictions: PredictionRecord[] = [
@@ -602,6 +725,42 @@ export const predictions: PredictionRecord[] = [
     explanation: "客队近阶段追分效率和后段火力都更稳定，主队前六回合防守泄压问题仍未解决。",
     factors: ["追分效率", "前六回合失分", "终盘长打储备"],
     result: "pending",
+  },
+  {
+    id: "p7",
+    sport: "esports",
+    matchId: "m10",
+    market: "系列赛让图",
+    pick: "T1 -1.5",
+    confidence: "68%",
+    expectedEdge: "+5.4%",
+    explanation: "T1 的前期线权和二先锋转换更稳，BLG 如果无法在第二条小龙前打开边路，系列赛容易被直接带走。",
+    factors: ["先锋节奏", "边线压制", "系列赛经验"],
+    result: "pending",
+  },
+  {
+    id: "p8",
+    sport: "esports",
+    matchId: "m11",
+    market: "总地图数",
+    pick: "2.5 大图",
+    confidence: "61%",
+    expectedEdge: "+3.7%",
+    explanation: "两队近期都更依赖后期团战和买活节奏，系列赛拉满三图的概率高于盘口定价。",
+    factors: ["Roshan 控制拉锯", "后期决策", "英雄池对冲"],
+    result: "pending",
+  },
+  {
+    id: "p9",
+    sport: "esports",
+    matchId: "m12",
+    market: "让分局",
+    pick: "Team Vitality -3.5",
+    confidence: "66%",
+    expectedEdge: "+4.9%",
+    explanation: "Vitality 在手枪局和中段道具转换的稳定性更高，NAVI 近期在 T 侧默认阶段经常掉第一波资源。",
+    factors: ["手枪局优势", "CT 端稳态", "残局终结"],
+    result: "won",
   },
 ];
 
@@ -711,6 +870,69 @@ export const articlePlans: ArticlePlan[] = [
     performance: "近 10 中 6",
     tags: ["追分效率", "Powerplay", "独赢方向"],
   },
+  {
+    id: "plan-6",
+    slug: "t1-blg-series-resource-pressure",
+    sport: "esports",
+    matchId: "m10",
+    title: "T1 vs Bilibili Gaming：资源置换与系列赛压制",
+    league: "LPL",
+    kickoff: "2026-04-02T18:30:00+08:00",
+    authorId: "a6",
+    teaser: "这组对局的核心不是单点操作，而是谁能先把先锋、小龙和边路线权串成连续收益。",
+    marketSummary: "倾向 T1 系列赛让图，次看小龙节奏压制。",
+    analysis: [
+      "T1 最近的中野联动把第一条先锋后的推进收益兑现得更完整，尤其擅长用视野提前锁死第二波资源交换。",
+      "BLG 的团战爆发力仍在，但如果前十五分钟没打出足够的线优，边路会被 T1 的转线效率持续压缩。",
+      "盘口若继续维持在 T1 -1.5 附近，说明市场也在承认双方系列赛稳定性的差距。",
+    ],
+    price: 36,
+    isHot: true,
+    performance: "近 18 中 12",
+    tags: ["先锋节奏", "系列赛让图", "线权压制"],
+  },
+  {
+    id: "plan-7",
+    slug: "gg-liquid-roshan-tempo",
+    sport: "esports",
+    matchId: "m11",
+    title: "Gaimin Gladiators vs Team Liquid：Roshan 节奏与买活窗口",
+    league: "DreamLeague",
+    kickoff: "2026-04-02T21:00:00+08:00",
+    authorId: "a7",
+    teaser: "DreamLeague 这组对局会更像一场耐心博弈，Roshan 控制权和买活窗口才是真正的胜负手。",
+    marketSummary: "总地图数偏大，第三图决胜概率更高。",
+    analysis: [
+      "GG 近期在一代盾后的地图压制明显增强，但 Liquid 对拖后期和高地防守的处理依然具备顶级样本。",
+      "双方都不愿意在前两波大型目标上过度 all-in，这会让比赛更容易进入拉长的资源博弈。",
+      "如果系列赛第一图打到 40 分钟以上，后续盘口通常会继续抬高大图价值。",
+    ],
+    price: 32,
+    isHot: false,
+    performance: "近 15 中 10",
+    tags: ["Roshan 控制", "买活窗口", "大图方向"],
+  },
+  {
+    id: "plan-8",
+    slug: "navi-vitality-side-split",
+    sport: "esports",
+    matchId: "m12",
+    title: "Natus Vincere vs Team Vitality：手枪局与攻防侧切换",
+    league: "BLAST Premier",
+    kickoff: "2026-04-01T23:00:00+08:00",
+    authorId: "a8",
+    teaser: "CS2 这场的差异不在明星枪男，而在手枪局兑现率和中段经济管理谁更稳。",
+    marketSummary: "看好 Vitality 让分局，附带 CT 端压制思路。",
+    analysis: [
+      "Vitality 近期在 Mirage 和 Inferno 的 CT 端开局更稳定，往往能把前五回合的经济优势持续滚大。",
+      "NAVI 进攻端默认信息收集偏慢，遇到中段道具不足时，经常被拖进低成功率残局。",
+      "如果赛前盘口仍给到 Vitality -3.5，说明市场对他们中段回合控制力仍然买账。",
+    ],
+    price: 34,
+    isHot: true,
+    performance: "近 17 中 11",
+    tags: ["手枪局", "侧别压制", "残局处理"],
+  },
 ];
 
 export const membershipPlans: MembershipPlan[] = [
@@ -792,12 +1014,58 @@ export const cricketH2HRowsByLeague: Record<string, HeadToHeadRow[]> = {
   ],
 };
 
+export const esportsScheduleRowsByLeague: Record<string, ScheduleRow[]> = {
+  lpl: [
+    { id: "m10", date: "04-02", fixture: "T1 vs Bilibili Gaming", result: "直播中", note: "LoL 焦点对局" },
+    { date: "03-30", fixture: "Bilibili Gaming vs T1", result: "2-1", note: "中期团战样本" },
+  ],
+  dreamleague: [
+    { id: "m11", date: "04-02", fixture: "Gaimin Gladiators vs Team Liquid", result: "待开赛", note: "Dota 2 焦点系列赛" },
+    { date: "03-29", fixture: "Team Liquid vs Gaimin Gladiators", result: "1-2", note: "Roshan 控制样本" },
+  ],
+  "blast-premier": [
+    { id: "m12", date: "04-01", fixture: "Natus Vincere vs Team Vitality", result: "1-2", note: "CS2 强强对话" },
+    { date: "03-26", fixture: "Team Vitality vs Natus Vincere", result: "2-0", note: "残局处理优势" },
+  ],
+};
+
+export const esportsH2HRowsByLeague: Record<string, HeadToHeadRow[]> = {
+  lpl: [
+    { season: "2026 Spring", fixture: "T1 vs Bilibili Gaming", tag: "中期团战决胜" },
+    { season: "2025 Worlds", fixture: "Bilibili Gaming vs T1", tag: "前期线权领先" },
+  ],
+  dreamleague: [
+    { season: "Season 27", fixture: "Gaimin Gladiators vs Team Liquid", tag: "Roshan 控制占优" },
+    { season: "Season 26", fixture: "Team Liquid vs Gaimin Gladiators", tag: "后期团战翻盘" },
+  ],
+  "blast-premier": [
+    { season: "2026 Spring", fixture: "Natus Vincere vs Team Vitality", tag: "残局稳定性更强" },
+    { season: "2025 World Final", fixture: "Team Vitality vs Natus Vincere", tag: "CT 端压制明显" },
+  ],
+};
+
 export function getMatchesBySport(sport: Sport) {
   return matches.filter((match) => match.sport === sport);
 }
 
 export function getFeaturedMatches() {
-  return matches.slice(0, 4);
+  const statusOrder = {
+    live: 0,
+    upcoming: 1,
+    finished: 2,
+  } as const;
+
+  return [...matches]
+    .sort((left, right) => {
+      const statusDiff = statusOrder[left.status] - statusOrder[right.status];
+
+      if (statusDiff !== 0) {
+        return statusDiff;
+      }
+
+      return new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime();
+    })
+    .slice(0, 4);
 }
 
 export function getArticleBySlug(slug: string) {

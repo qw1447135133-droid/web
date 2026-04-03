@@ -28,7 +28,7 @@ function mapMovement(value: string | null | undefined): OddsSnapshot["movement"]
 }
 
 function mapSport(value: string): Sport {
-  if (value === "basketball" || value === "cricket") {
+  if (value === "basketball" || value === "cricket" || value === "esports") {
     return value;
   }
 

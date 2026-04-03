@@ -57,8 +57,18 @@ DATABASE_URL=file:/app/data/prod.db
 APISPORTS_KEY=你的真实密钥
 APISPORTS_TIMEZONE=Asia/Shanghai
 PAYMENT_PROVIDER=manual
+PAYMENT_CALLBACK_BASE_URL=https://你的域名
 PAYMENT_CALLBACK_TOKEN=长随机串
 PAYMENT_PENDING_MINUTES=30
+PAYMENT_MANUAL_CHANNEL_LABEL=支付宝转账
+PAYMENT_MANUAL_ACCOUNT_NAME=收款户名
+PAYMENT_MANUAL_ACCOUNT_NO=收款账号或钱包ID
+PAYMENT_MANUAL_QR_CODE_URL=https://你的CDN/收款码.png
+PAYMENT_MANUAL_NOTE=转账备注请填写支付流水号
+PAYMENT_HOSTED_GATEWAY_NAME=你的托管支付名称
+PAYMENT_HOSTED_CHECKOUT_URL=https://gateway.example.com/checkout
+PAYMENT_HOSTED_MERCHANT_ID=你的商户号
+PAYMENT_HOSTED_SIGNING_SECRET=长随机签名密钥
 SYNC_TRIGGER_TOKEN=长随机串
 ```
 
@@ -148,13 +158,61 @@ POST /api/payments/callback
 Authorization: Bearer ${PAYMENT_CALLBACK_TOKEN}
 ```
 
+正式接第三方支付前，建议至少配置：
+
+- `PAYMENT_CALLBACK_BASE_URL`
+  用于生成支付通道可访问的完整回调地址，例如 `https://example.com/api/payments/callback`
+- `PAYMENT_MANUAL_CHANNEL_LABEL`
+- `PAYMENT_MANUAL_ACCOUNT_NAME`
+- `PAYMENT_MANUAL_ACCOUNT_NO`
+- `PAYMENT_MANUAL_QR_CODE_URL`
+- `PAYMENT_MANUAL_NOTE`
+
+这样在当前 `manual` 模式下，前台收银页就能展示真实的收款说明、账号或二维码，而不是只显示订单号。
+
+如果准备切到通用托管支付骨架，还要额外配置：
+
+- `PAYMENT_PROVIDER=hosted`
+- `PAYMENT_HOSTED_GATEWAY_NAME`
+- `PAYMENT_HOSTED_CHECKOUT_URL`
+- `PAYMENT_HOSTED_MERCHANT_ID`
+- `PAYMENT_HOSTED_SIGNING_SECRET`
+
+当前仓库已经支持一个“通用 hosted gateway 骨架”：
+
+- 购买后会先跳内部 `launch` 路由，再跳转到第三方托管支付页
+- 回调入口会先做共享令牌校验，再对 hosted payload 做 HMAC 签名校验
+- 这是一个接真实支付前的适配层，不是任何一家 SDK 的最终接入版本
+
 请求体支持这些字段：
 
 - `type`: `membership` 或 `content`
 - `orderId`
+- `provider`
 - `state`: `paid`、`failed`、`closed`
+- `providerOrderId`
+- `eventId` / `providerEventId`
 - `paymentReference`
 - `reason`
+- `expiresAt`
+
+示例：
+
+```bash
+curl -X POST https://你的域名/api/payments/callback \
+  -H "Authorization: Bearer ${PAYMENT_CALLBACK_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "membership",
+    "provider": "manual",
+    "orderId": "cm123example",
+    "providerOrderId": "MANUAL-ORDER-MEM-ABC1234567",
+    "eventId": "evt_20260403_0001",
+    "state": "paid",
+    "paymentReference": "MANUAL-MEM-8A1B2C3D",
+    "expiresAt": "2026-04-03T16:30:00+08:00"
+  }'
+```
 
 ### 端口冲突
 

@@ -23,7 +23,8 @@ export function SiteHeader({
   const searchParams = useSearchParams();
   const [announcementItems, setAnnouncementItems] = useState(announcements);
   const searchKey = searchParams.toString();
-  const { brandCopy, roleLabels, sessionUiCopy, siteNavItems } = getSiteCopy(locale);
+  const searchQuery = searchParams.get("q") ?? "";
+  const { brandCopy, roleLabels, searchCopy, sessionUiCopy, siteNavItems } = getSiteCopy(locale);
   const visibleNavItems = siteNavItems.filter(
     (item) => item.href !== "/admin" || entitlements.canAccessAdminConsole,
   );
@@ -142,6 +143,30 @@ export function SiteHeader({
             )}
           </div>
         </div>
+
+        <form
+          action="/search"
+          method="get"
+          className="flex flex-col gap-3 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-3 md:flex-row md:items-center"
+        >
+          <label htmlFor="site-header-search" className="sr-only">
+            {searchCopy.inputLabel}
+          </label>
+          <input
+            id="site-header-search"
+            name="q"
+            type="search"
+            defaultValue={pathname === "/search" ? searchQuery : ""}
+            placeholder={searchCopy.headerPlaceholder}
+            className="flex-1 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+          />
+          <button
+            type="submit"
+            className="rounded-2xl bg-orange-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
+          >
+            {searchCopy.headerSubmit}
+          </button>
+        </form>
 
         <nav className="flex gap-2 overflow-x-auto pb-1">
           {visibleNavItems.map((item) => {

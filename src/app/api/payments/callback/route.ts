@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { normalizePaymentCallbackPayload, verifyHostedGatewayCallbackSignature } from "@/lib/payment-gateway";
 import { applyPaymentCallback, normalizePaymentOrderType } from "@/lib/payment-orders";
 import { getPaymentCallbackToken } from "@/lib/payment-provider";
 
@@ -27,18 +28,45 @@ export async function POST(request: NextRequest) {
   }
 
   const contentType = request.headers.get("content-type") ?? "";
-  const payload =
-    contentType.includes("application/json")
-      ? await request.json()
-      : Object.fromEntries((await request.formData()).entries());
+  let rawBody = "";
+  let payload: unknown;
+  try {
+    if (contentType.includes("application/json") || contentType.includes("application/x-www-form-urlencoded") || contentType.includes("text/plain")) {
+      rawBody = await request.text();
 
-  const type = normalizePaymentOrderType(String(payload.type || "content"));
-  const state = String(payload.state || "");
-  const orderId = String(payload.orderId || "");
-  const paymentReference = String(payload.paymentReference || "");
-  const reason = String(payload.reason || "");
+      if (contentType.includes("application/json")) {
+        payload = rawBody.trim() ? JSON.parse(rawBody) : {};
+      } else {
+        payload = Object.fromEntries(new URLSearchParams(rawBody).entries());
+      }
+    } else {
+      payload = Object.fromEntries((await request.formData()).entries());
+    }
+  } catch {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "Invalid payment callback payload.",
+      },
+      { status: 400 },
+    );
+  }
+  const normalizedPayload = normalizePaymentCallbackPayload(payload);
+  const payloadRecord =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
 
-  if (!orderId || (state !== "paid" && state !== "failed" && state !== "closed")) {
+  const type = normalizePaymentOrderType(normalizedPayload.type || String(payloadRecord.type || "content"));
+  const state = normalizedPayload.state ?? String(payloadRecord.state || "");
+  const orderId = normalizedPayload.orderId ?? String(payloadRecord.orderId || "");
+  const provider = normalizedPayload.provider ?? String(payloadRecord.provider || "");
+  const providerOrderId = normalizedPayload.providerOrderId ?? String(payloadRecord.providerOrderId || "");
+  const paymentReference = normalizedPayload.paymentReference ?? String(payloadRecord.paymentReference || "");
+  const reason = normalizedPayload.reason ?? String(payloadRecord.reason || "");
+  const expiresAt = normalizedPayload.expiresAt ?? String(payloadRecord.expiresAt || "");
+
+  if ((!orderId && !providerOrderId && !paymentReference) || (state !== "paid" && state !== "failed" && state !== "closed")) {
     return NextResponse.json(
       {
         ok: false,
@@ -48,28 +76,58 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (provider === "hosted") {
+    const signature = verifyHostedGatewayCallbackSignature(payload, rawBody);
+
+    if (!signature.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: signature.reason,
+        },
+        { status: 401 },
+      );
+    }
+  }
+
   try {
-    await applyPaymentCallback({
+    const result = await applyPaymentCallback({
       type,
       orderId,
       state,
+      provider,
+      providerOrderId,
       paymentReference,
       reason,
+      expiresAt,
+      callbackPayload: payload,
     });
 
     return NextResponse.json({
       ok: true,
-      orderId,
+      orderId: result.orderId || orderId,
       type,
       state,
+      duplicate: result.duplicate,
+      eventId: result.eventId,
+      eventKey: result.eventKey,
+      eventStatus: result.eventStatus,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Payment callback failed.";
+    const status =
+      message === "PAYMENT_ORDER_NOT_FOUND"
+        ? 404
+        : message === "PAYMENT_ORDER_ALREADY_REFUNDED"
+          ? 409
+          : 500;
+
     return NextResponse.json(
       {
         ok: false,
-        message: error instanceof Error ? error.message : "Payment callback failed.",
+        message,
       },
-      { status: 500 },
+      { status },
     );
   }
 }

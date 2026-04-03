@@ -49,6 +49,11 @@ type Props = {
   cancelHref: string;
   formCopy: BannerFormCopy;
   statusCopy: BannerStatusCopy;
+  seedTemplates: Array<{
+    id: string;
+    label: string;
+    draft: BannerDraft;
+  }>;
 };
 
 type PreviewLocale = Locale;
@@ -276,6 +281,7 @@ export function AdminBannerComposer({
   cancelHref,
   formCopy,
   statusCopy,
+  seedTemplates,
 }: Props) {
   const [draft, setDraft] = useState<BannerDraft>(() => getInitialDraft(currentBanner, homepageBannerCount));
   const [previewLocale, setPreviewLocale] = useState<PreviewLocale>(locale);
@@ -335,6 +341,25 @@ export function AdminBannerComposer({
               ? "發佈前可直接用下方即時預覽核對主題、三語文案、CTA 與跳轉品質。"
               : "发布前可直接用下方实时预览核对主题、三语文案、CTA 与跳转质量。"}
         </p>
+        {seedTemplates.length > 0 ? (
+          <div className="mt-4 border-t border-white/8 pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                {locale === "en" ? "Quick fill from seeds" : locale === "zh-TW" ? "快速套用種子" : "快速套用种子"}
+              </span>
+              {seedTemplates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => setDraft(template.draft)}
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 transition hover:border-orange-300/30 hover:text-white"
+                >
+                  {template.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <input type="hidden" name="intent" value="save" />

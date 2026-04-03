@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { canAccessContent, getSessionEntitlements, hasActiveMembership } from "@/lib/entitlements";
+import { normalizePaymentProvider } from "@/lib/payment-provider";
 import { prisma } from "@/lib/prisma";
 import type { MembershipPlanId, OrderStatus, SessionContext, SessionUser, UserRole } from "@/lib/types";
 
@@ -27,6 +28,9 @@ function toSessionUser(user: {
     planId: string;
     amount: number;
     status: string;
+    provider: string;
+    providerOrderId: string | null;
+    expiresAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
     paidAt: Date | null;
@@ -42,6 +46,9 @@ function toSessionUser(user: {
     contentId: string;
     amount: number;
     status: string;
+    provider: string;
+    providerOrderId: string | null;
+    expiresAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
     paidAt: Date | null;
@@ -67,6 +74,9 @@ function toSessionUser(user: {
       planId: order.planId as MembershipPlanId,
       amount: order.amount,
       status: order.status as OrderStatus,
+      provider: normalizePaymentProvider(order.provider),
+      providerOrderId: order.providerOrderId ?? undefined,
+      expiresAt: order.expiresAt?.toISOString(),
       createdAt: order.createdAt.toISOString(),
       updatedAt: order.updatedAt.toISOString(),
       paidAt: order.paidAt?.toISOString(),
@@ -82,6 +92,9 @@ function toSessionUser(user: {
       contentId: order.contentId,
       amount: order.amount,
       status: order.status as OrderStatus,
+      provider: normalizePaymentProvider(order.provider),
+      providerOrderId: order.providerOrderId ?? undefined,
+      expiresAt: order.expiresAt?.toISOString(),
       createdAt: order.createdAt.toISOString(),
       updatedAt: order.updatedAt.toISOString(),
       paidAt: order.paidAt?.toISOString(),

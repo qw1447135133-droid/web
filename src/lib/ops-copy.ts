@@ -3,6 +3,11 @@ import type { Locale } from "@/lib/i18n";
 type OpsCopy = {
   checkout: {
     providerLabel: string;
+    pendingWindowLabel: string;
+    callbackStatusLabel: string;
+    callbackStatusReady: string;
+    callbackStatusMissing: string;
+    callbackEndpointLabel: string;
     manualTitle: string;
     manualDescription: string;
     manualSteps: string[];
@@ -24,6 +29,8 @@ type OpsCopy = {
   sync: {
     dashboardTitle: string;
     dashboardDescription: string;
+    sourceLabel: string;
+    sourceValue: string;
     syncSaved: string;
     syncFailed: string;
     latestRuns: string;
@@ -43,6 +50,11 @@ type OpsCopy = {
 const zhCnCopy: OpsCopy = {
   checkout: {
     providerLabel: "支付模式",
+    pendingWindowLabel: "订单保留时长",
+    callbackStatusLabel: "回调令牌",
+    callbackStatusReady: "已配置",
+    callbackStatusMissing: "未配置",
+    callbackEndpointLabel: "回调地址",
     manualTitle: "订单已创建，等待人工核销",
     manualDescription: "当前站点已切到人工审核收款模式。用户完成转账、二维码付款或线下收款后，由运营在后台核销订单。",
     manualSteps: [
@@ -67,7 +79,9 @@ const zhCnCopy: OpsCopy = {
   },
   sync: {
     dashboardTitle: "同步运行状态",
-    dashboardDescription: "查看最近同步记录、失败详情与定时触发入口，确保赛事数据链路稳定。",
+    dashboardDescription: "查看最近同步记录、失败详情与定时触发入口。当前按 API-Sports 免费额度执行稳定轮转同步，而不是每次全量抓取。",
+    sourceLabel: "数据源",
+    sourceValue: "API-Sports 免费版",
     syncSaved: "同步任务已触发，最新执行记录已经刷新。",
     syncFailed: "同步任务执行失败，请检查最近一次运行记录。",
     latestRuns: "最近运行记录",
@@ -87,6 +101,11 @@ const zhCnCopy: OpsCopy = {
 const zhTwCopy: OpsCopy = {
   checkout: {
     providerLabel: "支付模式",
+    pendingWindowLabel: "訂單保留時長",
+    callbackStatusLabel: "回調令牌",
+    callbackStatusReady: "已配置",
+    callbackStatusMissing: "未配置",
+    callbackEndpointLabel: "回調位址",
     manualTitle: "訂單已建立，等待人工核銷",
     manualDescription: "目前站點已切到人工審核收款模式。使用者完成轉帳、二維碼付款或線下收款後，由營運在後台核銷訂單。",
     manualSteps: [
@@ -111,7 +130,9 @@ const zhTwCopy: OpsCopy = {
   },
   sync: {
     dashboardTitle: "同步執行狀態",
-    dashboardDescription: "查看最近同步紀錄、失敗詳情與定時觸發入口，確保賽事資料鏈路穩定。",
+    dashboardDescription: "查看最近同步紀錄、失敗詳情與定時觸發入口。目前按 API-Sports 免費額度執行穩定輪轉同步，而不是每次全量抓取。",
+    sourceLabel: "資料源",
+    sourceValue: "API-Sports 免費版",
     syncSaved: "同步任務已觸發，最新執行紀錄已刷新。",
     syncFailed: "同步任務執行失敗，請檢查最近一次執行紀錄。",
     latestRuns: "最近執行紀錄",
@@ -131,6 +152,11 @@ const zhTwCopy: OpsCopy = {
 const enCopy: OpsCopy = {
   checkout: {
     providerLabel: "Payment mode",
+    pendingWindowLabel: "Pending window",
+    callbackStatusLabel: "Callback token",
+    callbackStatusReady: "Configured",
+    callbackStatusMissing: "Missing",
+    callbackEndpointLabel: "Callback endpoint",
     manualTitle: "Order created and awaiting manual reconciliation",
     manualDescription: "The site is currently running in manual review mode. After a bank transfer, QR payment, or offline collection is completed, operations can reconcile the order from the admin console.",
     manualSteps: [
@@ -155,7 +181,9 @@ const enCopy: OpsCopy = {
   },
   sync: {
     dashboardTitle: "Sync runtime",
-    dashboardDescription: "Review recent sync runs, failure details, and the scheduled trigger entry so the sports data pipeline stays stable.",
+    dashboardDescription: "Review recent sync runs, failures, and the scheduled trigger entry. The pipeline now rotates leagues to stay within the API-Sports free-tier request budget.",
+    sourceLabel: "Data source",
+    sourceValue: "API-Sports free tier",
     syncSaved: "The sync job was triggered and the latest run history was refreshed.",
     syncFailed: "The sync job failed. Review the latest run history.",
     latestRuns: "Recent runs",

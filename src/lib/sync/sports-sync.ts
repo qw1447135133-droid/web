@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import {
-  getNowscoreDatabaseSnapshot,
-  getNowscoreMatchesBySport,
-  getNowscoreTrackedLeagues,
-} from "@/lib/nowscore-provider";
+  getApiSportsDatabaseSnapshot,
+  getApiSportsMatchesBySport,
+  getApiSportsTrackedLeagues,
+} from "@/lib/api-sports-provider";
 import type {
   HeadToHeadRow,
   League,
@@ -14,7 +14,7 @@ import type {
 } from "@/lib/types";
 
 function mapSport(value: string): Sport {
-  if (value === "basketball" || value === "cricket") {
+  if (value === "basketball" || value === "cricket" || value === "esports") {
     return value;
   }
 
@@ -39,6 +39,7 @@ type SportSyncBreakdown = {
 
 export type RecentSyncRun = {
   id: string;
+  source?: string;
   status: string;
   triggerSource?: string;
   requestedByUserId?: string;
@@ -52,7 +53,7 @@ export type RecentSyncRun = {
 
 export type SportsSyncSummary = {
   runId: string;
-  source: "nowscore";
+  source: "api-sports-free";
   scope: "tracked-sports";
   mode: "database-sync";
   status: "completed" | "completed_with_errors" | "failed";
@@ -117,6 +118,7 @@ const syncRunStore = prisma as typeof prisma & {
       orderBy: { startedAt: "asc" | "desc" };
       select: {
         id: true;
+        source: true;
         status: true;
         triggerSource: true;
         requestedByUserId: true;
@@ -127,6 +129,7 @@ const syncRunStore = prisma as typeof prisma & {
       };
     }): Promise<Array<{
       id: string;
+      source: string;
       status: string;
       triggerSource: string;
       requestedByUserId: string | null;
@@ -188,9 +191,18 @@ const syncRunStore = prisma as typeof prisma & {
   };
 };
 
+const SYNC_PROVIDER_SOURCE = "api-sports-free";
+const STORAGE_SOURCE = "nowscore";
+const SYNC_SCOPE = "tracked-sports";
+const SNAPSHOT_ROTATION_WINDOW_MS = 15 * 60 * 1000;
+const SNAPSHOT_ROTATION_LIMITS: Record<Extract<Sport, "football" | "basketball">, number> = {
+  football: 1,
+  basketball: 1,
+};
+
 const RUNNING_SYNC_STALE_MS = 30 * 60 * 1000;
 const SYNC_LOCK_TTL_MS = 20 * 60 * 1000;
-const SYNC_LOCK_KEY = "nowscore:tracked-sports";
+const SYNC_LOCK_KEY = `${SYNC_PROVIDER_SOURCE}:${SYNC_SCOPE}`;
 
 function createEmptyCounts(): SyncCounts {
   return {
@@ -249,8 +261,8 @@ async function acquireSyncLock(runId: string, triggerSource?: string, requestedB
     await syncRunStore.syncLock.create({
       data: {
         key: SYNC_LOCK_KEY,
-        source: "nowscore",
-        scope: "tracked-sports",
+        source: SYNC_PROVIDER_SOURCE,
+        scope: SYNC_SCOPE,
         runId,
         owner,
         acquiredAt: now,
@@ -276,8 +288,8 @@ async function acquireSyncLock(runId: string, triggerSource?: string, requestedB
     await syncRunStore.syncLock.upsert({
       where: { key: SYNC_LOCK_KEY },
       update: {
-        source: "nowscore",
-        scope: "tracked-sports",
+        source: SYNC_PROVIDER_SOURCE,
+        scope: SYNC_SCOPE,
         runId,
         owner,
         acquiredAt: now,
@@ -285,8 +297,8 @@ async function acquireSyncLock(runId: string, triggerSource?: string, requestedB
       },
       create: {
         key: SYNC_LOCK_KEY,
-        source: "nowscore",
-        scope: "tracked-sports",
+        source: SYNC_PROVIDER_SOURCE,
+        scope: SYNC_SCOPE,
         runId,
         owner,
         acquiredAt: now,
@@ -339,6 +351,19 @@ function buildMatchSourceKey(sport: Sport, matchId: string) {
   return `match:${sport}:${matchId}`;
 }
 
+function pickRotatingLeagues<T>(items: T[], seed: number, limit: number) {
+  if (items.length <= limit) {
+    return items;
+  }
+
+  return Array.from({ length: limit }, (_, index) => items[(seed + index) % items.length]);
+}
+
+function buildRotationSeed(sport: Extract<Sport, "football" | "basketball">, startedAt: Date) {
+  const slot = Math.floor(startedAt.getTime() / SNAPSHOT_ROTATION_WINDOW_MS);
+  return sport === "football" ? slot : slot + 1;
+}
+
 function parseScore(score: string) {
   const match = score.match(/(\d+)\s*-\s*(\d+)/);
 
@@ -384,7 +409,7 @@ async function upsertTrackedLeague(league: League, syncedAt: Date, counts: SyncC
   const stored = await prisma.league.upsert({
     where: { slug: league.slug },
     update: {
-      source: "nowscore",
+      source: STORAGE_SOURCE,
       sourceKey: buildLeagueSourceKey(league),
       sourcePayload: stringifyPayload(league),
       sport: league.sport,
@@ -396,7 +421,7 @@ async function upsertTrackedLeague(league: League, syncedAt: Date, counts: SyncC
       lastSyncedAt: syncedAt,
     },
     create: {
-      source: "nowscore",
+      source: STORAGE_SOURCE,
       sourceKey: buildLeagueSourceKey(league),
       sourcePayload: stringifyPayload(league),
       sport: league.sport,
@@ -440,7 +465,7 @@ async function syncLeagueSnapshot(
     const stored = await prisma.team.upsert({
       where: {
         source_sourceKey: {
-          source: "nowscore",
+          source: STORAGE_SOURCE,
           sourceKey,
         },
       },
@@ -459,7 +484,7 @@ async function syncLeagueSnapshot(
         leagueId: league.id,
       },
       create: {
-        source: "nowscore",
+        source: STORAGE_SOURCE,
         sourceKey,
         sourcePayload: stringifyPayload(team),
         sport: league.sport,
@@ -489,7 +514,7 @@ async function syncLeagueSnapshot(
     if (standings.length > 0) {
       await tx.standingSnapshot.createMany({
         data: standings.map((row) => ({
-          source: "nowscore",
+          source: STORAGE_SOURCE,
           sourcePayload: stringifyPayload(row),
           scope: "overall",
           rank: row.rank,
@@ -513,7 +538,7 @@ async function syncLeagueSnapshot(
     if (schedule.length > 0) {
       await tx.scheduleSnapshot.createMany({
         data: schedule.map((row) => ({
-          source: "nowscore",
+          source: STORAGE_SOURCE,
           sourcePayload: stringifyPayload(row),
           labelDate: row.date,
           fixture: row.fixture,
@@ -530,7 +555,7 @@ async function syncLeagueSnapshot(
     if (h2h.length > 0) {
       await tx.headToHeadSnapshot.createMany({
         data: h2h.map((row, index) => ({
-          source: "nowscore",
+          source: STORAGE_SOURCE,
           sourcePayload: stringifyPayload(row),
           season: row.season,
           fixture: row.fixture,
@@ -580,7 +605,9 @@ async function syncSportMatches(
   syncedAt: Date,
   counts: SyncCounts,
 ) {
-  const matches = await getNowscoreMatchesBySport(sport);
+  const matches = await getApiSportsMatchesBySport(sport, {
+    includeLiveOverlay: sport !== "football" ? true : false,
+  });
 
   for (const match of matches) {
     const league = leaguesBySlug.get(match.leagueSlug);
@@ -595,7 +622,7 @@ async function syncSportMatches(
     const storedMatch = await prisma.match.upsert({
       where: {
         source_sourceKey: {
-          source: "nowscore",
+          source: STORAGE_SOURCE,
           sourceKey: buildMatchSourceKey(sport, match.id),
         },
       },
@@ -620,7 +647,7 @@ async function syncSportMatches(
         lastSyncedAt: syncedAt,
       },
       create: {
-        source: "nowscore",
+        source: STORAGE_SOURCE,
         sourceKey: buildMatchSourceKey(sport, match.id),
         sourcePayload: stringifyPayload(match),
         sport,
@@ -648,7 +675,7 @@ async function syncSportMatches(
 
     await prisma.oddsSnapshot.create({
       data: {
-        source: "nowscore",
+        source: STORAGE_SOURCE,
         sourceKey: `${buildMatchSourceKey(sport, match.id)}:${syncedAt.toISOString()}`,
         sourcePayload: stringifyPayload(match.odds),
         market: "main",
@@ -679,8 +706,8 @@ export async function runTrackedSportsSync(input?: {
   const failures: string[] = [];
   const existingRun = await syncRunStore.syncRun.findFirst({
     where: {
-      source: "nowscore",
-      scope: "tracked-sports",
+      source: SYNC_PROVIDER_SOURCE,
+      scope: SYNC_SCOPE,
       status: "running",
     },
     orderBy: { startedAt: "desc" },
@@ -712,8 +739,8 @@ export async function runTrackedSportsSync(input?: {
   const syncRun = await syncRunStore.syncRun.create({
     data: {
       id: runId,
-      source: "nowscore",
-      scope: "tracked-sports",
+      source: SYNC_PROVIDER_SOURCE,
+      scope: SYNC_SCOPE,
       status: "running",
       triggerSource: input?.triggerSource ?? "manual-admin",
       requestedByUserId: input?.requestedByUserId ?? null,
@@ -722,19 +749,33 @@ export async function runTrackedSportsSync(input?: {
   });
 
   try {
-    const sports: Sport[] = ["football", "basketball"];
+    const sports: Array<Extract<Sport, "football" | "basketball">> = ["football", "basketball"];
     const sportBreakdown: SportSyncBreakdown[] = [];
     const leaguesBySlug = new Map<string, StoredLeagueRef>();
 
     for (const sport of sports) {
-      const trackedLeagues = await getNowscoreTrackedLeagues(sport);
+      const trackedLeagues = await getApiSportsTrackedLeagues(sport);
+      const selectedLeagues = pickRotatingLeagues(
+        trackedLeagues,
+        buildRotationSeed(sport, startedAt),
+        SNAPSHOT_ROTATION_LIMITS[sport],
+      );
 
       for (const league of trackedLeagues) {
         const storedLeague = await upsertTrackedLeague(league, startedAt, counts);
         leaguesBySlug.set(league.slug, storedLeague);
+      }
+
+      for (const league of selectedLeagues) {
+        const storedLeague = leaguesBySlug.get(league.slug);
+
+        if (!storedLeague) {
+          failures.push(`${sport}:${league.slug}: stored league missing`);
+          continue;
+        }
 
         try {
-          const snapshot = await getNowscoreDatabaseSnapshot(sport, league.slug);
+          const snapshot = await getApiSportsDatabaseSnapshot(sport, league.slug);
 
           if (!snapshot) {
             failures.push(`${sport}:${league.slug}: snapshot unavailable`);
@@ -754,6 +795,12 @@ export async function runTrackedSportsSync(input?: {
           failures.push(`${sport}:${league.slug}: ${error instanceof Error ? error.message : "snapshot sync failed"}`);
         }
       }
+
+      sportBreakdown.push({
+        sport,
+        leagues: selectedLeagues.length,
+        matches: 0,
+      });
     }
 
     const teamsByLeagueId = await loadStoredTeamsByLeague(Array.from(leaguesBySlug.values()).map((league) => league.id));
@@ -761,27 +808,21 @@ export async function runTrackedSportsSync(input?: {
     for (const sport of sports) {
       try {
         const matchCount = await syncSportMatches(sport, leaguesBySlug, teamsByLeagueId, startedAt, counts);
+        const existingBreakdown = sportBreakdown.find((item) => item.sport === sport);
 
-        sportBreakdown.push({
-          sport,
-          leagues: Array.from(leaguesBySlug.values()).filter((league) => league.sport === sport).length,
-          matches: matchCount,
-        });
+        if (existingBreakdown) {
+          existingBreakdown.matches = matchCount;
+        }
       } catch (error) {
         failures.push(`${sport}: match sync failed - ${error instanceof Error ? error.message : "unknown error"}`);
-        sportBreakdown.push({
-          sport,
-          leagues: Array.from(leaguesBySlug.values()).filter((league) => league.sport === sport).length,
-          matches: 0,
-        });
       }
     }
 
     const finishedAt = new Date();
     const summary: SportsSyncSummary = {
       runId: syncRun.id,
-      source: "nowscore",
-      scope: "tracked-sports",
+      source: SYNC_PROVIDER_SOURCE,
+      scope: SYNC_SCOPE,
       mode: "database-sync",
       status: failures.length > 0 ? "completed_with_errors" : "completed",
       startedAt: startedAt.toISOString(),
@@ -827,6 +868,7 @@ export async function getRecentSyncRuns(limit = 8): Promise<RecentSyncRun[]> {
     orderBy: { startedAt: "desc" },
     select: {
       id: true,
+      source: true,
       status: true,
       triggerSource: true,
       requestedByUserId: true,
@@ -842,6 +884,7 @@ export async function getRecentSyncRuns(limit = 8): Promise<RecentSyncRun[]> {
 
     return {
       id: run.id,
+      source: run.source,
       status: run.status,
       triggerSource: run.triggerSource || undefined,
       requestedByUserId: run.requestedByUserId ?? undefined,

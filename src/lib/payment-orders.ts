@@ -1,6 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { membershipPlans } from "@/lib/mock-data";
-import { getPaymentProvider, type PaymentProvider } from "@/lib/payment-provider";
+import {
+  getPaymentProvider,
+  getPaymentProviderExpiryMinutes,
+  normalizePaymentProvider,
+  type PaymentProvider,
+} from "@/lib/payment-provider";
 import { prisma } from "@/lib/prisma";
 import type { MembershipPlanId, OrderStatus } from "@/lib/types";
 
@@ -11,6 +16,8 @@ export type CheckoutOrder = {
   id: string;
   type: PaymentOrderType;
   provider: PaymentProvider;
+  providerOrderId?: string;
+  expiresAt?: string;
   title: string;
   description: string;
   amount: number;
@@ -27,6 +34,17 @@ export type CheckoutOrder = {
 };
 
 export const MEMBERSHIP_REFUND_BLOCKED_ERROR = "MEMBERSHIP_REFUND_BLOCKED";
+
+type PaymentCallbackState = "paid" | "failed" | "closed";
+type PaymentCallbackProcessingStatus = "received" | "processed" | "ignored" | "conflict" | "failed";
+
+export type ApplyPaymentCallbackResult = {
+  orderId: string;
+  duplicate: boolean;
+  eventKey: string;
+  eventId?: string;
+  eventStatus: PaymentCallbackProcessingStatus;
+};
 
 function isSafeInternalPath(value?: string, fallback = "/member") {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
@@ -59,11 +77,49 @@ function createMockPaymentReference(type: PaymentOrderType) {
   return `MOCK-${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
-function createPaymentReference(type: PaymentOrderType) {
-  const provider = getPaymentProvider();
+function createPaymentReference(type: PaymentOrderType, provider = getPaymentProvider()) {
   const prefix = type === "membership" ? "MEM" : "CNT";
-  const providerPrefix = provider === "mock" ? "MOCK" : "MANUAL";
+  const providerPrefix = provider === "mock" ? "MOCK" : provider === "hosted" ? "HOSTED" : "MANUAL";
   return `${providerPrefix}-${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+function createProviderOrderId(type: PaymentOrderType, provider = getPaymentProvider()) {
+  const prefix = type === "membership" ? "MEM" : "CNT";
+  const providerPrefix = provider === "mock" ? "MOCK" : provider === "hosted" ? "HOSTED" : "MANUAL";
+  return `${providerPrefix}-ORDER-${prefix}-${randomUUID().slice(0, 10).toUpperCase()}`;
+}
+
+function createOrderExpiry(provider = getPaymentProvider()) {
+  const expiresAt = new Date();
+  expiresAt.setMinutes(expiresAt.getMinutes() + getPaymentProviderExpiryMinutes(provider));
+  return expiresAt;
+}
+
+function buildPendingOrderData(type: PaymentOrderType, provider = getPaymentProvider()) {
+  return {
+    provider,
+    providerOrderId: createProviderOrderId(type, provider),
+    expiresAt: createOrderExpiry(provider),
+    paymentReference: createPaymentReference(type, provider),
+    callbackPayload: null,
+  };
+}
+
+function shouldRefreshPendingOrder(input: {
+  provider: string;
+  providerOrderId: string | null;
+  paymentReference: string | null;
+  expiresAt: Date | null;
+}, expectedProvider: PaymentProvider) {
+  const now = Date.now();
+
+  return (
+    input.provider !== expectedProvider ||
+    !input.providerOrderId ||
+    !input.paymentReference ||
+    !input.expiresAt ||
+    input.expiresAt.getTime() <= now
+  );
 }
 
 function buildDefaultRefundReason(type: PaymentOrderType) {
@@ -85,6 +141,8 @@ export async function createPendingMembershipOrder(input: {
   planId: MembershipPlanId;
 }) {
   const plan = resolveMembershipPlan(input.planId);
+  const provider = getPaymentProvider();
+  const pendingOrderData = buildPendingOrderData("membership", provider);
 
   if (!plan) {
     throw new Error("会员套餐不存在。");
@@ -97,10 +155,37 @@ export async function createPendingMembershipOrder(input: {
       status: "pending",
     },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      planId: true,
+      amount: true,
+      status: true,
+      provider: true,
+      providerOrderId: true,
+      expiresAt: true,
+      paymentReference: true,
+      callbackPayload: true,
+      paidAt: true,
+      failedAt: true,
+      failureReason: true,
+      closedAt: true,
+      refundedAt: true,
+      refundReason: true,
+      createdAt: true,
+      updatedAt: true,
+      userId: true,
+    },
   });
 
   if (existing) {
-    return existing;
+    if (!shouldRefreshPendingOrder(existing, provider)) {
+      return existing;
+    }
+
+    return prisma.membershipOrder.update({
+      where: { id: existing.id },
+      data: pendingOrderData,
+    });
   }
 
   return prisma.membershipOrder.create({
@@ -109,7 +194,7 @@ export async function createPendingMembershipOrder(input: {
       planId: plan.id,
       amount: plan.price,
       status: "pending",
-      paymentReference: createPaymentReference("membership"),
+      ...pendingOrderData,
     },
   });
 }
@@ -118,6 +203,8 @@ export async function createPendingContentOrder(input: {
   userId: string;
   contentId: string;
 }) {
+  const provider = getPaymentProvider();
+  const pendingOrderData = buildPendingOrderData("content", provider);
   const storedContent = await prisma.articlePlan.findUnique({
     where: { id: input.contentId },
     select: {
@@ -131,6 +218,19 @@ export async function createPendingContentOrder(input: {
     throw new Error("计划单不存在。");
   }
 
+  const paidOrder = await prisma.contentOrder.findFirst({
+    where: {
+      userId: input.userId,
+      contentId: input.contentId,
+      status: "paid",
+    },
+    orderBy: { paidAt: "desc" },
+  });
+
+  if (paidOrder) {
+    return paidOrder;
+  }
+
   const existing = await prisma.contentOrder.findFirst({
     where: {
       userId: input.userId,
@@ -138,10 +238,37 @@ export async function createPendingContentOrder(input: {
       status: "pending",
     },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      contentId: true,
+      amount: true,
+      status: true,
+      provider: true,
+      providerOrderId: true,
+      expiresAt: true,
+      paymentReference: true,
+      callbackPayload: true,
+      paidAt: true,
+      failedAt: true,
+      failureReason: true,
+      closedAt: true,
+      refundedAt: true,
+      refundReason: true,
+      createdAt: true,
+      updatedAt: true,
+      userId: true,
+    },
   });
 
   if (existing) {
-    return existing;
+    if (!shouldRefreshPendingOrder(existing, provider)) {
+      return existing;
+    }
+
+    return prisma.contentOrder.update({
+      where: { id: existing.id },
+      data: pendingOrderData,
+    });
   }
 
   return prisma.contentOrder.create({
@@ -150,7 +277,7 @@ export async function createPendingContentOrder(input: {
       contentId: input.contentId,
       amount: storedContent.price,
       status: "pending",
-      paymentReference: createPaymentReference("content"),
+      ...pendingOrderData,
     },
   });
 }
@@ -171,6 +298,9 @@ export async function getCheckoutOrder(input: {
         planId: true,
         amount: true,
         status: true,
+        provider: true,
+        providerOrderId: true,
+        expiresAt: true,
         createdAt: true,
         updatedAt: true,
         paidAt: true,
@@ -192,7 +322,9 @@ export async function getCheckoutOrder(input: {
     return {
       id: order.id,
       type: "membership",
-      provider: getPaymentProvider(),
+      provider: normalizePaymentProvider(order.provider),
+      providerOrderId: order.providerOrderId ?? undefined,
+      expiresAt: order.expiresAt?.toISOString(),
       title: plan?.name ?? order.planId,
       description: plan?.description ?? "会员权益订单",
       amount: order.amount,
@@ -219,6 +351,9 @@ export async function getCheckoutOrder(input: {
       contentId: true,
       amount: true,
       status: true,
+      provider: true,
+      providerOrderId: true,
+      expiresAt: true,
       createdAt: true,
       updatedAt: true,
       paidAt: true,
@@ -246,7 +381,9 @@ export async function getCheckoutOrder(input: {
   return {
     id: order.id,
     type: "content",
-    provider: getPaymentProvider(),
+    provider: normalizePaymentProvider(order.provider),
+    providerOrderId: order.providerOrderId ?? undefined,
+    expiresAt: order.expiresAt?.toISOString(),
     title: content?.title ?? order.contentId,
     description: content?.teaser ?? "单条计划单购买订单",
     amount: order.amount,
@@ -645,6 +782,7 @@ export async function markOrderPaidByAdmin(input: {
   type: PaymentOrderType;
   orderId: string;
   paymentReference?: string;
+  allowRecoverFromTerminal?: boolean;
 }) {
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findUnique({
@@ -672,7 +810,15 @@ export async function markOrderPaidByAdmin(input: {
       return;
     }
 
-    if (order.status !== "pending") {
+    if (order.status === "refunded") {
+      throw new Error("MEMBERSHIP_ORDER_NOT_PAYABLE");
+    }
+
+    if (!input.allowRecoverFromTerminal && order.status !== "pending") {
+      throw new Error("MEMBERSHIP_ORDER_NOT_PAYABLE");
+    }
+
+    if (input.allowRecoverFromTerminal && order.status !== "pending" && order.status !== "failed" && order.status !== "closed") {
       throw new Error("MEMBERSHIP_ORDER_NOT_PAYABLE");
     }
 
@@ -730,7 +876,15 @@ export async function markOrderPaidByAdmin(input: {
     return;
   }
 
-  if (order.status !== "pending") {
+  if (order.status === "refunded") {
+    throw new Error("CONTENT_ORDER_NOT_PAYABLE");
+  }
+
+  if (!input.allowRecoverFromTerminal && order.status !== "pending") {
+    throw new Error("CONTENT_ORDER_NOT_PAYABLE");
+  }
+
+  if (input.allowRecoverFromTerminal && order.status !== "pending" && order.status !== "failed" && order.status !== "closed") {
     throw new Error("CONTENT_ORDER_NOT_PAYABLE");
   }
 
@@ -879,34 +1033,467 @@ export async function closePendingOrderByAdmin(input: {
   }
 }
 
-export async function applyPaymentCallback(input: {
+function parsePaymentCallbackExpiry(value?: string) {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function serializePaymentCallbackPayload(payload?: unknown) {
+  if (payload === undefined) {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return String(payload);
+  }
+}
+
+function normalizePaymentCallbackEventId(payload?: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const candidates = [
+    record.eventId,
+    record.providerEventId,
+    record.eventID,
+    record.event_id,
+    record.notifyId,
+    record.notify_id,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function buildPaymentCallbackEventKey(input: {
+  provider?: string;
+  eventId?: string;
   type: PaymentOrderType;
-  orderId: string;
-  state: "paid" | "failed" | "closed";
+  orderId?: string;
+  providerOrderId?: string;
+  paymentReference?: string;
+  state: PaymentCallbackState;
+  reason?: string;
+  expiresAt?: string;
+}) {
+  const provider = normalizePaymentProvider(input.provider);
+  const eventId = input.eventId?.trim();
+
+  if (eventId) {
+    return `provider:${provider}:${eventId}`;
+  }
+
+  const fingerprint = JSON.stringify({
+    provider,
+    type: input.type,
+    orderId: input.orderId?.trim() ?? "",
+    providerOrderId: input.providerOrderId?.trim() ?? "",
+    paymentReference: input.paymentReference?.trim() ?? "",
+    state: input.state,
+    reason: input.reason?.trim() ?? "",
+    expiresAt: input.expiresAt?.trim() ?? "",
+  });
+
+  return `fallback:${provider}:${createHash("sha256").update(fingerprint).digest("hex")}`;
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002";
+}
+
+async function registerPaymentCallbackEvent(input: {
+  type: PaymentOrderType;
+  state: PaymentCallbackState;
+  provider?: string;
+  orderId?: string;
+  providerOrderId?: string;
   paymentReference?: string;
   reason?: string;
+  expiresAt?: string;
+  callbackPayload?: unknown;
 }) {
-  if (input.state === "paid") {
-    return markOrderPaidByAdmin({
-      type: input.type,
-      orderId: input.orderId,
-      paymentReference: input.paymentReference,
+  const provider = normalizePaymentProvider(input.provider);
+  const providerEventId = normalizePaymentCallbackEventId(input.callbackPayload);
+  const eventKey = buildPaymentCallbackEventKey({
+    provider,
+    eventId: providerEventId,
+    type: input.type,
+    orderId: input.orderId,
+    providerOrderId: input.providerOrderId,
+    paymentReference: input.paymentReference,
+    state: input.state,
+    reason: input.reason,
+    expiresAt: input.expiresAt,
+  });
+  const payload = serializePaymentCallbackPayload(input.callbackPayload);
+  const now = new Date();
+  const baseData = {
+    provider,
+    providerEventId: providerEventId ?? null,
+    eventKey,
+    orderType: input.type,
+    orderId: input.orderId?.trim() || null,
+    providerOrderId: input.providerOrderId?.trim() || null,
+    paymentReference: input.paymentReference?.trim() || null,
+    state: input.state,
+    payload,
+    lastSeenAt: now,
+  };
+
+  try {
+    const event = await prisma.paymentCallbackEvent.create({
+      data: baseData,
+      select: {
+        id: true,
+        eventKey: true,
+        providerEventId: true,
+      },
     });
+
+    return {
+      id: event.id,
+      eventKey: event.eventKey,
+      eventId: event.providerEventId ?? undefined,
+      duplicate: false,
+      eventStatus: "received" as PaymentCallbackProcessingStatus,
+      orderId: input.orderId?.trim() ?? "",
+    };
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) {
+      throw error;
+    }
+
+    const event = await prisma.paymentCallbackEvent.update({
+      where: { eventKey },
+      data: {
+        duplicateCount: { increment: 1 },
+        lastSeenAt: now,
+        ...(payload ? { payload } : {}),
+        ...(providerEventId ? { providerEventId } : {}),
+        ...(input.orderId?.trim() ? { orderId: input.orderId.trim() } : {}),
+        ...(input.providerOrderId?.trim() ? { providerOrderId: input.providerOrderId.trim() } : {}),
+        ...(input.paymentReference?.trim() ? { paymentReference: input.paymentReference.trim() } : {}),
+      },
+      select: {
+        id: true,
+        eventKey: true,
+        providerEventId: true,
+        processingStatus: true,
+        orderId: true,
+      },
+    });
+
+    return {
+      id: event.id,
+      eventKey: event.eventKey,
+      eventId: event.providerEventId ?? undefined,
+      duplicate: true,
+      eventStatus: event.processingStatus as PaymentCallbackProcessingStatus,
+      orderId: event.orderId ?? input.orderId?.trim() ?? "",
+    };
+  }
+}
+
+async function finalizePaymentCallbackEvent(input: {
+  eventId: string;
+  orderId?: string;
+  processingStatus: PaymentCallbackProcessingStatus;
+  processingMessage?: string;
+}) {
+  await prisma.paymentCallbackEvent.update({
+    where: { id: input.eventId },
+    data: {
+      orderId: input.orderId?.trim() || undefined,
+      processingStatus: input.processingStatus,
+      processingMessage: input.processingMessage?.trim() || null,
+      lastSeenAt: new Date(),
+    },
+  });
+}
+
+async function resolvePaymentCallbackOrder(input: {
+  type: PaymentOrderType;
+  orderId?: string;
+  provider?: string;
+  providerOrderId?: string;
+  paymentReference?: string;
+}) {
+  const orderId = input.orderId?.trim();
+  const providerOrderId = input.providerOrderId?.trim();
+  const paymentReference = input.paymentReference?.trim();
+  const provider = input.provider?.trim() ? normalizePaymentProvider(input.provider) : undefined;
+
+  if (input.type === "membership") {
+    if (orderId) {
+      return prisma.membershipOrder.findUnique({
+        where: { id: orderId },
+        select: { id: true },
+      });
+    }
+
+    if (providerOrderId) {
+      return prisma.membershipOrder.findFirst({
+        where: provider ? { provider, providerOrderId } : { providerOrderId },
+        select: { id: true },
+      });
+    }
+
+    if (paymentReference) {
+      return prisma.membershipOrder.findFirst({
+        where: { paymentReference },
+        select: { id: true },
+      });
+    }
+
+    return null;
+  }
+
+  if (orderId) {
+    return prisma.contentOrder.findUnique({
+      where: { id: orderId },
+      select: { id: true },
+    });
+  }
+
+  if (providerOrderId) {
+    return prisma.contentOrder.findFirst({
+      where: provider ? { provider, providerOrderId } : { providerOrderId },
+      select: { id: true },
+    });
+  }
+
+  if (paymentReference) {
+    return prisma.contentOrder.findFirst({
+      where: { paymentReference },
+      select: { id: true },
+    });
+  }
+
+  return null;
+}
+
+async function recordPaymentCallbackMetadata(input: {
+  type: PaymentOrderType;
+  orderId: string;
+  provider?: string;
+  providerOrderId?: string;
+  paymentReference?: string;
+  expiresAt?: string;
+  callbackPayload?: unknown;
+}) {
+  const callbackExpiresAt = parsePaymentCallbackExpiry(input.expiresAt);
+  const data = {
+    ...(input.provider?.trim() ? { provider: normalizePaymentProvider(input.provider) } : {}),
+    ...(input.providerOrderId?.trim() ? { providerOrderId: input.providerOrderId.trim() } : {}),
+    ...(input.paymentReference?.trim() ? { paymentReference: input.paymentReference.trim() } : {}),
+    ...(callbackExpiresAt ? { expiresAt: callbackExpiresAt } : {}),
+    ...(input.callbackPayload !== undefined
+      ? { callbackPayload: serializePaymentCallbackPayload(input.callbackPayload) }
+      : {}),
+  };
+
+  if (Object.keys(data).length === 0) {
+    return;
+  }
+
+  if (input.type === "membership") {
+    await prisma.membershipOrder.update({
+      where: { id: input.orderId },
+      data,
+    });
+    return;
+  }
+
+  await prisma.contentOrder.update({
+    where: { id: input.orderId },
+    data,
+  });
+}
+
+export async function applyPaymentCallback(input: {
+  type: PaymentOrderType;
+  orderId?: string;
+  state: PaymentCallbackState;
+  provider?: string;
+  providerOrderId?: string;
+  paymentReference?: string;
+  reason?: string;
+  expiresAt?: string;
+  callbackPayload?: unknown;
+}): Promise<ApplyPaymentCallbackResult> {
+  const registeredEvent = await registerPaymentCallbackEvent(input);
+
+  if (registeredEvent.duplicate) {
+    return {
+      orderId: registeredEvent.orderId,
+      duplicate: true,
+      eventKey: registeredEvent.eventKey,
+      eventId: registeredEvent.eventId,
+      eventStatus: registeredEvent.eventStatus,
+    };
+  }
+
+  let finalized = false;
+
+  const finalize = async (processingStatus: PaymentCallbackProcessingStatus, processingMessage: string, orderId?: string) => {
+    await finalizePaymentCallbackEvent({
+      eventId: registeredEvent.id,
+      orderId,
+      processingStatus,
+      processingMessage,
+    });
+    finalized = true;
+  };
+
+  try {
+  const target = await resolvePaymentCallbackOrder({
+    type: input.type,
+    orderId: input.orderId,
+    provider: input.provider,
+    providerOrderId: input.providerOrderId,
+    paymentReference: input.paymentReference,
+  });
+
+  if (!target) {
+    await finalize("failed", "PAYMENT_ORDER_NOT_FOUND");
+    throw new Error("PAYMENT_ORDER_NOT_FOUND");
+  }
+
+  await recordPaymentCallbackMetadata({
+    type: input.type,
+    orderId: target.id,
+    provider: input.provider,
+    providerOrderId: input.providerOrderId,
+    paymentReference: input.paymentReference,
+    expiresAt: input.expiresAt,
+    callbackPayload: input.callbackPayload,
+  });
+
+  const orderState =
+    input.type === "membership"
+      ? await prisma.membershipOrder.findUnique({
+          where: { id: target.id },
+          select: { status: true },
+        })
+      : await prisma.contentOrder.findUnique({
+          where: { id: target.id },
+          select: { status: true },
+        });
+
+  if (!orderState) {
+    await finalize("failed", "PAYMENT_ORDER_NOT_FOUND", target.id);
+    throw new Error("PAYMENT_ORDER_NOT_FOUND");
+  }
+
+  const currentStatus = orderState.status as OrderStatus;
+
+  if (input.state === "paid") {
+    if (currentStatus === "paid") {
+      await finalize("ignored", "ORDER_ALREADY_PAID", target.id);
+      return {
+        orderId: target.id,
+        duplicate: false,
+        eventKey: registeredEvent.eventKey,
+        eventId: registeredEvent.eventId,
+        eventStatus: "ignored",
+      };
+    }
+
+    if (currentStatus === "refunded") {
+      await finalize("conflict", "PAYMENT_ORDER_ALREADY_REFUNDED", target.id);
+      throw new Error("PAYMENT_ORDER_ALREADY_REFUNDED");
+    }
+
+    await markOrderPaidByAdmin({
+      type: input.type,
+      orderId: target.id,
+      paymentReference: input.paymentReference,
+      allowRecoverFromTerminal: currentStatus === "failed" || currentStatus === "closed",
+    });
+    await finalize("processed", "ORDER_MARKED_PAID", target.id);
+    return {
+      orderId: target.id,
+      duplicate: false,
+      eventKey: registeredEvent.eventKey,
+      eventId: registeredEvent.eventId,
+      eventStatus: "processed",
+    };
   }
 
   if (input.state === "failed") {
-    return markOrderFailedByAdmin({
+    if (currentStatus === "failed" || currentStatus === "closed" || currentStatus === "paid" || currentStatus === "refunded") {
+      await finalize("ignored", `ORDER_ALREADY_${currentStatus.toUpperCase()}`, target.id);
+      return {
+        orderId: target.id,
+        duplicate: false,
+        eventKey: registeredEvent.eventKey,
+        eventId: registeredEvent.eventId,
+        eventStatus: "ignored",
+      };
+    }
+
+    await markOrderFailedByAdmin({
       type: input.type,
-      orderId: input.orderId,
+      orderId: target.id,
       paymentReference: input.paymentReference,
       reason: input.reason,
     });
+    await finalize("processed", "ORDER_MARKED_FAILED", target.id);
+    return {
+      orderId: target.id,
+      duplicate: false,
+      eventKey: registeredEvent.eventKey,
+      eventId: registeredEvent.eventId,
+      eventStatus: "processed",
+    };
   }
 
-  return closePendingOrderByAdmin({
+  if (currentStatus === "closed" || currentStatus === "failed" || currentStatus === "paid" || currentStatus === "refunded") {
+    await finalize("ignored", `ORDER_ALREADY_${currentStatus.toUpperCase()}`, target.id);
+    return {
+      orderId: target.id,
+      duplicate: false,
+      eventKey: registeredEvent.eventKey,
+      eventId: registeredEvent.eventId,
+      eventStatus: "ignored",
+    };
+  }
+
+  await closePendingOrderByAdmin({
     type: input.type,
-    orderId: input.orderId,
+    orderId: target.id,
   });
+  await finalize("processed", "ORDER_MARKED_CLOSED", target.id);
+  return {
+    orderId: target.id,
+    duplicate: false,
+    eventKey: registeredEvent.eventKey,
+    eventId: registeredEvent.eventId,
+    eventStatus: "processed",
+  };
+  } catch (error) {
+    if (!finalized) {
+      const message = error instanceof Error ? error.message : "PAYMENT_CALLBACK_FAILED";
+      await finalize("failed", message, registeredEvent.orderId || input.orderId);
+    }
+
+    throw error;
+  }
 }
 
 export function getCheckoutRedirectPath(input: {

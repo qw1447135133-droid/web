@@ -5,6 +5,7 @@ import { formatDateTime, formatPrice } from "@/lib/format";
 import { getCurrentLocale } from "@/lib/i18n";
 import { localizeMembershipPlan } from "@/lib/localized-content";
 import { membershipPlans } from "@/lib/mock-data";
+import { getPaymentProviderLabel } from "@/lib/payment-provider";
 import {
   getOrderActivityMeta,
   getOrderFailureMeta,
@@ -143,12 +144,23 @@ export default async function MemberPage({
                         {memberPageCopy.createdAt} {formatDateTime(order.createdAt, locale)}
                       </span>
                       <span>{formatPrice(order.amount, locale)}</span>
+                      {order.provider ? <span>{memberPageCopy.paymentProvider} {getPaymentProviderLabel(order.provider, locale)}</span> : null}
                       {activityMeta.value ? (
                         <span>
                           {activityMeta.label} {formatDateTime(activityMeta.value, locale)}
                         </span>
                       ) : null}
+                      {order.expiresAt ? (
+                        <span>
+                          {memberPageCopy.expiresAt} {formatDateTime(order.expiresAt, locale)}
+                        </span>
+                      ) : null}
                     </div>
+                    {order.providerOrderId ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        {memberPageCopy.providerOrderId} {order.providerOrderId}
+                      </p>
+                    ) : null}
                     {order.paymentReference ? (
                       <p className="mt-2 text-xs text-slate-500">
                         {memberPageCopy.paymentReference} {order.paymentReference}
@@ -178,12 +190,23 @@ export default async function MemberPage({
                         {memberPageCopy.createdAt} {formatDateTime(order.createdAt, locale)}
                       </span>
                       <span>{formatPrice(order.amount, locale)}</span>
+                      {order.provider ? <span>{memberPageCopy.paymentProvider} {getPaymentProviderLabel(order.provider, locale)}</span> : null}
                       {activityMeta.value ? (
                         <span>
                           {activityMeta.label} {formatDateTime(activityMeta.value, locale)}
                         </span>
                       ) : null}
+                      {order.expiresAt ? (
+                        <span>
+                          {memberPageCopy.expiresAt} {formatDateTime(order.expiresAt, locale)}
+                        </span>
+                      ) : null}
                     </div>
+                    {order.providerOrderId ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        {memberPageCopy.providerOrderId} {order.providerOrderId}
+                      </p>
+                    ) : null}
                     {order.paymentReference ? (
                       <p className="mt-2 text-xs text-slate-500">
                         {memberPageCopy.paymentReference} {order.paymentReference}

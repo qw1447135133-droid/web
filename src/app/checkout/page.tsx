@@ -2,6 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SectionHeading } from "@/components/section-heading";
 import { formatDateTime, formatPrice } from "@/lib/format";
+import {
+  getPaymentCheckoutActionTargets,
+  getPaymentCheckoutFlow,
+  getPaymentLaunchRedirectPath,
+} from "@/lib/payment-gateway";
 import { getCurrentLocale } from "@/lib/i18n";
 import { getOpsCopy } from "@/lib/ops-copy";
 import {
@@ -17,7 +22,11 @@ import {
   getOrderStatusMeta,
   getPaymentResultMeta,
 } from "@/lib/payment-ui";
-import { getPaymentProviderLabel } from "@/lib/payment-provider";
+import {
+  getPaymentManualCollectionConfig,
+  getPaymentProviderLabel,
+  getPaymentRuntimeConfig,
+} from "@/lib/payment-provider";
 import { getCurrentUserRecord } from "@/lib/session";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -59,6 +68,33 @@ export default async function CheckoutPage({
   const locale = await getCurrentLocale();
   const { checkoutPageCopy } = getSiteCopy(locale);
   const opsCopy = getOpsCopy(locale);
+  const paymentRuntime = getPaymentRuntimeConfig();
+  const manualCollection = getPaymentManualCollectionConfig();
+  const paymentPendingLabel = locale === "en" ? `${paymentRuntime.pendingMinutes} min` : locale === "zh-TW" ? `${paymentRuntime.pendingMinutes} 分鐘` : `${paymentRuntime.pendingMinutes} 分钟`;
+  const hostedCopy = {
+    title: locale === "en" ? "Continue to gateway" : locale === "zh-TW" ? "繼續前往支付通道" : "继续前往支付通道",
+    description:
+      locale === "en"
+        ? "This order is configured for a hosted payment page. Continue to the external gateway to complete the payment, then return here to view the final status."
+        : locale === "zh-TW"
+          ? "這筆訂單會跳轉到第三方託管支付頁完成付款，付款後再返回此頁查看最終狀態。"
+          : "这笔订单会跳转到第三方托管支付页完成付款，付款后再返回此页查看最终状态。",
+    button: locale === "en" ? "Open payment page" : locale === "zh-TW" ? "打開支付頁" : "打开支付页",
+  } as const;
+  const manualCollectionCopy = {
+    channel: locale === "en" ? "Collection channel" : locale === "zh-TW" ? "收款通道" : "收款通道",
+    accountName: locale === "en" ? "Account name" : locale === "zh-TW" ? "收款戶名" : "收款户名",
+    accountNo: locale === "en" ? "Account / wallet" : locale === "zh-TW" ? "收款帳號" : "收款账号",
+    qrCode: locale === "en" ? "QR code" : locale === "zh-TW" ? "收款二維碼" : "收款二维码",
+    qrOpen: locale === "en" ? "Open image" : locale === "zh-TW" ? "打開圖片" : "打开图片",
+    note: locale === "en" ? "Payment note" : locale === "zh-TW" ? "付款備註" : "付款备注",
+    missing:
+      locale === "en"
+        ? "Manual collection details are not configured yet. Use the payment reference below when coordinating with operations."
+        : locale === "zh-TW"
+          ? "目前尚未配置人工收款資訊，請先使用下方支付流水號與營運核對。"
+          : "目前尚未配置人工收款信息，请先使用下方支付流水号与运营核对。",
+  } as const;
   const current = await getCurrentUserRecord();
 
   if (!current) {
@@ -123,7 +159,13 @@ export default async function CheckoutPage({
       : "border-rose-300/20 bg-rose-400/10 text-rose-100";
   const orderTypeLabel = checkoutPageCopy.orderTypeLabel(type);
   const providerLabel = getPaymentProviderLabel(order.provider, locale);
-  const isManualReview = order.provider === "manual";
+  const checkoutFlow = getPaymentCheckoutFlow(order.provider);
+  const checkoutActions = getPaymentCheckoutActionTargets({
+    type,
+    orderId: order.id,
+    returnTo,
+  });
+  const isManualReview = checkoutFlow.mode === "manual-review";
   const checkoutTitle = isManualReview ? opsCopy.checkout.manualTitle : checkoutPageCopy.title;
   const checkoutDescription = isManualReview ? opsCopy.checkout.manualDescription : checkoutPageCopy.description;
 
@@ -178,14 +220,27 @@ export default async function CheckoutPage({
             <span>
               {checkoutPageCopy.createdAt} {formatDateTime(order.createdAt, locale)}
             </span>
+            <span>
+              {checkoutPageCopy.paymentProvider} {providerLabel}
+            </span>
             {activityMeta.value ? (
               <span>
                 {activityMeta.label} {formatDateTime(activityMeta.value, locale)}
               </span>
             ) : null}
+            {order.expiresAt ? (
+              <span>
+                {checkoutPageCopy.expiresAt} {formatDateTime(order.expiresAt, locale)}
+              </span>
+            ) : null}
             {order.paymentReference ? (
               <span>
                 {checkoutPageCopy.paymentReference} {order.paymentReference}
+              </span>
+            ) : null}
+            {order.providerOrderId ? (
+              <span>
+                {checkoutPageCopy.providerOrderId} {order.providerOrderId}
               </span>
             ) : null}
             <span>
@@ -202,16 +257,67 @@ export default async function CheckoutPage({
           <div className="mt-6 rounded-[1.35rem] border border-sky-300/20 bg-sky-400/10 p-5 text-sm leading-7 text-sky-50">
             <p className="font-medium">{opsCopy.checkout.manualTitle}</p>
             <p className="mt-2 text-sky-100/90">{opsCopy.checkout.manualDescription}</p>
+            <div className="mt-4 grid gap-2 text-xs text-sky-100/85 sm:grid-cols-1">
+              <p>
+                {opsCopy.checkout.pendingWindowLabel}: {paymentPendingLabel}
+              </p>
+            </div>
             <ul className="mt-4 space-y-2 text-sky-100/90">
               {opsCopy.checkout.manualSteps.map((step) => (
                 <li key={step}>- {step}</li>
               ))}
             </ul>
+            {manualCollection.configured ? (
+              <div className="mt-4 grid gap-3 rounded-[1.1rem] border border-white/10 bg-slate-950/20 p-4 sm:grid-cols-2">
+                {manualCollection.channelLabel ? (
+                  <p>
+                    {manualCollectionCopy.channel}: {manualCollection.channelLabel}
+                  </p>
+                ) : null}
+                {manualCollection.accountName ? (
+                  <p>
+                    {manualCollectionCopy.accountName}: {manualCollection.accountName}
+                  </p>
+                ) : null}
+                {manualCollection.accountNo ? (
+                  <p className="break-all sm:col-span-2">
+                    {manualCollectionCopy.accountNo}: {manualCollection.accountNo}
+                  </p>
+                ) : null}
+                {manualCollection.note ? (
+                  <p className="sm:col-span-2">
+                    {manualCollectionCopy.note}: {manualCollection.note}
+                  </p>
+                ) : null}
+                {manualCollection.qrCodeUrl ? (
+                  <p className="sm:col-span-2">
+                    {manualCollectionCopy.qrCode}:{" "}
+                    <a
+                      href={manualCollection.qrCodeUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 transition hover:text-white"
+                    >
+                      {manualCollectionCopy.qrOpen}
+                    </a>
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="mt-4 text-sky-100/80">{manualCollectionCopy.missing}</p>
+            )}
             <p className="mt-4 text-sky-100/80">
               {opsCopy.checkout.referenceLabel}: {order.paymentReference ?? order.id}
             </p>
             <p className="mt-2 text-sky-100/80">{opsCopy.checkout.adminWillProcess}</p>
             <p className="mt-3 text-xs text-sky-100/70">{opsCopy.checkout.callbackHint}</p>
+          </div>
+        ) : null}
+
+        {checkoutFlow.mode === "hosted-redirect" && order.status === "pending" ? (
+          <div className="mt-6 rounded-[1.35rem] border border-emerald-300/20 bg-emerald-400/10 p-5 text-sm leading-7 text-emerald-50">
+            <p className="font-medium">{hostedCopy.title}</p>
+            <p className="mt-2 text-emerald-100/90">{hostedCopy.description}</p>
           </div>
         ) : null}
 
@@ -223,12 +329,12 @@ export default async function CheckoutPage({
         ) : null}
 
         <div className="mt-6 flex flex-wrap gap-3">
-          {isPending && !isManualReview ? (
+          {isPending && checkoutFlow.showMockActions ? (
             <>
-              <form action="/api/payments/mock/confirm" method="post">
-                <input type="hidden" name="type" value={type} />
-                <input type="hidden" name="orderId" value={order.id} />
-                <input type="hidden" name="returnTo" value={returnTo} />
+              <form action={checkoutActions.confirm.action} method="post">
+                <input type="hidden" name="type" value={checkoutActions.confirm.type} />
+                <input type="hidden" name="orderId" value={checkoutActions.confirm.orderId} />
+                <input type="hidden" name="returnTo" value={checkoutActions.confirm.returnTo} />
                 <button
                   type="submit"
                   className="rounded-full bg-orange-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
@@ -237,10 +343,10 @@ export default async function CheckoutPage({
                 </button>
               </form>
 
-              <form action="/api/payments/mock/fail" method="post">
-                <input type="hidden" name="type" value={type} />
-                <input type="hidden" name="orderId" value={order.id} />
-                <input type="hidden" name="returnTo" value={returnTo} />
+              <form action={checkoutActions.fail.action} method="post">
+                <input type="hidden" name="type" value={checkoutActions.fail.type} />
+                <input type="hidden" name="orderId" value={checkoutActions.fail.orderId} />
+                <input type="hidden" name="returnTo" value={checkoutActions.fail.returnTo} />
                 <input
                   type="hidden"
                   name="reason"
@@ -254,10 +360,10 @@ export default async function CheckoutPage({
                 </button>
               </form>
 
-              <form action="/api/payments/mock/cancel" method="post">
-                <input type="hidden" name="type" value={type} />
-                <input type="hidden" name="orderId" value={order.id} />
-                <input type="hidden" name="returnTo" value={returnTo} />
+              <form action={checkoutActions.cancel.action} method="post">
+                <input type="hidden" name="type" value={checkoutActions.cancel.type} />
+                <input type="hidden" name="orderId" value={checkoutActions.cancel.orderId} />
+                <input type="hidden" name="returnTo" value={checkoutActions.cancel.returnTo} />
                 <button
                   type="submit"
                   className="rounded-full border border-white/12 px-5 py-3 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
@@ -266,6 +372,20 @@ export default async function CheckoutPage({
                 </button>
               </form>
             </>
+          ) : null}
+
+          {isPending && checkoutFlow.mode === "hosted-redirect" ? (
+            <Link
+              href={getPaymentLaunchRedirectPath({
+                provider: order.provider,
+                type,
+                orderId: order.id,
+                returnTo,
+              })}
+              className="rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-200"
+            >
+              {hostedCopy.button}
+            </Link>
           ) : null}
 
           <Link

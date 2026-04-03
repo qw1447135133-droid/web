@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPendingMembershipOrder, getCheckoutRedirectPath, sanitizeReturnTo } from "@/lib/payment-orders";
+import { getPaymentLaunchRedirectPath } from "@/lib/payment-gateway";
+import { createPendingMembershipOrder, sanitizeReturnTo } from "@/lib/payment-orders";
+import { normalizePaymentProvider } from "@/lib/payment-provider";
 import { getCurrentUserRecord } from "@/lib/session";
 import type { MembershipPlanId } from "@/lib/types";
 
@@ -22,7 +24,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.redirect(
       new URL(
-        getCheckoutRedirectPath({
+        getPaymentLaunchRedirectPath({
+          provider: normalizePaymentProvider(order.provider),
           type: "membership",
           orderId: order.id,
           returnTo,

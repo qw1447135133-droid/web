@@ -1,4 +1,4 @@
-export type Sport = "football" | "basketball" | "cricket";
+export type Sport = "football" | "basketball" | "cricket" | "esports";
 
 export type MatchStatus = "live" | "upcoming" | "finished";
 
@@ -143,6 +143,9 @@ export interface MembershipOrder {
   id: string;
   planId: MembershipPlanId;
   amount: number;
+  provider?: "mock" | "manual" | "hosted";
+  providerOrderId?: string;
+  expiresAt?: string;
   createdAt: string;
   updatedAt?: string;
   paidAt?: string;
@@ -159,6 +162,9 @@ export interface ContentOrder {
   id: string;
   contentId: string;
   amount: number;
+  provider?: "mock" | "manual" | "hosted";
+  providerOrderId?: string;
+  expiresAt?: string;
   createdAt: string;
   updatedAt?: string;
   paidAt?: string;

@@ -12,7 +12,7 @@ import { getSiteCopy } from "@/lib/ui-copy";
 export default async function HomePage() {
   const locale = await getCurrentLocale();
   const { homePageCopy, matchStatusLabels } = getSiteCopy(locale);
-  const [featuredMatches, homepageBanners, homepageModules, articlePlans, predictions, authorTeams, cricketMatches, cricketLeagues] = await Promise.all([
+  const [featuredMatches, homepageBanners, homepageModules, articlePlans, predictions, authorTeams, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues] = await Promise.all([
     getFeaturedMatches(locale),
     getHomepageBanners(locale),
     getHomepageModules(locale),
@@ -21,10 +21,14 @@ export default async function HomePage() {
     getAuthorTeams(locale),
     getMatchesBySport("cricket", locale),
     getTrackedLeagues("cricket", locale),
+    getMatchesBySport("esports", locale),
+    getTrackedLeagues("esports", locale),
   ]);
   const localizedMembershipPlans = membershipPlans.map((plan) => localizeMembershipPlan(plan, locale));
   const cricketSpotlightMatches = cricketMatches.slice(0, 3);
   const cricketLiveCount = cricketMatches.filter((match) => match.status === "live").length;
+  const esportsSpotlightMatches = esportsMatches.slice(0, 3);
+  const esportsLiveCount = esportsMatches.filter((match) => match.status === "live").length;
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
@@ -88,6 +92,85 @@ export default async function HomePage() {
               <p className="mt-5 text-sm font-medium text-orange-200">{module.metric}</p>
             </Link>
           ))}
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <p className="section-label">Esports Pulse</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-sm text-slate-400">{locale === "en" ? "Live series" : locale === "zh-TW" ? "進行中系列賽" : "进行中系列赛"}</p>
+                <p className="mt-2 text-3xl font-semibold text-orange-200">{esportsLiveCount}</p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-400">{locale === "en" ? "Games covered" : locale === "zh-TW" ? "已覆蓋項目" : "已覆盖项目"}</p>
+                <p className="mt-2 text-3xl font-semibold text-lime-100">{esportsLeagues.length}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {esportsLeagues.map((league) => (
+                <span key={league.slug} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                  {league.name}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <p className="section-label">{locale === "en" ? "Esports Entry" : locale === "zh-TW" ? "電競入口" : "电竞入口"}</p>
+            <h3 className="mt-3 text-xl font-semibold text-white">
+              {locale === "en" ? "LoL, Dota 2, and CS2 live board" : locale === "zh-TW" ? "LoL、Dota 2、CS2 即時面板" : "LoL、Dota 2、CS2 即时面板"}
+            </h3>
+            <p className="mt-2 text-sm leading-7 text-slate-400">
+              {locale === "en"
+                ? "Open one channel for series state, map/round momentum, and a direct path into the match detail flow."
+                : locale === "zh-TW"
+                  ? "把系列賽狀態、地圖/回合走勢和賽事詳情入口集中到同一個電競頻道。"
+                  : "把系列赛状态、地图/回合走势和赛事详情入口集中到同一个电竞频道。"}
+            </p>
+            <div className="mt-5">
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/live/esports"
+                  className="rounded-full border border-orange-300/24 bg-orange-300/8 px-4 py-2 text-sm text-orange-100 transition hover:border-orange-300/40 hover:bg-orange-300/14"
+                >
+                  {locale === "en" ? "Open esports live" : locale === "zh-TW" ? "進入電競比分" : "进入电竞比分"}
+                </Link>
+                <Link
+                  href="/plans?sport=esports"
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
+                >
+                  {locale === "en" ? "Esports plans" : locale === "zh-TW" ? "電競計畫單" : "电竞计划单"}
+                </Link>
+                <Link
+                  href="/ai-predictions?sport=esports"
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
+                >
+                  {locale === "en" ? "Esports AI" : locale === "zh-TW" ? "電競 AI" : "电竞 AI"}
+                </Link>
+                <Link
+                  href="/database?sport=esports&league=lpl&view=standings"
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
+                >
+                  {locale === "en" ? "Esports database" : locale === "zh-TW" ? "電競資料庫" : "电竞资料库"}
+                </Link>
+              </div>
+            </div>
+            <div className="mt-5 space-y-3">
+              {esportsSpotlightMatches.map((match) => (
+                <div key={match.id} className="rounded-[1.15rem] border border-white/8 bg-slate-950/40 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-white">{match.leagueName ?? match.leagueSlug}</p>
+                    <span className="rounded-full border border-white/10 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                      {matchStatusLabels[match.status]}
+                      {match.clock ? ` | ${match.clock}` : ""}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-300">
+                    {match.homeTeam} <span className="text-slate-500">vs</span> {match.awayTeam}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

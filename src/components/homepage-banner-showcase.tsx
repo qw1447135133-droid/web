@@ -55,6 +55,7 @@ export function HomepageBannerShowcase({
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const trackedImpressions = useRef<Set<string>>(new Set());
+  const showcaseRef = useRef<HTMLDivElement | null>(null);
   const copy = localeCopy[locale];
   const primaryBanner = banners[activeIndex] ?? banners[0];
   const secondaryBanners = banners
@@ -72,7 +73,11 @@ export function HomepageBannerShowcase({
     });
   });
 
-  const trackBannerEvent = useEffectEvent((bannerId: string, type: "impression" | "click") => {
+  const trackBannerEvent = useEffectEvent((
+    bannerId: string,
+    type: "impression" | "click",
+    placement: "primary" | "secondary",
+  ) => {
     void fetch("/api/site/banners/track", {
       method: "POST",
       headers: {
@@ -81,6 +86,7 @@ export function HomepageBannerShowcase({
       body: JSON.stringify({
         bannerId,
         type,
+        placement,
       }),
       cache: "no-store",
       keepalive: true,
@@ -142,18 +148,68 @@ export function HomepageBannerShowcase({
   }, [banners.length, isPaused, rotateBanner]);
 
   useEffect(() => {
-    const visibleBannerIds = [primaryBanner?.id, ...secondaryBanners.map((item) => item.banner.id)].filter(
-      (value): value is string => Boolean(value),
+    const root = showcaseRef.current;
+
+    if (!root) {
+      return;
+    }
+
+    const elements = Array.from(
+      root.querySelectorAll<HTMLElement>("[data-banner-id]"),
     );
 
-    for (const bannerId of visibleBannerIds) {
-      if (trackedImpressions.current.has(bannerId)) {
-        continue;
+    if (typeof IntersectionObserver === "undefined") {
+      for (const element of elements) {
+        const bannerId = element.dataset.bannerId;
+        const placement = element.dataset.bannerPlacement;
+        const trackingKey = bannerId && placement ? `${bannerId}:${placement}` : "";
+
+        if (!bannerId || placement !== "primary" && placement !== "secondary" || trackedImpressions.current.has(trackingKey)) {
+          continue;
+        }
+
+        trackedImpressions.current.add(trackingKey);
+        trackBannerEvent(bannerId, "impression", placement);
       }
 
-      trackedImpressions.current.add(bannerId);
-      trackBannerEvent(bannerId, "impression");
+      return;
     }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.55) {
+            continue;
+          }
+
+          const bannerId = (entry.target as HTMLElement).dataset.bannerId;
+          const placement = (entry.target as HTMLElement).dataset.bannerPlacement;
+          const trackingKey = bannerId && placement ? `${bannerId}:${placement}` : "";
+
+          if (
+            !bannerId ||
+            (placement !== "primary" && placement !== "secondary") ||
+            trackedImpressions.current.has(trackingKey)
+          ) {
+            continue;
+          }
+
+          trackedImpressions.current.add(trackingKey);
+          trackBannerEvent(bannerId, "impression", placement);
+        }
+      },
+      {
+        threshold: [0.55],
+      },
+    );
+
+    for (const element of elements) {
+      observer.observe(element);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
   }, [primaryBanner?.id, secondaryBanners, trackBannerEvent]);
 
   if (!primaryBanner) {
@@ -163,8 +219,10 @@ export function HomepageBannerShowcase({
   const primaryTheme = themeStyles[primaryBanner.theme];
 
   return (
-    <div className="space-y-5">
+    <div ref={showcaseRef} className="space-y-5">
       <div
+        data-banner-id={primaryBanner.id}
+        data-banner-placement="primary"
         className="relative overflow-hidden rounded-[2rem] border border-white/10 p-6 sm:p-8"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
@@ -191,7 +249,7 @@ export function HomepageBannerShowcase({
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link
               href={primaryBanner.href}
-              onClick={() => trackBannerEvent(primaryBanner.id, "click")}
+              onClick={() => trackBannerEvent(primaryBanner.id, "click", "primary")}
               className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
             >
               {primaryBanner.ctaLabel}
@@ -231,8 +289,10 @@ export function HomepageBannerShowcase({
             return (
               <Link
                 key={banner.id}
+                data-banner-id={banner.id}
+                data-banner-placement="secondary"
                 href={banner.href}
-                onClick={() => trackBannerEvent(banner.id, "click")}
+                onClick={() => trackBannerEvent(banner.id, "click", "secondary")}
                 onMouseEnter={() => setActiveIndex(index)}
                 onFocus={() => {
                   setIsPaused(true);

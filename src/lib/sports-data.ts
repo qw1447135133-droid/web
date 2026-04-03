@@ -1,6 +1,8 @@
 import {
   cricketH2HRowsByLeague,
   cricketScheduleRowsByLeague,
+  esportsH2HRowsByLeague,
+  esportsScheduleRowsByLeague,
   getFeaturedMatches as getMockFeaturedMatches,
   getMatchById as getMockMatchById,
   h2hRows as mockH2hRows,
@@ -20,10 +22,13 @@ import {
   localizeTeam,
 } from "@/lib/localized-content";
 import {
+  getApiSportsDatabaseSnapshot,
+  getApiSportsMatchById,
+  getApiSportsMatchesBySport,
+  getApiSportsTrackedLeagues,
+} from "@/lib/api-sports-provider";
+import {
   getNowscoreDatabaseSnapshot,
-  getNowscoreMatchById,
-  getNowscoreMatchesBySport,
-  getNowscoreTrackedLeagues,
 } from "@/lib/nowscore-provider";
 import {
   getStoredDatabaseSnapshot,
@@ -65,6 +70,35 @@ function parseRecord(record: string) {
 }
 
 function buildCricketStandings(teams: Team[], locale: Locale) {
+  return teams
+    .map((team) => {
+      const home = parseRecord(team.homeRecord);
+      const away = parseRecord(team.awayRecord);
+      const win = home.wins + away.wins;
+      const loss = home.losses + away.losses;
+      const played = home.played + away.played;
+
+      return localizeStandingRow(
+        {
+          rank: team.ranking,
+          teamId: team.id,
+          team: team.name,
+          played,
+          win,
+          draw: 0,
+          loss,
+          points: win * 2,
+          form: team.form,
+          homeRecord: team.homeRecord,
+          awayRecord: team.awayRecord,
+        },
+        locale,
+      );
+    })
+    .sort((left, right) => left.rank - right.rank);
+}
+
+function buildRecordStandings(teams: Team[], locale: Locale) {
   return teams
     .map((team) => {
       const home = parseRecord(team.homeRecord);
@@ -156,6 +190,20 @@ function buildFallbackDatabaseSnapshot(sport: Sport, leagueSlug: string, locale:
     };
   }
 
+  if (sport === "esports") {
+    const teams = mockTeams
+      .filter((team) => team.sport === sport && team.leagueSlug === leagueSlug)
+      .map((team) => localizeTeam(team, locale));
+
+    return {
+      leagues: fallbackLeagues(sport, locale),
+      standings: buildRecordStandings(teams, locale),
+      schedule: (esportsScheduleRowsByLeague[leagueSlug] ?? []).map((row) => localizeScheduleRow(row, locale)),
+      teams,
+      h2h: (esportsH2HRowsByLeague[leagueSlug] ?? []).map((row) => localizeHeadToHeadRow(row, locale)),
+    };
+  }
+
   return {
     leagues: fallbackLeagues(sport, locale),
     standings: mockStandings.map((row) => localizeStandingRow({
@@ -172,12 +220,22 @@ function buildFallbackDatabaseSnapshot(sport: Sport, leagueSlug: string, locale:
 }
 
 export async function getSportsDataMode() {
-  return "nowscore-scrape-with-cricket-fallback";
+  return "api-sports-free-primary-with-archive-database-and-cricket-esports-fallback";
 }
 
 export async function getTrackedLeagues(sport: Sport, locale: Locale = defaultLocale): Promise<League[]> {
-  if (sport === "cricket") {
+  if (sport === "cricket" || sport === "esports") {
     return fallbackLeagues(sport, locale);
+  }
+
+  try {
+    const leagues = await getApiSportsTrackedLeagues(sport);
+
+    if (leagues.length > 0) {
+      return leagues.map((league) => localizeLeague(league, locale));
+    }
+  } catch {
+    // Fall through to stored and mock providers below.
   }
 
   const storedLeagues = await getStoredLeaguesBySport(sport);
@@ -186,17 +244,22 @@ export async function getTrackedLeagues(sport: Sport, locale: Locale = defaultLo
     return storedLeagues.map((league) => localizeLeague(league, locale));
   }
 
-  try {
-    const leagues = await getNowscoreTrackedLeagues(sport);
-    return leagues.length > 0 ? leagues.map((league) => localizeLeague(league, locale)) : fallbackLeagues(sport, locale);
-  } catch {
-    return fallbackLeagues(sport, locale);
-  }
+  return fallbackLeagues(sport, locale);
 }
 
 export async function getMatchesBySport(sport: Sport, locale: Locale = defaultLocale): Promise<Match[]> {
-  if (sport === "cricket") {
+  if (sport === "cricket" || sport === "esports") {
     return fallbackMatches(sport, locale);
+  }
+
+  try {
+    const matches = await getApiSportsMatchesBySport(sport);
+
+    if (matches.length > 0) {
+      return sortMatches(matches.map((match) => withLeagueName(match, locale)));
+    }
+  } catch {
+    // Fall through to stored and mock providers below.
   }
 
   const storedMatches = await getStoredMatchesBySport(sport);
@@ -205,12 +268,7 @@ export async function getMatchesBySport(sport: Sport, locale: Locale = defaultLo
     return sortMatches(storedMatches.map((match) => withLeagueName(match, locale)));
   }
 
-  try {
-    const matches = await getNowscoreMatchesBySport(sport);
-    return matches.length > 0 ? sortMatches(matches.map((match) => withLeagueName(match, locale))) : fallbackMatches(sport, locale);
-  } catch {
-    return fallbackMatches(sport, locale);
-  }
+  return fallbackMatches(sport, locale);
 }
 
 export async function getFeaturedMatches(locale: Locale = defaultLocale) {
@@ -221,12 +279,13 @@ export async function getFeaturedMatches(locale: Locale = defaultLocale) {
   }
 
   try {
-    const [football, basketball, cricket] = await Promise.all([
+    const [football, basketball, cricket, esports] = await Promise.all([
       getMatchesBySport("football", locale),
       getMatchesBySport("basketball", locale),
       getMatchesBySport("cricket", locale),
+      getMatchesBySport("esports", locale),
     ]);
-    const liveMatches = sortMatches([...football, ...basketball, ...cricket]);
+    const liveMatches = sortMatches([...football, ...basketball, ...cricket, ...esports]);
 
     return liveMatches.slice(0, 4);
   } catch {
@@ -235,6 +294,18 @@ export async function getFeaturedMatches(locale: Locale = defaultLocale) {
 }
 
 export async function getMatchById(id: string, locale: Locale = defaultLocale) {
+  if (id.includes(":")) {
+    try {
+      const apiMatch = await getApiSportsMatchById(id);
+
+      if (apiMatch) {
+        return withLeagueName(apiMatch, locale);
+      }
+    } catch {
+      // Fall through to stored and mock providers below.
+    }
+  }
+
   const storedMatch = await getStoredMatchById(id);
 
   if (storedMatch) {
@@ -243,18 +314,8 @@ export async function getMatchById(id: string, locale: Locale = defaultLocale) {
 
   const fallback = getMockMatchById(id);
 
-  if (fallback?.sport === "cricket") {
+  if (fallback?.sport === "cricket" || fallback?.sport === "esports") {
     return withLeagueName(fallback, locale);
-  }
-
-  try {
-    const liveMatch = await getNowscoreMatchById(id);
-
-    if (liveMatch) {
-      return withLeagueName(liveMatch, locale);
-    }
-  } catch {
-    // Fall through to mock data for non-tracked or temporarily unavailable matches.
   }
 
   return fallback ? withLeagueName(fallback, locale) : undefined;
@@ -265,8 +326,24 @@ export async function getPredictionByMatchId(matchId: string, locale: Locale = d
 }
 
 export async function getDatabaseSnapshot(sport: Sport, leagueSlug: string, locale: Locale = defaultLocale): Promise<DatabaseSnapshot> {
-  if (sport === "cricket") {
+  if (sport === "cricket" || sport === "esports") {
     return buildFallbackDatabaseSnapshot(sport, leagueSlug, locale);
+  }
+
+  try {
+    const apiSnapshot = await getApiSportsDatabaseSnapshot(sport, leagueSlug);
+
+    if (apiSnapshot) {
+      return {
+        leagues: apiSnapshot.leagues.map((league) => localizeLeague(league, locale)),
+        standings: apiSnapshot.standings.map((row) => localizeStandingRow(row, locale)),
+        schedule: apiSnapshot.schedule.map((row) => localizeScheduleRow(row, locale)),
+        teams: apiSnapshot.teams.map((team) => localizeTeam(team, locale)),
+        h2h: apiSnapshot.h2h.map((row) => localizeHeadToHeadRow(row, locale)),
+      };
+    }
+  } catch {
+    // Fall through to stored and legacy providers below.
   }
 
   const storedSnapshot = await getStoredDatabaseSnapshot(sport, leagueSlug);

@@ -139,6 +139,7 @@ const LEAGUES_BY_SPORT = {
   football: MANUAL_LEAGUES.filter((league) => league.sport === "football"),
   basketball: MANUAL_LEAGUES.filter((league) => league.sport === "basketball"),
   cricket: [],
+  esports: [],
 } satisfies Record<Sport, typeof MANUAL_LEAGUES>;
 
 const LEAGUES_BY_ID = new Map(MANUAL_LEAGUES.map((league) => [league.id, league]));
@@ -1116,7 +1117,7 @@ export async function getNowscoreMatchesBySport(sport: Sport): Promise<Match[]> 
     );
   }
 
-  if (sport === "cricket") {
+  if (sport === "cricket" || sport === "esports") {
     return [];
   }
 

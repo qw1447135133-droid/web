@@ -1,109 +1,13 @@
 
 > web@0.1.0 dev C:\Users\14471\Documents\GitHub\web
-> next dev
+> next dev "--port" "3000"
 
-⚠ Port 3000 is in use by process 42312, using available port 3002 instead.
 ▲ Next.js 16.2.2 (Turbopack)
-- Local:         http://localhost:3002
-- Network:       http://192.168.1.170:3002
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.170:3000
 - Environments: .env
-✓ Ready in 342ms
+✓ Ready in 359ms
 Creating turbopack project { dir: 'C:\\Users\\14471\\Documents\\GitHub\\web', testMode: true }
 
- GET /database?sport=cricket&league=psl&view=schedule 200 in 647ms (next.js: 144ms, application-code: 503ms)
- GET /database?sport=cricket&league=ipl&view=teams 200 in 162ms (next.js: 16ms, application-code: 146ms)
- GET /database?sport=cricket&league=ipl&view=schedule 200 in 84ms (next.js: 5ms, application-code: 78ms)
- GET /database?sport=cricket&league=psl&view=h2h 200 in 127ms (next.js: 15ms, application-code: 112ms)
- GET /matches/m7 200 in 1041ms (next.js: 375ms, application-code: 666ms)
- GET /matches/m9 200 in 696ms (next.js: 23ms, application-code: 673ms)
-✓ Compiled in 48ms
- GET /database?sport=cricket&league=psl&view=h2h 200 in 388ms (next.js: 50ms, application-code: 337ms)
- GET /database?sport=cricket&league=ipl&view=teams 200 in 183ms (next.js: 3ms, application-code: 180ms)
-✓ Compiled in 26ms
- GET /database?sport=cricket&league=ipl&view=h2h 200 in 257ms (next.js: 37ms, application-code: 221ms)
- GET /database?sport=cricket&league=psl&view=h2h 200 in 52ms (next.js: 3ms, application-code: 48ms)
- GET /database?sport=cricket&league=ipl&view=h2h 200 in 58ms (next.js: 2ms, application-code: 56ms)
- GET /database?sport=cricket&league=ipl&view=teams 200 in 66ms (next.js: 2ms, application-code: 63ms)
-✓ Compiled in 31ms
-✓ Compiled in 31ms
- GET /matches/m7 200 in 834ms (next.js: 52ms, application-code: 782ms)
- GET /matches/m7 200 in 144ms (next.js: 13ms, application-code: 131ms)
- GET /matches/m9 200 in 147ms (next.js: 4ms, application-code: 144ms)
- GET /matches/m9 200 in 92ms (next.js: 13ms, application-code: 79ms)
-✓ Compiled in 37ms
-✓ Compiled in 29ms
-[Server HMR] Update failed, full reload needed: SyntaxError: Identifier 'phaseActionLinks' has already been declared
-    at eval (<anonymous>)
-[Server HMR] Listener error: SyntaxError: Identifier 'phaseActionLinks' has already been declared
-    at eval (<anonymous>)
-⨯ ./src/app/matches/[id]/page.tsx:238:9
-the name `phaseActionLinks` is defined multiple times
-  [90m236 |[0m         ]
-  [90m237 |[0m       : [];
-[31m[1m>[0m [90m238 |[0m   [36mconst[0m phaseActionLinks =
-  [90m    |[0m         [31m[1m^^^^^^^^^^^^^^^^[0m
-  [90m239 |[0m     match.sport === [32m"cricket"[0m
-  [90m240 |[0m       ? [
-  [90m241 |[0m           { href: [32m`/database?sport=cricket&league=[0m${match.leagueSlug[32m}&view=schedule`[0m, lab...
-
-Ecmascript file had an error
-
-
-⨯ ./src/app/matches/[id]/page.tsx:238:9
-the name `phaseActionLinks` is defined multiple times
-  [90m236 |[0m         ]
-  [90m237 |[0m       : [];
-[31m[1m>[0m [90m238 |[0m   [36mconst[0m phaseActionLinks =
-  [90m    |[0m         [31m[1m^^^^^^^^^^^^^^^^[0m
-  [90m239 |[0m     match.sport === [32m"cricket"[0m
-  [90m240 |[0m       ? [
-  [90m241 |[0m           { href: [32m`/database?sport=cricket&league=[0m${match.leagueSlug[32m}&view=schedule`[0m, lab...
-
-Ecmascript file had an error
-
-
- GET /matches/m9 500 in 480ms (next.js: 401ms, application-code: 79ms)
- GET /matches/m7 500 in 904ms (next.js: 897ms, application-code: 7ms)
-⨯ ./src/app/matches/[id]/page.tsx:238:9
-the name `phaseActionLinks` is defined multiple times
-  [90m236 |[0m         ]
-  [90m237 |[0m       : [];
-[31m[1m>[0m [90m238 |[0m   [36mconst[0m phaseActionLinks =
-  [90m    |[0m         [31m[1m^^^^^^^^^^^^^^^^[0m
-  [90m239 |[0m     match.sport === [32m"cricket"[0m
-  [90m240 |[0m       ? [
-  [90m241 |[0m           { href: [32m`/database?sport=cricket&league=[0m${match.leagueSlug[32m}&view=schedule`[0m, lab...
-
-Ecmascript file had an error
-
-
- GET /matches/m9 500 in 24ms (next.js: 12ms, application-code: 12ms)
-⨯ ./src/app/matches/[id]/page.tsx:238:9
-the name `phaseActionLinks` is defined multiple times
-  [90m236 |[0m         ]
-  [90m237 |[0m       : [];
-[31m[1m>[0m [90m238 |[0m   [36mconst[0m phaseActionLinks =
-  [90m    |[0m         [31m[1m^^^^^^^^^^^^^^^^[0m
-  [90m239 |[0m     match.sport === [32m"cricket"[0m
-  [90m240 |[0m       ? [
-  [90m241 |[0m           { href: [32m`/database?sport=cricket&league=[0m${match.leagueSlug[32m}&view=schedule`[0m, lab...
-
-Ecmascript file had an error
-
-
- GET /matches/m7 500 in 22ms (next.js: 10ms, application-code: 12ms)
-✓ Compiled in 40ms
- GET /matches/m7 200 in 812ms (next.js: 50ms, application-code: 762ms)
- GET /matches/m9 200 in 820ms (next.js: 89ms, application-code: 731ms)
- GET /matches/m7 200 in 108ms (next.js: 12ms, application-code: 96ms)
- GET /matches/m9 200 in 97ms (next.js: 4ms, application-code: 93ms)
- GET /matches/m9 200 in 83ms (next.js: 9ms, application-code: 74ms)
- GET /matches/m7 200 in 90ms (next.js: 6ms, application-code: 84ms)
-⚠ Found a change in next.config.ts. Restarting the server to apply the changes...
-▲ Next.js 16.2.2 (Turbopack)
-- Local:         http://localhost:3002
-- Network:       http://192.168.1.170:3002
-- Environments: .env
-✓ Ready in 247ms
-Creating turbopack project { dir: 'C:\\Users\\14471\\Documents\\GitHub\\web', testMode: true }
-
+ GET /admin?tab=events 307 in 1063ms (next.js: 750ms, application-code: 313ms)
+ GET /login?next=%2Fadmin 200 in 320ms (next.js: 273ms, application-code: 47ms)

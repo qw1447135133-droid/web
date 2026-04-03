@@ -48,6 +48,9 @@ export type AdminMembershipOrderRecord = {
   planName: string;
   amount: number;
   status: OrderStatus;
+  provider: "mock" | "manual" | "hosted";
+  providerOrderId?: string;
+  expiresAt?: string;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
@@ -67,6 +70,9 @@ export type AdminContentOrderRecord = {
   contentTitle: string;
   amount: number;
   status: OrderStatus;
+  provider: "mock" | "manual" | "hosted";
+  providerOrderId?: string;
+  expiresAt?: string;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
@@ -82,6 +88,9 @@ export type AdminOrderExportRow = {
   orderType: "membership" | "content";
   orderId: string;
   status: OrderStatus;
+  provider: "mock" | "manual" | "hosted";
+  providerOrderId?: string;
+  expiresAt?: string;
   userDisplayName: string;
   userEmail: string;
   subjectId: string;
@@ -120,6 +129,33 @@ export type AdminUsersDashboard = {
   contentOrders: AdminContentOrderRecord[];
   membershipPagination: AdminOrderPagination | null;
   contentPagination: AdminOrderPagination | null;
+};
+
+export type AdminPaymentCallbackRecord = {
+  id: string;
+  provider: "mock" | "manual" | "hosted";
+  providerEventId?: string;
+  eventKey: string;
+  orderType: "membership" | "content";
+  orderId?: string;
+  providerOrderId?: string;
+  paymentReference?: string;
+  state: "paid" | "failed" | "closed";
+  processingStatus: "received" | "processed" | "ignored" | "conflict" | "failed";
+  processingMessage?: string;
+  duplicateCount: number;
+  createdAt: string;
+  lastSeenAt: string;
+};
+
+export type AdminPaymentCallbackActivity = {
+  metrics: {
+    eventCount: number;
+    duplicateCount: number;
+    conflictCount: number;
+    failedCount: number;
+  };
+  recent: AdminPaymentCallbackRecord[];
 };
 
 function resolvePlanName(planId: string) {
@@ -248,6 +284,7 @@ function buildMembershipOrderWhere(filters: {
           OR: [
             { id: { contains: filters.query } },
             { planId: { contains: filters.query } },
+            { providerOrderId: { contains: filters.query } },
             { paymentReference: { contains: filters.query } },
             { user: { is: buildUserSearch(filters.query) } },
           ],
@@ -277,6 +314,7 @@ function buildContentOrderWhere(filters: {
           OR: [
             { id: { contains: filters.query } },
             { contentId: { contains: filters.query } },
+            { providerOrderId: { contains: filters.query } },
             { paymentReference: { contains: filters.query } },
             { user: { is: buildUserSearch(filters.query) } },
           ],
@@ -290,6 +328,9 @@ function toMembershipOrderRecord(order: {
   planId: string;
   amount: number;
   status: string;
+  provider: string;
+  providerOrderId: string | null;
+  expiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   paidAt: Date | null;
@@ -312,6 +353,9 @@ function toMembershipOrderRecord(order: {
     planName: resolvePlanName(order.planId),
     amount: order.amount,
     status: order.status as OrderStatus,
+    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    providerOrderId: order.providerOrderId ?? undefined,
+    expiresAt: order.expiresAt?.toISOString(),
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
     paidAt: order.paidAt?.toISOString(),
@@ -330,6 +374,9 @@ function toContentOrderRecord(
     contentId: string;
     amount: number;
     status: string;
+    provider: string;
+    providerOrderId: string | null;
+    expiresAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
     paidAt: Date | null;
@@ -354,6 +401,9 @@ function toContentOrderRecord(
     contentTitle: contentTitles.get(order.contentId) ?? order.contentId,
     amount: order.amount,
     status: order.status as OrderStatus,
+    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    providerOrderId: order.providerOrderId ?? undefined,
+    expiresAt: order.expiresAt?.toISOString(),
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
     paidAt: order.paidAt?.toISOString(),
@@ -363,6 +413,49 @@ function toContentOrderRecord(
     refundedAt: order.refundedAt?.toISOString(),
     refundReason: order.refundReason ?? undefined,
     paymentReference: order.paymentReference ?? undefined,
+  };
+}
+
+function toPaymentCallbackRecord(event: {
+  id: string;
+  provider: string;
+  providerEventId: string | null;
+  eventKey: string;
+  orderType: string;
+  orderId: string | null;
+  providerOrderId: string | null;
+  paymentReference: string | null;
+  state: string;
+  processingStatus: string;
+  processingMessage: string | null;
+  duplicateCount: number;
+  createdAt: Date;
+  lastSeenAt: Date;
+}): AdminPaymentCallbackRecord {
+  return {
+    id: event.id,
+    provider: event.provider === "manual" ? "manual" : event.provider === "hosted" ? "hosted" : "mock",
+    providerEventId: event.providerEventId ?? undefined,
+    eventKey: event.eventKey,
+    orderType: event.orderType === "membership" ? "membership" : "content",
+    orderId: event.orderId ?? undefined,
+    providerOrderId: event.providerOrderId ?? undefined,
+    paymentReference: event.paymentReference ?? undefined,
+    state:
+      event.state === "failed" || event.state === "closed"
+        ? event.state
+        : "paid",
+    processingStatus:
+      event.processingStatus === "processed" ||
+      event.processingStatus === "ignored" ||
+      event.processingStatus === "conflict" ||
+      event.processingStatus === "failed"
+        ? event.processingStatus
+        : "received",
+    processingMessage: event.processingMessage ?? undefined,
+    duplicateCount: event.duplicateCount,
+    createdAt: event.createdAt.toISOString(),
+    lastSeenAt: event.lastSeenAt.toISOString(),
   };
 }
 
@@ -474,6 +567,9 @@ export async function getAdminUsersDashboard(input: AdminUsersDashboardFilters =
             planId: true,
             amount: true,
             status: true,
+            provider: true,
+            providerOrderId: true,
+            expiresAt: true,
             createdAt: true,
             updatedAt: true,
             paidAt: true,
@@ -503,6 +599,9 @@ export async function getAdminUsersDashboard(input: AdminUsersDashboardFilters =
             contentId: true,
             amount: true,
             status: true,
+            provider: true,
+            providerOrderId: true,
+            expiresAt: true,
             createdAt: true,
             updatedAt: true,
             paidAt: true,
@@ -561,6 +660,59 @@ export async function getAdminUsersDashboard(input: AdminUsersDashboardFilters =
   };
 }
 
+export async function getAdminPaymentCallbackActivity(limit = 6): Promise<AdminPaymentCallbackActivity> {
+  const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 12));
+
+  const [recentRaw, totalEvents, duplicateAggregate, conflictCount, failedCount] = await Promise.all([
+    prisma.paymentCallbackEvent.findMany({
+      orderBy: [{ lastSeenAt: "desc" }, { createdAt: "desc" }],
+      take: safeLimit,
+      select: {
+        id: true,
+        provider: true,
+        providerEventId: true,
+        eventKey: true,
+        orderType: true,
+        orderId: true,
+        providerOrderId: true,
+        paymentReference: true,
+        state: true,
+        processingStatus: true,
+        processingMessage: true,
+        duplicateCount: true,
+        createdAt: true,
+        lastSeenAt: true,
+      },
+    }),
+    prisma.paymentCallbackEvent.count(),
+    prisma.paymentCallbackEvent.aggregate({
+      _sum: {
+        duplicateCount: true,
+      },
+    }),
+    prisma.paymentCallbackEvent.count({
+      where: {
+        processingStatus: "conflict",
+      },
+    }),
+    prisma.paymentCallbackEvent.count({
+      where: {
+        processingStatus: "failed",
+      },
+    }),
+  ]);
+
+  return {
+    metrics: {
+      eventCount: totalEvents,
+      duplicateCount: duplicateAggregate._sum.duplicateCount ?? 0,
+      conflictCount,
+      failedCount,
+    },
+    recent: recentRaw.map((event) => toPaymentCallbackRecord(event)),
+  };
+}
+
 export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters = {}): Promise<AdminOrderExportRow[]> {
   const query = normalizeQuery(input.query);
   const orderStatus = normalizeAdminOrderFilterStatus(input.orderStatus);
@@ -581,6 +733,9 @@ export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters
             planId: true,
             amount: true,
             status: true,
+            provider: true,
+            providerOrderId: true,
+            expiresAt: true,
             createdAt: true,
             updatedAt: true,
             paidAt: true,
@@ -608,6 +763,9 @@ export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters
             contentId: true,
             amount: true,
             status: true,
+            provider: true,
+            providerOrderId: true,
+            expiresAt: true,
             createdAt: true,
             updatedAt: true,
             paidAt: true,
@@ -633,6 +791,9 @@ export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters
     orderType: "membership",
     orderId: order.id,
     status: order.status as OrderStatus,
+    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    providerOrderId: order.providerOrderId ?? undefined,
+    expiresAt: order.expiresAt?.toISOString(),
     userDisplayName: order.user.displayName,
     userEmail: order.user.email,
     subjectId: order.planId,
@@ -652,6 +813,9 @@ export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters
     orderType: "content",
     orderId: order.id,
     status: order.status as OrderStatus,
+    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    providerOrderId: order.providerOrderId ?? undefined,
+    expiresAt: order.expiresAt?.toISOString(),
     userDisplayName: order.user.displayName,
     userEmail: order.user.email,
     subjectId: order.contentId,
@@ -690,6 +854,9 @@ export function buildAdminOrdersCsv(rows: AdminOrderExportRow[]) {
     "order_type",
     "order_id",
     "status",
+    "provider",
+    "provider_order_id",
+    "expires_at",
     "user_display_name",
     "user_email",
     "subject_id",
@@ -711,6 +878,9 @@ export function buildAdminOrdersCsv(rows: AdminOrderExportRow[]) {
       row.orderType,
       row.orderId,
       row.status,
+      row.provider,
+      row.providerOrderId,
+      row.expiresAt,
       row.userDisplayName,
       row.userEmail,
       row.subjectId,

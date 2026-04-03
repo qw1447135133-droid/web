@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  duplicateHomepageBanner,
   moveHomepageBanner,
   saveHomepageBanner,
   toggleHomepageBannerStatus,
@@ -32,6 +33,9 @@ export async function POST(request: NextRequest) {
       await moveHomepageBanner(id, "up");
     } else if (intent === "move-down") {
       await moveHomepageBanner(id, "down");
+    } else if (intent === "duplicate") {
+      const duplicated = await duplicateHomepageBanner(id);
+      return redirectToAdmin(request, `&saved=banner&editBanner=${duplicated.id}`);
     } else {
       await saveHomepageBanner(formData);
     }

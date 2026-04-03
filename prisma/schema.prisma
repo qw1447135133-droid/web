@@ -80,6 +80,29 @@ model ContentOrder {
   @@index([status, updatedAt])
 }
 
+model PaymentCallbackEvent {
+  id               String   @id @default(cuid())
+  provider         String   @default("mock")
+  providerEventId  String?
+  eventKey         String   @unique
+  orderType        String
+  orderId          String?
+  providerOrderId  String?
+  paymentReference String?
+  state            String
+  processingStatus String   @default("received")
+  processingMessage String?
+  payload          String?
+  duplicateCount   Int      @default(0)
+  lastSeenAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([provider, createdAt])
+  @@index([processingStatus, lastSeenAt])
+  @@index([orderType, orderId])
+}
+
 model League {
   id               String             @id @default(cuid())
   source           String             @default("nowscore")
@@ -378,13 +401,32 @@ model HomepageBanner {
   sortOrder      Int      @default(0)
   impressionCount Int     @default(0)
   clickCount      Int     @default(0)
+  primaryImpressionCount Int @default(0)
+  primaryClickCount      Int @default(0)
+  secondaryImpressionCount Int @default(0)
+  secondaryClickCount      Int @default(0)
   lastImpressionAt DateTime?
   lastClickAt      DateTime?
+  dailyStats       HomepageBannerDailyStat[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@index([status, sortOrder])
   @@index([startsAt, endsAt])
+}
+
+model HomepageBannerDailyStat {
+  id              String         @id @default(cuid())
+  metricDate      DateTime
+  impressionCount Int            @default(0)
+  clickCount      Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  bannerId        String
+  banner          HomepageBanner @relation(fields: [bannerId], references: [id], onDelete: Cascade)
+
+  @@unique([bannerId, metricDate])
+  @@index([metricDate])
 }
 
 model SiteAnnouncement {

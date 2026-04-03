@@ -85,6 +85,9 @@ type SiteCopy = {
     membershipOrder: string;
     contentOrder: string;
     createdAt: string;
+    paymentProvider: string;
+    providerOrderId: string;
+    expiresAt: string;
     paymentReference: string;
     entitlementsEyebrow: string;
     entitlementsTitle: string;
@@ -137,11 +140,13 @@ type SiteCopy = {
     football: string;
     basketball: string;
     cricket: string;
+    esports: string;
     standingsOption: string;
     defaultViewTitle: string;
     footballStandingsDescription: string;
     basketballStandingsDescription: string;
     cricketStandingsDescription: string;
+    esportsStandingsDescription: string;
     scheduleDescription: string;
     teamsDescription: string;
     h2hDescription: string;
@@ -207,6 +212,43 @@ type SiteCopy = {
     teaserOnly: string;
     memberStatusActive: string;
     memberStatusInactive: string;
+  };
+  searchCopy: {
+    headerPlaceholder: string;
+    headerSubmit: string;
+    inputLabel: string;
+    inputHint: string;
+    pageEyebrow: string;
+    pageTitle: string;
+    pageDescription: string;
+    totalResults: (count: number, query: string) => string;
+    noQueryTitle: string;
+    noQueryDescription: string;
+    noResultsTitle: string;
+    noResultsDescription: (query: string) => string;
+    sections: {
+      matches: string;
+      leagues: string;
+      plans: string;
+      authors: string;
+    };
+    labels: {
+      status: string;
+      kickoff: string;
+      league: string;
+      season: string;
+      region: string;
+      sport: string;
+      price: string;
+      focus: string;
+      badge: string;
+    };
+    actions: {
+      match: string;
+      league: string;
+      plan: string;
+      author: string;
+    };
   };
   homePageCopy: {
     heroEyebrow: string;
@@ -280,6 +322,9 @@ type SiteCopy = {
     orderTitle: string;
     amount: string;
     createdAt: string;
+    paymentProvider: string;
+    providerOrderId: string;
+    expiresAt: string;
     paymentReference: string;
     orderId: string;
     confirmPayment: string;
@@ -321,7 +366,7 @@ const zhCnCopy: SiteCopy = {
   footerCopy: {
     description: "一个围绕足篮板比分、资料库、AI 推荐、会员付费和后台运营的一期体育数据平台。",
     coreModulesTitle: "核心模块",
-    coreModules: ["即时比分、赔率与板球直播", "资料库与历史赛程", "AI 预测与计划单"],
+    coreModules: ["即时比分、赔率与板球/电竞直播", "资料库与历史赛程", "AI 预测与计划单"],
     commercialTitle: "商业闭环",
     commercialItems: ["会员套餐与单条解锁", "订单记录与权益状态", "运营后台与推荐配置"],
   },
@@ -338,6 +383,7 @@ const zhCnCopy: SiteCopy = {
     { href: "/live/football", label: "足球比分" },
     { href: "/live/basketball", label: "篮球比分" },
     { href: "/live/cricket", label: "板球比分" },
+    { href: "/live/esports", label: "电竞比分" },
     { href: "/database", label: "资料库" },
     { href: "/ai-predictions", label: "AI 预测" },
     { href: "/plans", label: "计划单" },
@@ -416,6 +462,9 @@ const zhCnCopy: SiteCopy = {
     membershipOrder: "会员订单",
     contentOrder: "内容订单",
     createdAt: "创建于",
+    paymentProvider: "支付模式",
+    providerOrderId: "通道单号",
+    expiresAt: "订单有效期",
     paymentReference: "支付流水",
     entitlementsEyebrow: "Unlocked Content",
     entitlementsTitle: "已解锁内容",
@@ -468,11 +517,13 @@ const zhCnCopy: SiteCopy = {
     football: "足球",
     basketball: "篮球",
     cricket: "板球",
+    esports: "电竞",
     standingsOption: "积分榜",
     defaultViewTitle: "积分榜",
     footballStandingsDescription: "查看积分、胜平负与联赛竞争格局。",
     basketballStandingsDescription: "查看战绩、胜率、近期状态与主客场表现。",
     cricketStandingsDescription: "查看球队排名、胜负、近期状态与主客场表现。",
+    esportsStandingsDescription: "查看战绩、地图/小局走势、近期状态与主客场分布。",
     scheduleDescription: "回看赛程赛果与重点备注。",
     teamsDescription: "查看球队简称、排名、近期状态和主客场记录。",
     h2hDescription: "回看历史交锋与关键标签。",
@@ -539,13 +590,50 @@ const zhCnCopy: SiteCopy = {
     memberStatusActive: "会员有效",
     memberStatusInactive: "未开通会员",
   },
+  searchCopy: {
+    headerPlaceholder: "搜索球队、联赛、计划单、作者",
+    headerSubmit: "搜索",
+    inputLabel: "站内搜索",
+    inputHint: "支持搜索球队、联赛、计划单、作者与赛事关键词。",
+    pageEyebrow: "Site Search",
+    pageTitle: "站内检索",
+    pageDescription: "把比赛、联赛、付费计划单和作者入口聚合到一个检索页，方便快速定位历史数据与内容入口。",
+    totalResults: (count, query) => `“${query}” 共找到 ${count} 条结果`,
+    noQueryTitle: "先输入一个关键词",
+    noQueryDescription: "可以直接搜索球队、联赛、赛事、计划单标题或作者名称。",
+    noResultsTitle: "没有找到匹配结果",
+    noResultsDescription: (query) => `当前没有检索到“${query}”相关内容，可以换一个关键词再试。`,
+    sections: {
+      matches: "比赛",
+      leagues: "联赛",
+      plans: "计划单",
+      authors: "作者 / 团队",
+    },
+    labels: {
+      status: "状态",
+      kickoff: "开赛",
+      league: "联赛",
+      season: "赛季",
+      region: "地区",
+      sport: "项目",
+      price: "价格",
+      focus: "擅长",
+      badge: "标签",
+    },
+    actions: {
+      match: "查看比赛",
+      league: "进入资料库",
+      plan: "查看计划单",
+      author: "查看内容",
+    },
+  },
   homePageCopy: {
     heroEyebrow: "Sports Data Platform MVP",
     heroTitlePrefix: "打造更有辨识度的",
     heroTitleHighlightOne: "比赛日指挥台",
     heroTitleInfix: "并接上",
     heroTitleHighlightTwo: "会员收入闭环",
-    heroDescription: "一期聚焦足球、篮球和板球，把比分、资料库、AI 推荐、内容付费、会员购买和后台运营放进同一套 Next.js 应用。",
+    heroDescription: "一期聚焦足球、篮球、板球和电竞，把比分、资料库、AI 推荐、内容付费、会员购买和后台运营放进同一套 Next.js 应用。",
     openLiveScores: "打开即时比分",
     viewMembershipPlans: "查看会员套餐",
     commandFeed: "指挥台快讯",
@@ -610,6 +698,12 @@ const zhCnCopy: SiteCopy = {
       description: "先覆盖热门联赛的即时比分、回合进度、赛果状态与赔率摘要，作为板球板块的一期入口。",
       sportLabel: "板球",
     },
+    esports: {
+      eyebrow: "Esports Live",
+      title: "电竞赛事面板",
+      description: "聚合 LoL、Dota 2、CS2 三条分线，先覆盖重点赛事比分、系列赛进度和盘口摘要。",
+      sportLabel: "电竞",
+    },
   },
   checkoutPageCopy: {
     eyebrow: "Mock Checkout",
@@ -625,6 +719,9 @@ const zhCnCopy: SiteCopy = {
     orderTitle: "订单标题",
     amount: "金额",
     createdAt: "创建于",
+    paymentProvider: "支付模式",
+    providerOrderId: "通道单号",
+    expiresAt: "订单有效期",
     paymentReference: "支付流水",
     orderId: "订单号",
     confirmPayment: "确认模拟支付",
@@ -687,7 +784,7 @@ const zhTwCopy: SiteCopy = {
   footerCopy: {
     description: "一個圍繞足籃板比分、資料庫、AI 推薦、會員付費與後台營運的一期體育數據平台。",
     coreModulesTitle: "核心模組",
-    coreModules: ["即時比分、賠率與板球直播", "資料庫與歷史賽程", "AI 預測與計畫單"],
+    coreModules: ["即時比分、賠率與板球/電競直播", "資料庫與歷史賽程", "AI 預測與計畫單"],
     commercialTitle: "商業閉環",
     commercialItems: ["會員套餐與單條解鎖", "訂單記錄與權益狀態", "營運後台與推薦配置"],
   },
@@ -704,6 +801,7 @@ const zhTwCopy: SiteCopy = {
     { href: "/live/football", label: "足球比分" },
     { href: "/live/basketball", label: "籃球比分" },
     { href: "/live/cricket", label: "板球比分" },
+    { href: "/live/esports", label: "電競比分" },
     { href: "/database", label: "資料庫" },
     { href: "/ai-predictions", label: "AI 預測" },
     { href: "/plans", label: "計畫單" },
@@ -774,6 +872,9 @@ const zhTwCopy: SiteCopy = {
     membershipOrder: "會員訂單",
     contentOrder: "內容訂單",
     createdAt: "建立於",
+    paymentProvider: "支付模式",
+    providerOrderId: "通道單號",
+    expiresAt: "訂單有效期",
     paymentReference: "支付流水",
     entitlementsTitle: "已解鎖內容",
     membershipUnlockedNotice: "目前會員權益已生效，站內計畫單已按會員權限自動解鎖。",
@@ -824,11 +925,13 @@ const zhTwCopy: SiteCopy = {
     football: "足球",
     basketball: "籃球",
     cricket: "板球",
+    esports: "電競",
     standingsOption: "積分榜",
     defaultViewTitle: "積分榜",
     footballStandingsDescription: "查看積分、勝和負與聯賽競爭格局。",
     basketballStandingsDescription: "查看戰績、勝率、近期狀態與主客場表現。",
     cricketStandingsDescription: "查看球隊排名、勝負、近期狀態與主客場表現。",
+    esportsStandingsDescription: "查看戰績、地圖/小局走勢、近期狀態與主客場分佈。",
     scheduleDescription: "回看賽程賽果與重點備註。",
     teamsDescription: "查看球隊簡稱、排名、近期狀態與主客場記錄。",
     h2hDescription: "回看歷史交鋒與關鍵標籤。",
@@ -896,13 +999,50 @@ const zhTwCopy: SiteCopy = {
     memberStatusActive: "會員有效",
     memberStatusInactive: "未開通會員",
   },
+  searchCopy: {
+    ...zhCnCopy.searchCopy,
+    headerPlaceholder: "搜尋球隊、聯賽、計畫單、作者",
+    headerSubmit: "搜尋",
+    inputLabel: "站內搜尋",
+    inputHint: "支援搜尋球隊、聯賽、計畫單、作者與賽事關鍵字。",
+    pageTitle: "站內檢索",
+    pageDescription: "把比賽、聯賽、付費計畫單和作者入口集中到同一個搜尋頁，方便快速定位歷史資料與內容入口。",
+    totalResults: (count, query) => `「${query}」共找到 ${count} 筆結果`,
+    noQueryTitle: "先輸入一個關鍵字",
+    noQueryDescription: "可以直接搜尋球隊、聯賽、賽事、計畫單標題或作者名稱。",
+    noResultsTitle: "沒有找到相符結果",
+    noResultsDescription: (query) => `目前沒有檢索到「${query}」相關內容，可以換一個關鍵字再試。`,
+    sections: {
+      matches: "比賽",
+      leagues: "聯賽",
+      plans: "計畫單",
+      authors: "作者 / 團隊",
+    },
+    labels: {
+      status: "狀態",
+      kickoff: "開賽",
+      league: "聯賽",
+      season: "賽季",
+      region: "地區",
+      sport: "項目",
+      price: "價格",
+      focus: "擅長",
+      badge: "標籤",
+    },
+    actions: {
+      match: "查看比賽",
+      league: "進入資料庫",
+      plan: "查看計畫單",
+      author: "查看內容",
+    },
+  },
   homePageCopy: {
     ...zhCnCopy.homePageCopy,
     heroTitlePrefix: "打造更有辨識度的",
     heroTitleHighlightOne: "比賽日指揮台",
     heroTitleInfix: "並接上",
     heroTitleHighlightTwo: "會員收入閉環",
-    heroDescription: "一期聚焦足球、籃球和板球，把比分、資料庫、AI 推薦、內容付費、會員購買與後台營運放進同一套 Next.js 應用。",
+    heroDescription: "一期聚焦足球、籃球、板球與電競，把比分、資料庫、AI 推薦、內容付費、會員購買與後台營運放進同一套 Next.js 應用。",
     openLiveScores: "打開即時比分",
     viewMembershipPlans: "查看會員套餐",
     commandFeed: "指揮台快訊",
@@ -963,6 +1103,12 @@ const zhTwCopy: SiteCopy = {
       description: "先覆蓋熱門聯賽的即時比分、回合進度、賽果狀態與賠率摘要，作為板球板塊的一期入口。",
       sportLabel: "板球",
     },
+    esports: {
+      ...zhCnCopy.livePageCopy.esports,
+      title: "電競賽事面板",
+      description: "聚合 LoL、Dota 2、CS2 三條分線，先覆蓋重點賽事比分、系列賽進度與盤口摘要。",
+      sportLabel: "電競",
+    },
   },
   checkoutPageCopy: {
     ...zhCnCopy.checkoutPageCopy,
@@ -978,6 +1124,9 @@ const zhTwCopy: SiteCopy = {
     orderTitle: "訂單標題",
     amount: "金額",
     createdAt: "建立於",
+    paymentProvider: "支付模式",
+    providerOrderId: "通道單號",
+    expiresAt: "訂單有效期",
     paymentReference: "支付流水",
     orderId: "訂單號",
     confirmPayment: "確認模擬支付",
@@ -1039,9 +1188,9 @@ const zhTwCopy: SiteCopy = {
 const enCopy: SiteCopy = {
   ...zhCnCopy,
   footerCopy: {
-    description: "A phase-one sports data platform built around football, basketball, and cricket scores, stats, AI picks, memberships, and operator workflows.",
+    description: "A phase-one sports data platform built around football, basketball, cricket, and esports scores, stats, AI picks, memberships, and operator workflows.",
     coreModulesTitle: "Core Modules",
-    coreModules: ["Live scores, odds, and cricket coverage", "Database and historical fixtures", "AI predictions and paid plans"],
+    coreModules: ["Live scores, odds, and cricket/esports coverage", "Database and historical fixtures", "AI predictions and paid plans"],
     commercialTitle: "Commercial Layer",
     commercialItems: ["Membership bundles and single unlocks", "Order history and entitlement state", "Admin operations and placements"],
   },
@@ -1058,6 +1207,7 @@ const enCopy: SiteCopy = {
     { href: "/live/football", label: "Football Live" },
     { href: "/live/basketball", label: "Basketball Live" },
     { href: "/live/cricket", label: "Cricket Live" },
+    { href: "/live/esports", label: "Esports Live" },
     { href: "/database", label: "Database" },
     { href: "/ai-predictions", label: "AI Picks" },
     { href: "/plans", label: "Plans" },
@@ -1128,6 +1278,9 @@ const enCopy: SiteCopy = {
     membershipOrder: "Membership order",
     contentOrder: "Content order",
     createdAt: "Created",
+    paymentProvider: "Payment mode",
+    providerOrderId: "Gateway order ID",
+    expiresAt: "Order expires at",
     paymentReference: "Payment reference",
     entitlementsTitle: "Unlocked content",
     membershipUnlockedNotice: "Your membership is active and plan access has been refreshed automatically.",
@@ -1178,11 +1331,13 @@ const enCopy: SiteCopy = {
     football: "Football",
     basketball: "Basketball",
     cricket: "Cricket",
+    esports: "Esports",
     standingsOption: "Standings",
     defaultViewTitle: "Standings",
     footballStandingsDescription: "Review points, wins, draws, losses, and title-race shape.",
     basketballStandingsDescription: "Review record, win rate, recent form, and home-away splits.",
     cricketStandingsDescription: "Review team rank, record, recent form, and home-away splits.",
+    esportsStandingsDescription: "Review series record, map trend, recent form, and venue splits.",
     scheduleDescription: "Scan fixtures, results, and tagged notes.",
     teamsDescription: "Review aliases, ranks, recent form, and split records.",
     h2hDescription: "Review head-to-head history and key tags.",
@@ -1250,13 +1405,50 @@ const enCopy: SiteCopy = {
     memberStatusActive: "Active membership",
     memberStatusInactive: "No membership",
   },
+  searchCopy: {
+    ...zhCnCopy.searchCopy,
+    headerPlaceholder: "Search teams, leagues, plans, or authors",
+    headerSubmit: "Search",
+    inputLabel: "Site search",
+    inputHint: "Search teams, leagues, matches, plans, or author names from one place.",
+    pageTitle: "Site search",
+    pageDescription: "Aggregate matches, leagues, paid plans, and author entry points into one retrieval page for faster navigation.",
+    totalResults: (count, query) => `${count} results for “${query}”`,
+    noQueryTitle: "Start with a keyword",
+    noQueryDescription: "Try a team, league, fixture, plan title, or author name.",
+    noResultsTitle: "No matching results",
+    noResultsDescription: (query) => `No content matched “${query}” yet. Try another keyword.`,
+    sections: {
+      matches: "Matches",
+      leagues: "Leagues",
+      plans: "Plans",
+      authors: "Authors",
+    },
+    labels: {
+      status: "Status",
+      kickoff: "Kickoff",
+      league: "League",
+      season: "Season",
+      region: "Region",
+      sport: "Sport",
+      price: "Price",
+      focus: "Focus",
+      badge: "Badge",
+    },
+    actions: {
+      match: "Open match",
+      league: "Open database",
+      plan: "Open plan",
+      author: "Open content",
+    },
+  },
   homePageCopy: {
     ...zhCnCopy.homePageCopy,
     heroTitlePrefix: "Build a sharper",
     heroTitleHighlightOne: "match-day terminal",
     heroTitleInfix: "and connect it to a",
     heroTitleHighlightTwo: "membership revenue loop",
-    heroDescription: "Phase one focuses on football, basketball, and cricket, combining scores, stats, AI picks, paid content, memberships, and admin workflows inside one Next.js app.",
+    heroDescription: "Phase one focuses on football, basketball, cricket, and esports, combining scores, stats, AI picks, paid content, memberships, and admin workflows inside one Next.js app.",
     openLiveScores: "Open live scores",
     viewMembershipPlans: "View memberships",
     commandFeed: "Command feed",
@@ -1317,6 +1509,12 @@ const enCopy: SiteCopy = {
       description: "Start with hot-league live scores, over progress, result state, and odds snapshots as the phase-one cricket entry.",
       sportLabel: "Cricket",
     },
+    esports: {
+      ...zhCnCopy.livePageCopy.esports,
+      title: "Esports live board",
+      description: "Group LoL, Dota 2, and CS2 under one live surface with series state, scoreline, and odds context.",
+      sportLabel: "Esports",
+    },
   },
   checkoutPageCopy: {
     ...zhCnCopy.checkoutPageCopy,
@@ -1332,6 +1530,9 @@ const enCopy: SiteCopy = {
     orderTitle: "Order title",
     amount: "Amount",
     createdAt: "Created",
+    paymentProvider: "Payment mode",
+    providerOrderId: "Gateway order ID",
+    expiresAt: "Order expires at",
     paymentReference: "Payment reference",
     orderId: "Order ID",
     confirmPayment: "Confirm mock payment",
@@ -1426,6 +1627,7 @@ export const matchDetailCopy = defaultCopy.matchDetailCopy;
 export const databasePageCopy = defaultCopy.databasePageCopy;
 export const aiPredictionsPageCopy = defaultCopy.aiPredictionsPageCopy;
 export const uiCopy = defaultCopy.uiCopy;
+export const searchCopy = defaultCopy.searchCopy;
 export const homePageCopy = defaultCopy.homePageCopy;
 export const livePageCopy = defaultCopy.livePageCopy;
 export const checkoutPageCopy = defaultCopy.checkoutPageCopy;

@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { articlePlans as mockArticlePlans, authorTeams as mockAuthorTeams } from "@/lib/mock-data";
+import { articlePlans as mockArticlePlans, authorTeams as mockAuthorTeams, predictions as mockPredictions } from "@/lib/mock-data";
 import type { Sport } from "@/lib/types";
 
 export type AdminAuthorTeamRecord = {
@@ -38,6 +38,23 @@ export type AdminArticlePlanRecord = {
   publishedAt?: string;
 };
 
+export type AdminPredictionRecord = {
+  id: string;
+  sport: Sport;
+  matchId?: string;
+  matchRef: string;
+  authorId?: string;
+  market: string;
+  pick: string;
+  confidence: string;
+  expectedEdge: string;
+  explanation: string;
+  factorsText: string;
+  result: string;
+  publishedAt?: string;
+  updatedAt: string;
+};
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -47,7 +64,7 @@ function slugify(value: string) {
 }
 
 function normalizeSport(value: string): Sport {
-  if (value === "basketball" || value === "cricket") {
+  if (value === "basketball" || value === "cricket" || value === "esports") {
     return value;
   }
 
@@ -88,6 +105,35 @@ function resolvePreviewText(previewText: string, fullAnalysisText: string, tease
 
   const firstParagraph = fullAnalysisText.split("\n").find(Boolean)?.trim();
   return firstParagraph || teaser;
+}
+
+function parsePredictionPayload(value: string | null | undefined) {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(value) as { matchRef?: string };
+  } catch {
+    return {};
+  }
+}
+
+async function resolveMatchRecordId(matchRef: string) {
+  const value = matchRef.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const match = await prisma.match.findFirst({
+    where: {
+      OR: [{ id: value }, { sourceKey: value }],
+    },
+    select: { id: true },
+  });
+
+  return match?.id ?? null;
 }
 
 async function ensureUniqueAuthorSlug(baseValue: string, ignoreId?: string) {
@@ -137,7 +183,7 @@ async function ensureUniquePlanSlug(baseValue: string, ignoreId?: string) {
 }
 
 function revalidateContentViews(slug?: string, matchId?: string) {
-  const paths = ["/", "/plans", "/member", "/admin"];
+  const paths = ["/", "/plans", "/member", "/admin", "/ai-predictions"];
 
   if (slug) {
     paths.push(`/plans/${slug}`);
@@ -203,6 +249,38 @@ export async function getAdminArticlePlans(): Promise<AdminArticlePlanRecord[]> 
     status: record.status,
     publishedAt: record.publishedAt?.toISOString(),
   }));
+}
+
+export async function getAdminPredictionRecords(): Promise<AdminPredictionRecord[]> {
+  const records = await prisma.predictionRecord.findMany({
+    include: {
+      match: {
+        select: { id: true, sourceKey: true },
+      },
+    },
+    orderBy: [{ updatedAt: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
+  });
+
+  return records.map((record) => {
+    const payload = parsePredictionPayload(record.sourcePayload);
+
+    return {
+      id: record.id,
+      sport: normalizeSport(record.sport),
+      matchId: record.matchId ?? undefined,
+      matchRef: record.match?.sourceKey ?? payload.matchRef ?? "",
+      authorId: record.authorId ?? undefined,
+      market: record.market,
+      pick: record.pick,
+      confidence: record.confidence,
+      expectedEdge: record.expectedEdge,
+      explanation: record.explanation,
+      factorsText: record.factorsText,
+      result: record.result,
+      publishedAt: record.publishedAt?.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  });
 }
 
 export async function saveAuthorTeam(formData: FormData) {
@@ -387,6 +465,155 @@ export async function saveArticlePlan(formData: FormData) {
   return created;
 }
 
+export async function savePredictionRecord(formData: FormData) {
+  const id = String(formData.get("id") || "").trim();
+  const sport = normalizeSport(String(formData.get("sport") || "football"));
+  const market = String(formData.get("market") || "").trim();
+  const pick = String(formData.get("pick") || "").trim();
+
+  if (!market) {
+    throw new Error("预测玩法不能为空。");
+  }
+
+  if (!pick) {
+    throw new Error("预测选择不能为空。");
+  }
+
+  const matchRef = String(formData.get("matchId") || "").trim();
+  const authorId = String(formData.get("authorId") || "").trim() || null;
+  const confidence = String(formData.get("confidence") || "").trim() || "--";
+  const expectedEdge = String(formData.get("expectedEdge") || "").trim() || "--";
+  const explanation = String(formData.get("explanation") || "").trim() || "待补充解释";
+  const factorsText = normalizeLines(String(formData.get("factorsText") || ""));
+  const result = String(formData.get("result") || "pending").trim() || "pending";
+  const matchId = await resolveMatchRecordId(matchRef);
+
+  if (authorId) {
+    const author = await prisma.authorTeam.findUnique({
+      where: { id: authorId },
+      select: { id: true },
+    });
+
+    if (!author) {
+      throw new Error("所选作者/团队不存在。");
+    }
+  }
+
+  const sourcePayload = JSON.stringify({ matchRef: matchRef || undefined });
+  const sourceKey = matchRef ? `prediction:${matchRef}` : null;
+
+  if (id) {
+    const existing = await prisma.predictionRecord.findUnique({
+      where: { id },
+      select: { id: true, publishedAt: true },
+    });
+
+    if (existing) {
+      const updated = await prisma.predictionRecord.update({
+        where: { id },
+        data: {
+          sport,
+          market,
+          pick,
+          confidence,
+          expectedEdge,
+          explanation,
+          factorsText,
+          result,
+          authorId,
+          matchId,
+          sourceKey,
+          sourcePayload,
+          publishedAt: existing.publishedAt ?? new Date(),
+        },
+      });
+
+      revalidateContentViews(undefined, matchRef || undefined);
+      return updated;
+    }
+  }
+
+  if (sourceKey) {
+    const existingBySourceKey = await prisma.predictionRecord.findFirst({
+      where: { sourceKey },
+      select: { id: true, publishedAt: true },
+    });
+
+    if (existingBySourceKey) {
+      const updated = await prisma.predictionRecord.update({
+        where: { id: existingBySourceKey.id },
+        data: {
+          sport,
+          market,
+          pick,
+          confidence,
+          expectedEdge,
+          explanation,
+          factorsText,
+          result,
+          authorId,
+          matchId,
+          sourceKey,
+          sourcePayload,
+          publishedAt: existingBySourceKey.publishedAt ?? new Date(),
+        },
+      });
+
+      revalidateContentViews(undefined, matchRef || undefined);
+      return updated;
+    }
+  }
+
+  const fallbackPredictionId = matchRef
+    ? mockPredictions.find((prediction) => prediction.matchId === matchRef)?.id
+    : undefined;
+
+  const created = await prisma.predictionRecord.create({
+    data: {
+      id: id || fallbackPredictionId || undefined,
+      source: "manual",
+      sport,
+      market,
+      pick,
+      confidence,
+      expectedEdge,
+      explanation,
+      factorsText,
+      result,
+      sourceKey,
+      authorId,
+      matchId,
+      sourcePayload,
+      publishedAt: new Date(),
+    },
+  });
+
+  revalidateContentViews(undefined, matchRef || undefined);
+  return created;
+}
+
+export async function deletePredictionRecord(predictionId: string) {
+  const current = await prisma.predictionRecord.findUnique({
+    where: { id: predictionId },
+    include: {
+      match: {
+        select: { sourceKey: true },
+      },
+    },
+  });
+
+  if (!current) {
+    throw new Error("AI 预测记录不存在。");
+  }
+
+  await prisma.predictionRecord.delete({
+    where: { id: predictionId },
+  });
+
+  const payload = parsePredictionPayload(current.sourcePayload);
+  revalidateContentViews(undefined, current.match?.sourceKey ?? payload.matchRef ?? undefined);
+}
+
 export async function toggleArticlePlanStatus(planId: string) {
   const current = await prisma.articlePlan.findUnique({
     where: { id: planId },
@@ -536,6 +763,47 @@ export async function bootstrapMockContent() {
         status: "published",
         publishedAt: new Date(),
         authorId: plan.authorId,
+      },
+    });
+  }
+
+  for (const prediction of mockPredictions) {
+    const matchId = await resolveMatchRecordId(prediction.matchId);
+
+    await prisma.predictionRecord.upsert({
+      where: { id: prediction.id },
+      update: {
+        source: "mock-bootstrap",
+        sourceKey: `prediction:${prediction.matchId}`,
+        sport: prediction.sport,
+        market: prediction.market,
+        pick: prediction.pick,
+        confidence: prediction.confidence,
+        expectedEdge: prediction.expectedEdge,
+        explanation: prediction.explanation,
+        factorsText: normalizeLines(prediction.factors.join("\n")),
+        result: prediction.result,
+        authorId: mockArticlePlans.find((plan) => plan.matchId === prediction.matchId)?.authorId ?? null,
+        matchId,
+        sourcePayload: JSON.stringify({ matchRef: prediction.matchId }),
+        publishedAt: new Date(),
+      },
+      create: {
+        id: prediction.id,
+        source: "mock-bootstrap",
+        sourceKey: `prediction:${prediction.matchId}`,
+        sport: prediction.sport,
+        market: prediction.market,
+        pick: prediction.pick,
+        confidence: prediction.confidence,
+        expectedEdge: prediction.expectedEdge,
+        explanation: prediction.explanation,
+        factorsText: normalizeLines(prediction.factors.join("\n")),
+        result: prediction.result,
+        authorId: mockArticlePlans.find((plan) => plan.matchId === prediction.matchId)?.authorId ?? null,
+        matchId,
+        sourcePayload: JSON.stringify({ matchRef: prediction.matchId }),
+        publishedAt: new Date(),
       },
     });
   }
