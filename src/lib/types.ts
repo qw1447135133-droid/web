@@ -2,7 +2,7 @@ export type Sport = "football" | "basketball" | "cricket" | "esports";
 
 export type MatchStatus = "live" | "upcoming" | "finished";
 
-export type UserRole = "visitor" | "member" | "operator" | "admin";
+export type UserRole = "visitor" | "member" | "operator" | "finance" | "admin";
 
 export type AnnouncementTone = "info" | "success" | "warning";
 export type HomepageBannerTheme = "sunrise" | "field" | "midnight";
@@ -274,6 +274,10 @@ export interface SessionEntitlements {
   canAccessMemberCenter: boolean;
   canAccessAdminConsole: boolean;
   canManageContent: boolean;
+  canManageFinance: boolean;
+  canManageAgents: boolean;
+  canManageSystem: boolean;
+  canViewReports: boolean;
 }
 
 export interface SessionContext {

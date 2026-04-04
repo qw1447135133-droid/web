@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
+import {
+  createAgentCommissionForRechargeOrder,
+  reverseAgentCommissionForRechargeOrder,
+} from "@/lib/agent-attribution";
 import { prisma } from "@/lib/prisma";
 import type { Locale } from "@/lib/i18n-config";
 
@@ -57,6 +61,32 @@ export type AdminCoinRechargeOrderRecord = {
   creditedAt?: string;
 };
 
+export type AdminCoinLedgerRecord = {
+  id: string;
+  userDisplayName: string;
+  userEmail: string;
+  direction: CoinLedgerDirection;
+  reason: string;
+  reasonLabel: string;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  note?: string;
+  referenceType?: string;
+  referenceId?: string;
+  createdAt: string;
+};
+
+export type AdminCoinAccountRecord = {
+  userId: string;
+  userDisplayName: string;
+  userEmail: string;
+  balance: number;
+  lifetimeCredited: number;
+  lifetimeDebited: number;
+  lastActivityAt?: string;
+};
+
 export type AdminFinanceRowCard = {
   title: string;
   subtitle?: string;
@@ -80,6 +110,9 @@ export type AdminFinanceDashboard = {
   metrics: AdminFinanceMetric[];
   coinPackages: AdminCoinPackageRecord[];
   rechargeOrders: AdminCoinRechargeOrderRecord[];
+  coinAccounts: AdminCoinAccountRecord[];
+  recentLedgers: AdminCoinLedgerRecord[];
+  reconciliationRows: AdminFinanceRowCard[];
   settlementRows: AdminFinanceRowCard[];
   userOptions: AdminFinanceUserOption[];
   packageOptions: AdminFinancePackageOption[];
@@ -261,6 +294,72 @@ function getPackageStatusLabel(locale: Locale, status: CoinPackageStatus) {
       zhCn: "启用中",
       zhTw: "啟用中",
       en: "Active",
+    },
+    locale,
+  );
+}
+
+function getCoinLedgerReasonLabel(locale: Locale, reason: string) {
+  if (reason === "manual_recharge" || reason === "recharge") {
+    return localizeText(
+      {
+        zhCn: "人工充值",
+        zhTw: "人工充值",
+        en: "Manual recharge",
+      },
+      locale,
+    );
+  }
+
+  if (reason === "content_unlock") {
+    return localizeText(
+      {
+        zhCn: "球币解锁内容",
+        zhTw: "球幣解鎖內容",
+        en: "Content unlock",
+      },
+      locale,
+    );
+  }
+
+  if (reason === "membership_unlock") {
+    return localizeText(
+      {
+        zhCn: "球币开通会员",
+        zhTw: "球幣開通會員",
+        en: "Membership activation",
+      },
+      locale,
+    );
+  }
+
+  if (reason === "refund") {
+    return localizeText(
+      {
+        zhCn: "退款回退",
+        zhTw: "退款回退",
+        en: "Refund reversal",
+      },
+      locale,
+    );
+  }
+
+  if (reason === "admin_adjustment") {
+    return localizeText(
+      {
+        zhCn: "后台调整",
+        zhTw: "後台調整",
+        en: "Admin adjustment",
+      },
+      locale,
+    );
+  }
+
+  return localizeText(
+    {
+      zhCn: "钱包流水",
+      zhTw: "錢包流水",
+      en: "Wallet movement",
     },
     locale,
   );
@@ -588,7 +687,7 @@ export async function markCoinRechargeOrderPaidByAdmin(input: {
     await applyCoinAccountAdjustment(tx, {
       userId: order.userId,
       direction: "credit",
-      reason: "recharge",
+      reason: "manual_recharge",
       amount: totalCoins,
       referenceType: "coin-recharge-order",
       referenceId: order.id,
@@ -608,6 +707,11 @@ export async function markCoinRechargeOrderPaidByAdmin(input: {
         refundReason: null,
         paymentReference: input.paymentReference?.trim() || order.paymentReference || createCoinPaymentReference("manual"),
       },
+    });
+
+    await createAgentCommissionForRechargeOrder(tx, {
+      orderId: order.id,
+      note: `Recharge paid ${order.orderNo}`,
     });
   });
 
@@ -743,14 +847,98 @@ export async function refundCoinRechargeOrderByAdmin(input: {
         refundReason: input.reason?.trim() || "后台人工退款，金币已回退。",
       },
     });
+
+    await reverseAgentCommissionForRechargeOrder(tx, {
+      orderId: order.id,
+      note: input.reason?.trim() || `Recharge refunded ${order.orderNo}`,
+    });
   });
 
   safeRevalidate(siteSurfacePaths);
 }
 
+export async function adjustCoinAccountByAdmin(input: {
+  userId: string;
+  direction: CoinLedgerDirection;
+  amount: number;
+  note?: string;
+}) {
+  const user = await prisma.user.findUnique({
+    where: { id: input.userId },
+    select: { id: true },
+  });
+
+  if (!user) {
+    throw new Error("COIN_RECHARGE_USER_NOT_FOUND");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await applyCoinAccountAdjustment(tx, {
+      userId: input.userId,
+      direction: input.direction,
+      reason: "admin_adjustment",
+      amount: input.amount,
+      referenceType: "admin-finance",
+      referenceId: randomUUID(),
+      note: input.note?.trim() || undefined,
+      allowNegative: false,
+    });
+  });
+
+  safeRevalidate(siteSurfacePaths);
+}
+
+export async function closeExpiredCoinRechargeOrders(input?: {
+  now?: Date;
+}) {
+  const now = input?.now ?? new Date();
+  const expiredOrders = await prisma.coinRechargeOrder.findMany({
+    where: {
+      status: "pending",
+      expiresAt: {
+        not: null,
+        lt: now,
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (expiredOrders.length === 0) {
+    return {
+      closedCount: 0,
+    };
+  }
+
+  await prisma.coinRechargeOrder.updateMany({
+    where: {
+      id: {
+        in: expiredOrders.map((item) => item.id),
+      },
+    },
+    data: {
+      status: "closed",
+      closedAt: now,
+      failureReason: null,
+      failedAt: null,
+      refundedAt: null,
+      refundReason: null,
+    },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+
+  return {
+    closedCount: expiredOrders.length,
+  };
+}
+
 export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFinanceDashboard> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const stalePendingThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   const [
     packagesRaw,
@@ -760,6 +948,13 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     pendingRechargeCount,
     paidRechargeAggregate,
     totalCoinBalanceAggregate,
+    coinAccountsRaw,
+    recentLedgersRaw,
+    rechargePaidAggregate,
+    rechargeRefundedAggregate,
+    rechargePendingAggregate,
+    expiredPendingCount,
+    stalePendingCount,
     userOptionsRaw,
     paidContentOrders,
   ] = await Promise.all([
@@ -807,6 +1002,87 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     prisma.coinAccount.aggregate({
       _sum: {
         balance: true,
+      },
+    }),
+    prisma.coinAccount.findMany({
+      take: 8,
+      orderBy: [{ balance: "desc" }, { updatedAt: "desc" }],
+      include: {
+        user: {
+          select: {
+            id: true,
+            displayName: true,
+            email: true,
+          },
+        },
+      },
+    }),
+    prisma.coinLedger.findMany({
+      take: 12,
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        account: {
+          include: {
+            user: {
+              select: {
+                displayName: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.coinRechargeOrder.aggregate({
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        id: true,
+      },
+      where: {
+        status: "paid",
+      },
+    }),
+    prisma.coinRechargeOrder.aggregate({
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        id: true,
+      },
+      where: {
+        status: "refunded",
+      },
+    }),
+    prisma.coinRechargeOrder.aggregate({
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        id: true,
+      },
+      where: {
+        status: "pending",
+      },
+    }),
+    prisma.coinRechargeOrder.count({
+      where: {
+        status: "pending",
+        expiresAt: {
+          not: null,
+          lt: now,
+        },
+      },
+    }),
+    prisma.coinRechargeOrder.count({
+      where: {
+        status: "pending",
+        createdAt: {
+          lt: stalePendingThreshold,
+        },
       },
     }),
     prisma.user.findMany({
@@ -881,6 +1157,32 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     closedAt: order.closedAt?.toISOString(),
     refundedAt: order.refundedAt?.toISOString(),
     creditedAt: order.creditedAt?.toISOString(),
+  }));
+
+  const coinAccounts: AdminCoinAccountRecord[] = coinAccountsRaw.map((account) => ({
+    userId: account.user.id,
+    userDisplayName: account.user.displayName,
+    userEmail: account.user.email,
+    balance: account.balance,
+    lifetimeCredited: account.lifetimeCredited,
+    lifetimeDebited: account.lifetimeDebited,
+    lastActivityAt: account.lastActivityAt?.toISOString(),
+  }));
+
+  const recentLedgers: AdminCoinLedgerRecord[] = recentLedgersRaw.map((ledger) => ({
+    id: ledger.id,
+    userDisplayName: ledger.account.user.displayName,
+    userEmail: ledger.account.user.email,
+    direction: ledger.direction === "debit" ? "debit" : "credit",
+    reason: ledger.reason,
+    reasonLabel: getCoinLedgerReasonLabel(locale, ledger.reason),
+    amount: ledger.amount,
+    balanceBefore: ledger.balanceBefore,
+    balanceAfter: ledger.balanceAfter,
+    note: ledger.note ?? undefined,
+    referenceType: ledger.referenceType ?? undefined,
+    referenceId: ledger.referenceId ?? undefined,
+    createdAt: ledger.createdAt.toISOString(),
   }));
 
   const metrics: AdminFinanceMetric[] = [
@@ -959,6 +1261,165 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
         },
         locale,
       ),
+    },
+  ];
+
+  const reconciliationRows: AdminFinanceRowCard[] = [
+    {
+      title: localizeText(
+        {
+          zhCn: "充值实收",
+          zhTw: "充值實收",
+          en: "Recharge revenue",
+        },
+        locale,
+      ),
+      subtitle: localizeText(
+        {
+          zhCn: `${formatCompactNumber(rechargePaidAggregate._count.id ?? 0)} 笔已支付充值单`,
+          zhTw: `${formatCompactNumber(rechargePaidAggregate._count.id ?? 0)} 筆已支付充值單`,
+          en: `${formatCompactNumber(rechargePaidAggregate._count.id ?? 0)} paid recharge orders`,
+        },
+        locale,
+      ),
+      status: localizeText(
+        {
+          zhCn: "已对账",
+          zhTw: "已對帳",
+          en: "Settled",
+        },
+        locale,
+      ),
+      tone: "good",
+      meta: [
+        localizeText(
+          {
+            zhCn: `累计 ${formatCompactNumber(rechargePaidAggregate._sum.amount ?? 0)} 元`,
+            zhTw: `累計 ${formatCompactNumber(rechargePaidAggregate._sum.amount ?? 0)} 元`,
+            en: `CNY ${formatCompactNumber(rechargePaidAggregate._sum.amount ?? 0)}`,
+          },
+          locale,
+        ),
+      ],
+    },
+    {
+      title: localizeText(
+        {
+          zhCn: "待处理充值单",
+          zhTw: "待處理充值單",
+          en: "Pending recharges",
+        },
+        locale,
+      ),
+      subtitle: localizeText(
+        {
+          zhCn: `${formatCompactNumber(rechargePendingAggregate._count.id ?? 0)} 笔待财务核对`,
+          zhTw: `${formatCompactNumber(rechargePendingAggregate._count.id ?? 0)} 筆待財務核對`,
+          en: `${formatCompactNumber(rechargePendingAggregate._count.id ?? 0)} waiting for finance review`,
+        },
+        locale,
+      ),
+      status: localizeText(
+        {
+          zhCn: stalePendingCount > 0 ? "需跟进" : "处理中",
+          zhTw: stalePendingCount > 0 ? "需跟進" : "處理中",
+          en: stalePendingCount > 0 ? "Needs follow-up" : "Processing",
+        },
+        locale,
+      ),
+      tone: stalePendingCount > 0 ? "warn" : "neutral",
+      meta: [
+        localizeText(
+          {
+            zhCn: `待核金额 ${formatCompactNumber(rechargePendingAggregate._sum.amount ?? 0)} 元`,
+            zhTw: `待核金額 ${formatCompactNumber(rechargePendingAggregate._sum.amount ?? 0)} 元`,
+            en: `Pending CNY ${formatCompactNumber(rechargePendingAggregate._sum.amount ?? 0)}`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `超 24 小时 ${formatCompactNumber(stalePendingCount)} 笔`,
+            zhTw: `超 24 小時 ${formatCompactNumber(stalePendingCount)} 筆`,
+            en: `Over 24h: ${formatCompactNumber(stalePendingCount)}`,
+          },
+          locale,
+        ),
+      ],
+    },
+    {
+      title: localizeText(
+        {
+          zhCn: "退款回退",
+          zhTw: "退款回退",
+          en: "Refunded recharge",
+        },
+        locale,
+      ),
+      subtitle: localizeText(
+        {
+          zhCn: `${formatCompactNumber(rechargeRefundedAggregate._count.id ?? 0)} 笔退款单`,
+          zhTw: `${formatCompactNumber(rechargeRefundedAggregate._count.id ?? 0)} 筆退款單`,
+          en: `${formatCompactNumber(rechargeRefundedAggregate._count.id ?? 0)} refunded orders`,
+        },
+        locale,
+      ),
+      status: localizeText(
+        {
+          zhCn: "已回退",
+          zhTw: "已回退",
+          en: "Reversed",
+        },
+        locale,
+      ),
+      tone: "neutral",
+      meta: [
+        localizeText(
+          {
+            zhCn: `累计 ${formatCompactNumber(rechargeRefundedAggregate._sum.amount ?? 0)} 元`,
+            zhTw: `累計 ${formatCompactNumber(rechargeRefundedAggregate._sum.amount ?? 0)} 元`,
+            en: `CNY ${formatCompactNumber(rechargeRefundedAggregate._sum.amount ?? 0)}`,
+          },
+          locale,
+        ),
+      ],
+    },
+    {
+      title: localizeText(
+        {
+          zhCn: "已过期待关闭",
+          zhTw: "已過期待關閉",
+          en: "Expired pending orders",
+        },
+        locale,
+      ),
+      subtitle: localizeText(
+        {
+          zhCn: "服务器定时任务可自动清理超时充值单。",
+          zhTw: "伺服器定時任務可自動清理超時充值單。",
+          en: "Server cron can auto-close timed-out recharge orders.",
+        },
+        locale,
+      ),
+      status: localizeText(
+        {
+          zhCn: expiredPendingCount > 0 ? "待清理" : "已清空",
+          zhTw: expiredPendingCount > 0 ? "待清理" : "已清空",
+          en: expiredPendingCount > 0 ? "Pending cleanup" : "Clear",
+        },
+        locale,
+      ),
+      tone: expiredPendingCount > 0 ? "warn" : "good",
+      meta: [
+        localizeText(
+          {
+            zhCn: `${formatCompactNumber(expiredPendingCount)} 笔已超时`,
+            zhTw: `${formatCompactNumber(expiredPendingCount)} 筆已超時`,
+            en: `${formatCompactNumber(expiredPendingCount)} expired`,
+          },
+          locale,
+        ),
+      ],
     },
   ];
 
@@ -1061,6 +1522,9 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     metrics,
     coinPackages: packages,
     rechargeOrders,
+    coinAccounts,
+    recentLedgers,
+    reconciliationRows,
     settlementRows,
     userOptions: userOptionsRaw.map((user) => ({
       id: user.id,
@@ -1119,4 +1583,3 @@ export function buildFinancePackageCards(
     ],
   }));
 }
-

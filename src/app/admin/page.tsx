@@ -2,6 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminBannerComposer } from "@/components/admin-banner-composer";
 import { SectionHeading } from "@/components/section-heading";
+import { getAdminAgentsDashboard } from "@/lib/admin-agents";
+import { getAdminReportsDashboard } from "@/lib/admin-reports";
+import { getAdminSystemDashboard } from "@/lib/admin-system";
 import {
   applyHomepageModuleMetrics,
   getArticlePlans as getSiteArticlePlans,
@@ -116,6 +119,10 @@ function formatDurationMs(value?: number) {
   const minutes = Math.floor(value / 60_000);
   const seconds = Math.round((value % 60_000) / 1000);
   return `${minutes}m ${seconds}s`;
+}
+
+function formatAdminCoinAmount(value: number, locale: Locale | DisplayLocale) {
+  return new Intl.NumberFormat(getIntlLocale(locale)).format(value);
 }
 
 function formatAnnouncementWindow(
@@ -844,25 +851,6 @@ function ExpansionRowsPanel({ title, rows }: { title: string; rows: Array<{ titl
   );
 }
 
-function ExpansionParametersPanel({ title, rows }: { title: string; rows: Array<{ label: string; value: string; hint?: string }> }) {
-  return (
-    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
-      <h3 className="text-xl font-semibold text-white">{title}</h3>
-      <div className="mt-5 grid gap-3">
-        {rows.map((row) => (
-          <div key={`${title}-${row.label}`} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="font-medium text-white">{row.label}</p>
-              <code className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-200">{row.value}</code>
-            </div>
-            {row.hint ? <p className="mt-2 text-sm text-slate-400">{row.hint}</p> : null}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function FinanceRechargeOrdersPanel({
   title,
   locale,
@@ -1006,6 +994,327 @@ function FinanceRechargeOrdersPanel({
   );
 }
 
+function FinanceCoinAccountsPanel({
+  title,
+  locale,
+  accounts,
+}: {
+  title: string;
+  locale: Locale;
+  accounts: Array<{
+    userId: string;
+    userDisplayName: string;
+    userEmail: string;
+    balance: number;
+    lifetimeCredited: number;
+    lifetimeDebited: number;
+    lastActivityAt?: string;
+  }>;
+}) {
+  const emptyLabel =
+    locale === "en"
+      ? "No coin accounts yet."
+      : locale === "zh-TW"
+        ? "目前還沒有球幣帳戶。"
+        : "当前还没有球币账户。";
+
+  return (
+    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <span className="text-sm text-slate-500">{accounts.length}</span>
+      </div>
+      <div className="mt-5 grid gap-4">
+        {accounts.length > 0 ? (
+          accounts.map((account) => (
+            <div key={account.userId} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-white">{account.userDisplayName}</p>
+                  <p className="mt-2 text-sm text-slate-400">{account.userEmail}</p>
+                </div>
+                <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-sm text-sky-100">
+                  {formatAdminCoinAmount(account.balance, locale)}
+                </span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                  {locale === "en"
+                    ? `Credited ${formatAdminCoinAmount(account.lifetimeCredited, locale)}`
+                    : locale === "zh-TW"
+                      ? `累計入帳 ${formatAdminCoinAmount(account.lifetimeCredited, locale)}`
+                      : `累计入账 ${formatAdminCoinAmount(account.lifetimeCredited, locale)}`}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                  {locale === "en"
+                    ? `Debited ${formatAdminCoinAmount(account.lifetimeDebited, locale)}`
+                    : locale === "zh-TW"
+                      ? `累計扣減 ${formatAdminCoinAmount(account.lifetimeDebited, locale)}`
+                      : `累计扣减 ${formatAdminCoinAmount(account.lifetimeDebited, locale)}`}
+                </span>
+                {account.lastActivityAt ? (
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {locale === "en"
+                      ? `Updated ${formatDateTime(account.lastActivityAt, locale)}`
+                      : locale === "zh-TW"
+                        ? `最近活動 ${formatDateTime(account.lastActivityAt, locale)}`
+                        : `最近活动 ${formatDateTime(account.lastActivityAt, locale)}`}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-[1.2rem] border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-sm text-slate-400">
+            {emptyLabel}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FinanceCoinLedgerPanel({
+  title,
+  locale,
+  entries,
+}: {
+  title: string;
+  locale: Locale;
+  entries: Array<{
+    id: string;
+    userDisplayName: string;
+    userEmail: string;
+    direction: "credit" | "debit";
+    reasonLabel: string;
+    amount: number;
+    balanceBefore: number;
+    balanceAfter: number;
+    note?: string;
+    referenceType?: string;
+    referenceId?: string;
+    createdAt: string;
+  }>;
+}) {
+  const emptyLabel =
+    locale === "en"
+      ? "No coin ledger entries yet."
+      : locale === "zh-TW"
+        ? "目前還沒有球幣流水。"
+        : "当前还没有球币流水。";
+
+  return (
+    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <span className="text-sm text-slate-500">{entries.length}</span>
+      </div>
+      <div className="mt-5 grid gap-4">
+        {entries.length > 0 ? (
+          entries.map((entry) => {
+            const directionTone =
+              entry.direction === "credit"
+                ? "border-lime-300/20 bg-lime-300/10 text-lime-100"
+                : "border-orange-300/20 bg-orange-300/10 text-orange-100";
+            const directionLabel =
+              entry.direction === "credit"
+                ? locale === "en"
+                  ? "Credit"
+                  : locale === "zh-TW"
+                    ? "加幣"
+                    : "加币"
+                : locale === "en"
+                  ? "Debit"
+                  : locale === "zh-TW"
+                    ? "扣幣"
+                    : "扣币";
+
+            return (
+              <div key={entry.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-white">{entry.reasonLabel}</p>
+                    <p className="mt-2 text-sm text-slate-400">
+                      {entry.userDisplayName} / {entry.userEmail}
+                    </p>
+                  </div>
+                  <span className={`rounded-full border px-3 py-1 text-xs ${directionTone}`}>
+                    {directionLabel} {formatAdminCoinAmount(entry.amount, locale)}
+                  </span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {locale === "en"
+                      ? `Before ${formatAdminCoinAmount(entry.balanceBefore, locale)}`
+                      : locale === "zh-TW"
+                        ? `變動前 ${formatAdminCoinAmount(entry.balanceBefore, locale)}`
+                        : `变动前 ${formatAdminCoinAmount(entry.balanceBefore, locale)}`}
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {locale === "en"
+                      ? `After ${formatAdminCoinAmount(entry.balanceAfter, locale)}`
+                      : locale === "zh-TW"
+                        ? `變動後 ${formatAdminCoinAmount(entry.balanceAfter, locale)}`
+                        : `变动后 ${formatAdminCoinAmount(entry.balanceAfter, locale)}`}
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {formatDateTime(entry.createdAt, locale)}
+                  </span>
+                  {entry.referenceType ? (
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                      {entry.referenceType}
+                    </span>
+                  ) : null}
+                </div>
+                {entry.note ? <p className="mt-3 text-sm text-slate-300">{entry.note}</p> : null}
+              </div>
+            );
+          })
+        ) : (
+          <div className="rounded-[1.2rem] border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-sm text-slate-400">
+            {emptyLabel}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatPercentValue(value: number) {
+  return `${value.toFixed(1)}%`;
+}
+
+function getAgentLevelLabel(level: string, locale: Locale) {
+  if (level === "level2") {
+    return locale === "en" ? "Level 2" : locale === "zh-TW" ? "二級代理" : "二级代理";
+  }
+
+  if (level === "level3") {
+    return locale === "en" ? "Level 3" : locale === "zh-TW" ? "三級代理" : "三级代理";
+  }
+
+  return locale === "en" ? "Level 1" : locale === "zh-TW" ? "一級代理" : "一级代理";
+}
+
+function getAgentStatusMeta(status: string, locale: Locale) {
+  if (status === "frozen") {
+    return {
+      label: locale === "en" ? "Frozen" : locale === "zh-TW" ? "凍結" : "冻结",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "inactive") {
+    return {
+      label: locale === "en" ? "Inactive" : locale === "zh-TW" ? "停用" : "停用",
+      tone: "neutral",
+    } as const;
+  }
+
+  return {
+    label: locale === "en" ? "Active" : locale === "zh-TW" ? "正常" : "正常",
+    tone: "good",
+  } as const;
+}
+
+function getApplicationStatusMeta(status: string, locale: Locale) {
+  if (status === "approved") {
+    return {
+      label: locale === "en" ? "Approved" : locale === "zh-TW" ? "已通過" : "已通过",
+      tone: "good",
+    } as const;
+  }
+
+  if (status === "rejected") {
+    return {
+      label: locale === "en" ? "Rejected" : locale === "zh-TW" ? "已拒絕" : "已拒绝",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "needs-material") {
+    return {
+      label: locale === "en" ? "Need more info" : locale === "zh-TW" ? "補充資料" : "补充资料",
+      tone: "neutral",
+    } as const;
+  }
+
+  return {
+    label: locale === "en" ? "Pending" : locale === "zh-TW" ? "待審核" : "待审核",
+    tone: "warn",
+  } as const;
+}
+
+function getLeadStatusMeta(status: string, locale: Locale) {
+  if (status === "following") {
+    return {
+      label: locale === "en" ? "Following" : locale === "zh-TW" ? "跟進中" : "跟进中",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "won") {
+    return {
+      label: locale === "en" ? "Won" : locale === "zh-TW" ? "已成交" : "已成交",
+      tone: "good",
+    } as const;
+  }
+
+  if (status === "invalid") {
+    return {
+      label: locale === "en" ? "Invalid" : locale === "zh-TW" ? "無效" : "无效",
+      tone: "neutral",
+    } as const;
+  }
+
+  return {
+    label: locale === "en" ? "New" : locale === "zh-TW" ? "新線索" : "新线索",
+    tone: "good",
+  } as const;
+}
+
+function getWithdrawalStatusMeta(status: string, locale: Locale) {
+  if (status === "settled") {
+    return {
+      label: locale === "en" ? "Settled" : locale === "zh-TW" ? "已結算" : "已结算",
+      tone: "good",
+    } as const;
+  }
+
+  if (status === "rejected") {
+    return {
+      label: locale === "en" ? "Rejected" : locale === "zh-TW" ? "已拒絕" : "已拒绝",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "paying") {
+    return {
+      label: locale === "en" ? "Paying" : locale === "zh-TW" ? "打款中" : "打款中",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "reviewing") {
+    return {
+      label: locale === "en" ? "Reviewing" : locale === "zh-TW" ? "審核中" : "审核中",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "frozen") {
+    return {
+      label: locale === "en" ? "Frozen" : locale === "zh-TW" ? "凍結" : "冻结",
+      tone: "neutral",
+    } as const;
+  }
+
+  return {
+    label: locale === "en" ? "Pending" : locale === "zh-TW" ? "待結算" : "待结算",
+    tone: "neutral",
+  } as const;
+}
+
 export default async function AdminPage({ searchParams }: { searchParams: SearchParams }) {
   const displayLocale = await getCurrentDisplayLocale();
   const locale = resolveRenderLocale(displayLocale);
@@ -1029,7 +1338,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const paymentRuntimeCopy = getPaymentRuntimeCopy(locale, paymentRuntime, paymentCheckoutFlow);
   const { matchStatusLabels, roleLabels } = getSiteCopy(locale);
   const resolved = await searchParams;
-  const tab = pickValue(resolved.tab, "overview");
+  const requestedTab = pickValue(resolved.tab, "overview");
   const editAuthorId = pickValue(resolved.editAuthor, "");
   const editPlanId = pickValue(resolved.editPlan, "");
   const editBannerId = pickValue(resolved.editBanner, "");
@@ -1062,7 +1371,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const membershipPage = pickPositiveInt(resolved.membershipPage, 1);
   const contentPage = pickPositiveInt(resolved.contentPage, 1);
 
-  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard] = await Promise.all([
+  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard, agentsDashboard, reportsDashboard, systemDashboard] = await Promise.all([
     getMatchesBySport("football", locale),
     getMatchesBySport("basketball", locale),
     getMatchesBySport("cricket", locale),
@@ -1095,6 +1404,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     getSyncRotationPlan(),
     getAdminAssistantHandoffRequests(),
     getAdminFinanceDashboard(locale),
+    getAdminAgentsDashboard(locale),
+    getAdminReportsDashboard(locale),
+    getAdminSystemDashboard(locale),
   ]);
 
   const matches = [...footballMatches, ...basketballMatches, ...cricketMatches, ...esportsMatches];
@@ -1427,25 +1739,77 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : locale === "zh-TW"
           ? "預設球幣套餐已初始化。"
           : "默认球币套餐已初始化。"
+      : saved === "coin-expiry"
+        ? locale === "en"
+          ? "Expired recharge cleanup completed."
+          : locale === "zh-TW"
+            ? "過期充值單清理已完成。"
+            : "过期充值单清理已完成。"
+      : saved === "coin-adjustment"
+        ? locale === "en"
+          ? "Coin balance adjustment was saved."
+          : locale === "zh-TW"
+            ? "球幣餘額調整已保存。"
+            : "球币余额调整已保存。"
       : saved === "coin-recharge-order"
         ? locale === "en"
           ? "Coin recharge order was updated."
           : locale === "zh-TW"
             ? "球幣充值訂單已更新。"
             : "球币充值订单已更新。"
+        : error === "coin-adjustment-balance"
+          ? locale === "en"
+            ? "Coin debit was blocked because the member balance is insufficient."
+            : locale === "zh-TW"
+              ? "扣減球幣已攔截，會員餘額不足。"
+              : "扣减球币已拦截，会员余额不足。"
+        : error === "coin-expiry"
+          ? locale === "en"
+            ? "Expired recharge cleanup failed."
+            : locale === "zh-TW"
+              ? "過期充值單清理失敗。"
+              : "过期充值单清理失败。"
         : error === "coin-recharge-order-balance"
           ? locale === "en"
             ? "Refund was blocked because the member coin balance is insufficient."
             : locale === "zh-TW"
               ? "退款已攔截，會員球幣餘額不足。"
               : "退款已拦截，会员球币余额不足。"
-          : error === "coin-package" || error === "coin-recharge-order"
+          : error === "coin-package" || error === "coin-recharge-order" || error === "coin-adjustment"
             ? locale === "en"
               ? "Finance action failed. Please check the form and try again."
               : locale === "zh-TW"
                 ? "財務操作失敗，請檢查表單後重試。"
                 : "财务操作失败，请检查表单后重试。"
             : null;
+  const agentsNotice =
+    saved === "agents"
+      ? locale === "en"
+        ? "Agent and recruitment data was updated."
+        : locale === "zh-TW"
+          ? "代理與招商資料已更新。"
+          : "代理与招商资料已更新。"
+      : error === "agents"
+        ? locale === "en"
+          ? "Agent action failed. Please check the form and try again."
+          : locale === "zh-TW"
+            ? "代理操作失敗，請檢查表單後重試。"
+            : "代理操作失败，请检查表单后重试。"
+        : null;
+  const systemNotice =
+    saved === "system"
+      ? locale === "en"
+        ? "System configuration was updated."
+        : locale === "zh-TW"
+          ? "系統配置已更新。"
+          : "系统配置已更新。"
+      : error === "system"
+        ? locale === "en"
+          ? "System action failed. Please check the form and try again."
+          : locale === "zh-TW"
+            ? "系統操作失敗，請檢查表單後重試。"
+            : "系统操作失败，请检查表单后重试。"
+        : null;
   const predictionNotice =
     saved === "prediction"
       ? aiImportPanelCopy.notices.saved
@@ -1537,6 +1901,36 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     adminPageCopy.users.metrics.membershipOrders,
     adminPageCopy.users.metrics.contentOrders,
   ];
+  const availableAdminTabs = adminPageCopy.tabs.filter((item) => {
+    if (item.value === "content" || item.value === "events" || item.value === "ai") {
+      return entitlements.canManageContent;
+    }
+
+    if (item.value === "finance") {
+      return entitlements.canManageFinance;
+    }
+
+    if (item.value === "agents") {
+      return entitlements.canManageAgents;
+    }
+
+    if (item.value === "system") {
+      return entitlements.canManageSystem;
+    }
+
+    if (item.value === "reports") {
+      return entitlements.canViewReports;
+    }
+
+    if (item.value === "users") {
+      return entitlements.canManageFinance || entitlements.canManageContent || entitlements.canManageAgents || entitlements.canManageSystem || entitlements.canViewReports;
+    }
+
+    return true;
+  });
+  const tab = availableAdminTabs.some((item) => item.value === requestedTab)
+    ? requestedTab
+    : (availableAdminTabs[0]?.value ?? "overview");
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8">
@@ -1548,7 +1942,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         />
 
         <div className="mt-6 flex flex-wrap gap-2">
-          {adminPageCopy.tabs.map((item) => (
+          {availableAdminTabs.map((item) => (
             <Link
               key={item.value}
               href={`/admin?tab=${item.value}`}
@@ -3909,6 +4303,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       </span>
                     </div>
 
+                    {user.referredByAgentName ? (
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                        <span className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-sky-100">
+                          {locale === "en" ? "Agent attribution" : locale === "zh-TW" ? "代理歸因" : "代理归因"}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {user.referredByAgentName}
+                        </span>
+                        {user.referredByAgentCode ? (
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            Code {user.referredByAgentCode}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+
                     <p className="mt-3 text-sm text-slate-400">
                       {user.membershipPlanId
                         ? adminPageCopy.users.userList.membershipSummary(
@@ -4188,7 +4598,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           {financeNotice ? (
             <div
               className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
-                error === "coin-package" || error === "coin-recharge-order" || error === "coin-recharge-order-balance"
+                error === "coin-package" ||
+                error === "coin-recharge-order" ||
+                error === "coin-recharge-order-balance" ||
+                error === "coin-adjustment" ||
+                error === "coin-adjustment-balance"
                   ? "border-rose-300/25 bg-rose-400/10 text-rose-100"
                   : "border-lime-300/20 bg-lime-300/10 text-lime-100"
               }`}
@@ -4197,116 +4611,251 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           ) : null}
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="grid gap-6">
+              <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="section-label">{adminExpansion.finance.eyebrow}</p>
+                    <h3 className="mt-2 text-xl font-semibold text-white">
+                      {locale === "en"
+                        ? "Package bootstrap"
+                        : locale === "zh-TW"
+                          ? "套餐初始化"
+                          : "套餐初始化"}
+                    </h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                      {locale === "en"
+                        ? "Seed the default coin packages first, then create manual recharge orders for finance testing."
+                        : locale === "zh-TW"
+                          ? "先初始化預設球幣套餐，再建立手動充值訂單，方便財務和運營驗證流程。"
+                          : "先初始化默认球币套餐，再建立手动充值订单，方便财务和运营验证流程。"}
+                    </p>
+                  </div>
+                  <form action="/api/admin/finance/packages" method="post">
+                    <button
+                      type="submit"
+                      className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15"
+                    >
+                      {locale === "en"
+                        ? "Init packages"
+                        : locale === "zh-TW"
+                          ? "初始化套餐"
+                          : "初始化套餐"}
+                    </button>
+                  </form>
+                </div>
+                <form action="/api/admin/finance/recharge-orders" method="post" className="mt-6">
+                  <input type="hidden" name="intent" value="create" />
+                  <div className="grid gap-4">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Member" : locale === "zh-TW" ? "會員" : "会员"}
+                      </span>
+                      <select
+                        name="userId"
+                        defaultValue={financeDashboard.userOptions[0]?.id ?? ""}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                      >
+                        {financeDashboard.userOptions.length === 0 ? (
+                          <option value="">
+                            {locale === "en"
+                              ? "No users"
+                              : locale === "zh-TW"
+                                ? "暫無用戶"
+                                : "暂无用户"}
+                          </option>
+                        ) : (
+                          financeDashboard.userOptions.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {user.label}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Coin package" : locale === "zh-TW" ? "球幣套餐" : "球币套餐"}
+                      </span>
+                      <select
+                        name="packageId"
+                        defaultValue={financeDashboard.packageOptions.find((item) => item.status === "active")?.id ?? financeDashboard.packageOptions[0]?.id ?? ""}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                      >
+                        {financeDashboard.packageOptions.length === 0 ? (
+                          <option value="">
+                            {locale === "en"
+                              ? "No packages"
+                              : locale === "zh-TW"
+                                ? "暫無套餐"
+                                : "暂无套餐"}
+                          </option>
+                        ) : (
+                          financeDashboard.packageOptions.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.label}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Payment reference" : locale === "zh-TW" ? "支付流水號" : "支付流水号"}
+                      </span>
+                      <input
+                        name="paymentReference"
+                        placeholder={locale === "en" ? "Optional manual reference" : locale === "zh-TW" ? "可選，人工對賬用" : "可选，人工对账用"}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={financeDashboard.userOptions.length === 0 || financeDashboard.packageOptions.length === 0}
+                    className="mt-5 rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {locale === "en"
+                      ? "Create recharge order"
+                      : locale === "zh-TW"
+                        ? "建立充值訂單"
+                        : "建立充值订单"}
+                  </button>
+                </form>
+              </div>
+              <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
                 <div>
                   <p className="section-label">{adminExpansion.finance.eyebrow}</p>
                   <h3 className="mt-2 text-xl font-semibold text-white">
                     {locale === "en"
-                      ? "Package bootstrap"
+                      ? "Manual coin adjustment"
                       : locale === "zh-TW"
-                        ? "套餐初始化"
-                        : "套餐初始化"}
+                        ? "人工調整球幣"
+                        : "人工调整球币"}
                   </h3>
                   <p className="mt-2 text-sm text-slate-400">
                     {locale === "en"
-                      ? "Seed the default coin packages first, then create manual recharge orders for finance testing."
+                      ? "Finance can manually credit or debit a member balance and keep the change in the coin ledger."
                       : locale === "zh-TW"
-                        ? "先初始化預設球幣套餐，再建立手動充值訂單，方便財務和運營驗證流程。"
-                        : "先初始化默认球币套餐，再建立手动充值订单，方便财务和运营验证流程。"}
+                        ? "財務可直接為會員加幣或扣幣，系統會同步保留球幣流水。"
+                        : "财务可直接为会员加币或扣币，系统会同步保留球币流水。"}
                   </p>
                 </div>
-                <form action="/api/admin/finance/packages" method="post">
-                  <button
-                    type="submit"
-                    className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15"
-                  >
-                    {locale === "en"
-                      ? "Init packages"
-                      : locale === "zh-TW"
-                        ? "初始化套餐"
-                        : "初始化套餐"}
-                  </button>
+                <form action="/api/admin/finance/recharge-orders" method="post" className="mt-6">
+                  <div className="grid gap-4">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Member" : locale === "zh-TW" ? "會員" : "会员"}
+                      </span>
+                      <select
+                        name="userId"
+                        defaultValue={financeDashboard.userOptions[0]?.id ?? ""}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                      >
+                        {financeDashboard.userOptions.length === 0 ? (
+                          <option value="">
+                            {locale === "en"
+                              ? "No users"
+                              : locale === "zh-TW"
+                                ? "暫無用戶"
+                                : "暂无用户"}
+                          </option>
+                        ) : (
+                          financeDashboard.userOptions.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {user.label}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Amount" : locale === "zh-TW" ? "球幣數量" : "球币数量"}
+                      </span>
+                      <input
+                        name="amount"
+                        type="number"
+                        min="1"
+                        step="1"
+                        defaultValue="100"
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Note" : locale === "zh-TW" ? "備註" : "备注"}
+                      </span>
+                      <input
+                        name="reason"
+                        placeholder={locale === "en" ? "Optional reason or ticket reference" : locale === "zh-TW" ? "可填工單號或調整原因" : "可填工单号或调整原因"}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="manual-credit"
+                      disabled={financeDashboard.userOptions.length === 0}
+                      className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm font-semibold text-lime-100 transition hover:bg-lime-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {locale === "en" ? "Add coins" : locale === "zh-TW" ? "加幣入帳" : "加币入账"}
+                    </button>
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="manual-debit"
+                      disabled={financeDashboard.userOptions.length === 0}
+                      className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm font-semibold text-orange-100 transition hover:bg-orange-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {locale === "en" ? "Deduct coins" : locale === "zh-TW" ? "扣幣出帳" : "扣币出账"}
+                    </button>
+                  </div>
                 </form>
-              </div>
-              <form action="/api/admin/finance/recharge-orders" method="post" className="mt-6">
-                <input type="hidden" name="intent" value="create" />
-                <div className="grid gap-4">
-                  <label className="space-y-2 text-sm">
-                    <span className="text-slate-400">
-                      {locale === "en" ? "Member" : locale === "zh-TW" ? "會員" : "会员"}
+                <div className="mt-6 rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-white">
+                        {locale === "en"
+                          ? "Expired recharge cleanup"
+                          : locale === "zh-TW"
+                            ? "過期充值單清理"
+                            : "过期充值单清理"}
+                      </p>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {locale === "en"
+                          ? "Run from admin or call the internal endpoint from cron after deployment."
+                          : locale === "zh-TW"
+                            ? "可由後台手動執行，也可在部署後由伺服器 cron 呼叫內部介面。"
+                            : "可由后台手动执行，也可在部署后由服务器 cron 调用内部接口。"}
+                      </p>
+                    </div>
+                    <form action="/api/admin/finance/recharge-orders" method="post">
+                      <input type="hidden" name="intent" value="close-expired" />
+                      <button
+                        type="submit"
+                        className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
+                      >
+                        {locale === "en" ? "Run cleanup" : locale === "zh-TW" ? "立即清理" : "立即清理"}
+                      </button>
+                    </form>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                      POST /api/internal/finance/recharge-expiry
                     </span>
-                    <select
-                      name="userId"
-                      defaultValue={financeDashboard.userOptions[0]?.id ?? ""}
-                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
-                    >
-                      {financeDashboard.userOptions.length === 0 ? (
-                        <option value="">
-                          {locale === "en"
-                            ? "No users"
-                            : locale === "zh-TW"
-                              ? "暫無用戶"
-                              : "暂无用户"}
-                        </option>
-                      ) : (
-                        financeDashboard.userOptions.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.label}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </label>
-                  <label className="space-y-2 text-sm">
-                    <span className="text-slate-400">
-                      {locale === "en" ? "Coin package" : locale === "zh-TW" ? "球幣套餐" : "球币套餐"}
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                      {locale === "en"
+                        ? "Bearer FINANCE_TRIGGER_TOKEN or SYNC_TRIGGER_TOKEN"
+                        : locale === "zh-TW"
+                          ? "Bearer FINANCE_TRIGGER_TOKEN 或 SYNC_TRIGGER_TOKEN"
+                          : "Bearer FINANCE_TRIGGER_TOKEN 或 SYNC_TRIGGER_TOKEN"}
                     </span>
-                    <select
-                      name="packageId"
-                      defaultValue={financeDashboard.packageOptions.find((item) => item.status === "active")?.id ?? financeDashboard.packageOptions[0]?.id ?? ""}
-                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
-                    >
-                      {financeDashboard.packageOptions.length === 0 ? (
-                        <option value="">
-                          {locale === "en"
-                            ? "No packages"
-                            : locale === "zh-TW"
-                              ? "暫無套餐"
-                              : "暂无套餐"}
-                        </option>
-                      ) : (
-                        financeDashboard.packageOptions.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.label}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </label>
-                  <label className="space-y-2 text-sm">
-                    <span className="text-slate-400">
-                      {locale === "en" ? "Payment reference" : locale === "zh-TW" ? "支付流水號" : "支付流水号"}
-                    </span>
-                    <input
-                      name="paymentReference"
-                      placeholder={locale === "en" ? "Optional manual reference" : locale === "zh-TW" ? "可選，人工對賬用" : "可选，人工对账用"}
-                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
-                    />
-                  </label>
+                  </div>
                 </div>
-                <button
-                  type="submit"
-                  disabled={financeDashboard.userOptions.length === 0 || financeDashboard.packageOptions.length === 0}
-                  className="mt-5 rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {locale === "en"
-                    ? "Create recharge order"
-                    : locale === "zh-TW"
-                      ? "建立充值訂單"
-                      : "建立充值订单"}
-                </button>
-              </form>
+              </div>
             </div>
             <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
@@ -4343,6 +4892,24 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             <FinanceRechargeOrdersPanel title={adminExpansion.finance.rechargeOrders.title} locale={locale} orders={financeDashboard.rechargeOrders} />
             <ExpansionRowsPanel title={adminExpansion.finance.settlements.title} rows={financeSettlementRows} />
           </div>
+          <div className="mt-6">
+            <ExpansionRowsPanel
+              title={locale === "en" ? "Recharge reconciliation" : locale === "zh-TW" ? "充值對帳總覽" : "充值对账总览"}
+              rows={financeDashboard.reconciliationRows}
+            />
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <FinanceCoinAccountsPanel
+              title={locale === "en" ? "Top coin balances" : locale === "zh-TW" ? "球幣餘額帳戶" : "球币余额账户"}
+              locale={locale}
+              accounts={financeDashboard.coinAccounts}
+            />
+            <FinanceCoinLedgerPanel
+              title={locale === "en" ? "Recent coin ledger" : locale === "zh-TW" ? "最近球幣流水" : "最近球币流水"}
+              locale={locale}
+              entries={financeDashboard.recentLedgers}
+            />
+          </div>
         </section>
       ) : null}
 
@@ -4353,14 +4920,719 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             title={adminExpansion.agents.title}
             description={adminExpansion.agents.description}
           />
+          {agentsNotice ? (
+            <div
+              className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                error === "agents" ? "border-rose-300/25 bg-rose-400/10 text-rose-100" : "border-lime-300/20 bg-lime-300/10 text-lime-100"
+              }`}
+            >
+              {agentsNotice}
+            </div>
+          ) : null}
           <div className="mt-6">
-            <ExpansionMetricGrid items={adminExpansion.agents.metrics} />
+            <ExpansionMetricGrid items={agentsDashboard.metrics} />
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
-            <ExpansionRowsPanel title={adminExpansion.agents.applications.title} rows={adminExpansion.agents.applications.rows} />
-            <ExpansionRowsPanel title={adminExpansion.agents.roster.title} rows={adminExpansion.agents.roster.rows} />
-            <ExpansionRowsPanel title={adminExpansion.agents.campaigns.title} rows={adminExpansion.agents.campaigns.rows} />
-            <ExpansionRowsPanel title={adminExpansion.agents.withdrawals.title} rows={adminExpansion.agents.withdrawals.rows} />
+            <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">
+                    {locale === "en" ? "Application intake" : locale === "zh-TW" ? "申請收件" : "申请收件"}
+                  </p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Create agent application" : locale === "zh-TW" ? "新增代理申請" : "新增代理申请"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">
+                  {locale === "en" ? "Write into approval queue" : locale === "zh-TW" ? "寫入待審清單" : "写入待审清单"}
+                </span>
+              </div>
+              <input type="hidden" name="intent" value="save-application" />
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Applicant name" : locale === "zh-TW" ? "申請人姓名" : "申请人姓名"}</span>
+                  <input name="applicantName" required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Phone" : locale === "zh-TW" ? "聯絡電話" : "联系电话"}</span>
+                  <input name="phone" required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Contact handle" : locale === "zh-TW" ? "聯絡方式" : "联系方式"}</span>
+                  <input name="contact" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Desired level" : locale === "zh-TW" ? "申請級別" : "申请级别"}</span>
+                  <select name="desiredLevel" defaultValue="level1" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="level1">{getAgentLevelLabel("level1", locale)}</option>
+                    <option value="level2">{getAgentLevelLabel("level2", locale)}</option>
+                    <option value="level3">{getAgentLevelLabel("level3", locale)}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Channel summary" : locale === "zh-TW" ? "渠道說明" : "渠道说明"}</span>
+                  <textarea name="channelSummary" rows={3} required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Expected monthly users" : locale === "zh-TW" ? "預估月導量" : "预估月导量"}</span>
+                  <input name="expectedMonthlyUsers" type="number" min="0" defaultValue="0" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+              </div>
+              <button type="submit" className="mt-5 rounded-full border border-lime-300/25 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:border-lime-300/45 hover:bg-lime-300/20">
+                {locale === "en" ? "Save application" : locale === "zh-TW" ? "保存申請" : "保存申请"}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.agents.applications.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Pending and reviewed applications" : locale === "zh-TW" ? "待審與已審申請" : "待审与已审申请"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{agentsDashboard.applications.length}</span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                {agentsDashboard.applications.map((item) => {
+                  const statusMeta = getApplicationStatusMeta(item.status, locale);
+                  return (
+                    <div key={item.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{item.applicantName}</p>
+                          <p className="mt-2 text-sm text-slate-400">{item.phone}{item.contact ? ` / ${item.contact}` : ""}</p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>{statusMeta.label}</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{getAgentLevelLabel(item.desiredLevel, locale)}</span>
+                        {item.expectedMonthlyUsers ? (
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            {locale === "en" ? "Expected" : locale === "zh-TW" ? "預估" : "预估"} {item.expectedMonthlyUsers}
+                          </span>
+                        ) : null}
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(item.createdAt, displayLocale)}</span>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-300">{item.channelSummary}</p>
+                      {item.reviewerNote ? <p className="mt-2 text-xs text-sky-100">{item.reviewerNote}</p> : null}
+                      {item.status === "pending" ? (
+                        <form action="/api/admin/agents" method="post" className="mt-4 grid gap-3">
+                          <input type="hidden" name="intent" value="review-application" />
+                          <input type="hidden" name="id" value={item.id} />
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <select name="reviewAction" defaultValue="approve" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                              <option value="approve">{locale === "en" ? "Approve and create agent" : locale === "zh-TW" ? "通過並建代理" : "通过并建代理"}</option>
+                              <option value="needs-material">{locale === "en" ? "Need more info" : locale === "zh-TW" ? "要求補資料" : "要求补资料"}</option>
+                              <option value="reject">{locale === "en" ? "Reject" : locale === "zh-TW" ? "拒絕" : "拒绝"}</option>
+                            </select>
+                            <select name="parentAgentId" defaultValue="" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                              <option value="">{locale === "en" ? "No parent agent" : locale === "zh-TW" ? "無上級代理" : "无上级代理"}</option>
+                              {agentsDashboard.agentOptions.map((agent) => (
+                                <option key={`${item.id}-${agent.id}`} value={agent.id}>
+                                  {agent.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <textarea name="reviewerNote" rows={2} placeholder={locale === "en" ? "Review note" : locale === "zh-TW" ? "審核備註" : "审核备注"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                          <button type="submit" className="w-fit rounded-full border border-sky-300/25 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20">
+                            {locale === "en" ? "Submit review" : locale === "zh-TW" ? "提交審核" : "提交审核"}
+                          </button>
+                        </form>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {agentsDashboard.applications.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No applications yet." : locale === "zh-TW" ? "目前沒有代理申請。" : "当前没有代理申请。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">
+                    {locale === "en" ? "Lead pool" : locale === "zh-TW" ? "線索池" : "线索池"}
+                  </p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Create recruitment lead" : locale === "zh-TW" ? "新增招商線索" : "新增招商线索"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">
+                  {locale === "en" ? "Source, owner, and assignment" : locale === "zh-TW" ? "來源、歸屬與分配" : "来源、归属与分配"}
+                </span>
+              </div>
+              <input type="hidden" name="intent" value="save-lead" />
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Lead name" : locale === "zh-TW" ? "線索姓名" : "线索姓名"}</span>
+                  <input name="name" required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Phone" : locale === "zh-TW" ? "聯絡電話" : "联系电话"}</span>
+                  <input name="phone" required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Source channel" : locale === "zh-TW" ? "來源渠道" : "来源渠道"}</span>
+                  <input name="sourceChannel" required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Desired level" : locale === "zh-TW" ? "意向級別" : "意向级别"}</span>
+                  <select name="desiredLevel" defaultValue="level1" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="level1">{getAgentLevelLabel("level1", locale)}</option>
+                    <option value="level2">{getAgentLevelLabel("level2", locale)}</option>
+                    <option value="level3">{getAgentLevelLabel("level3", locale)}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Owner" : locale === "zh-TW" ? "跟進人" : "跟进人"}</span>
+                  <input name="ownerName" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Campaign" : locale === "zh-TW" ? "所屬活動" : "所属活动"}</span>
+                  <select name="campaignId" defaultValue="" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="">{locale === "en" ? "No campaign" : locale === "zh-TW" ? "無活動" : "无活动"}</option>
+                    {agentsDashboard.campaignOptions.map((campaign) => (
+                      <option key={`lead-campaign-${campaign.id}`} value={campaign.id}>
+                        {campaign.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Assign agent" : locale === "zh-TW" ? "指派代理" : "指派代理"}</span>
+                  <select name="agentId" defaultValue="" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="">{locale === "en" ? "Unassigned" : locale === "zh-TW" ? "未分配" : "未分配"}</option>
+                    {agentsDashboard.agentOptions.map((agent) => (
+                      <option key={`lead-agent-${agent.id}`} value={agent.id}>
+                        {agent.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态"}</span>
+                  <select name="status" defaultValue="new" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="new">{getLeadStatusMeta("new", locale).label}</option>
+                    <option value="following">{getLeadStatusMeta("following", locale).label}</option>
+                    <option value="won">{getLeadStatusMeta("won", locale).label}</option>
+                    <option value="invalid">{getLeadStatusMeta("invalid", locale).label}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Notes" : locale === "zh-TW" ? "備註" : "备注"}</span>
+                  <textarea name="note" rows={3} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+              </div>
+              <button type="submit" className="mt-5 rounded-full border border-lime-300/25 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:border-lime-300/45 hover:bg-lime-300/20">
+                {locale === "en" ? "Save lead" : locale === "zh-TW" ? "保存線索" : "保存线索"}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "Lead pipeline" : locale === "zh-TW" ? "線索池" : "线索池"}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Lead follow-up" : locale === "zh-TW" ? "線索跟進" : "线索跟进"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{agentsDashboard.leads.length}</span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                {agentsDashboard.leads.map((lead) => {
+                  const statusMeta = getLeadStatusMeta(lead.status, locale);
+                  return (
+                    <div key={lead.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{lead.name}</p>
+                          <p className="mt-2 text-sm text-slate-400">{lead.phone} / {lead.sourceChannel}</p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>{statusMeta.label}</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{getAgentLevelLabel(lead.desiredLevel, locale)}</span>
+                        {lead.ownerName ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{lead.ownerName}</span> : null}
+                        {lead.campaignName ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{lead.campaignName}</span> : null}
+                        {lead.agentName ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{lead.agentName}</span> : null}
+                      </div>
+                      {lead.note ? <p className="mt-3 text-sm text-slate-300">{lead.note}</p> : null}
+                      <form action="/api/admin/agents" method="post" className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                        <input type="hidden" name="intent" value="save-lead" />
+                        <input type="hidden" name="id" value={lead.id} />
+                        <input type="hidden" name="name" value={lead.name} />
+                        <input type="hidden" name="phone" value={lead.phone} />
+                        <input type="hidden" name="sourceChannel" value={lead.sourceChannel} />
+                        <input type="hidden" name="desiredLevel" value={lead.desiredLevel} />
+                        <input type="hidden" name="campaignId" value={lead.campaignId ?? ""} />
+                        <input type="hidden" name="agentId" value={lead.agentId ?? ""} />
+                        <input type="hidden" name="note" value={lead.note ?? ""} />
+                        <select name="status" defaultValue={lead.status} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                          <option value="new">{getLeadStatusMeta("new", locale).label}</option>
+                          <option value="following">{getLeadStatusMeta("following", locale).label}</option>
+                          <option value="won">{getLeadStatusMeta("won", locale).label}</option>
+                          <option value="invalid">{getLeadStatusMeta("invalid", locale).label}</option>
+                        </select>
+                        <input name="ownerName" defaultValue={lead.ownerName ?? ""} placeholder={locale === "en" ? "Owner" : locale === "zh-TW" ? "跟進人" : "跟进人"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                        <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                          {locale === "en" ? "Update" : locale === "zh-TW" ? "更新" : "更新"}
+                        </button>
+                      </form>
+                    </div>
+                  );
+                })}
+                {agentsDashboard.leads.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No lead in the pool." : locale === "zh-TW" ? "線索池暫無資料。" : "线索池暂无资料。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.agents.campaigns.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Create recruitment campaign" : locale === "zh-TW" ? "新增招商活動" : "新增招商活动"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">
+                  {locale === "en" ? "Public recruiting and incentives" : locale === "zh-TW" ? "公開招募與激勵" : "公开招募与激励"}
+                </span>
+              </div>
+              <input type="hidden" name="intent" value="save-campaign" />
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Campaign name" : locale === "zh-TW" ? "活動名稱" : "活动名称"}</span>
+                  <input name="name" required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Target agents" : locale === "zh-TW" ? "目標代理數" : "目标代理数"}</span>
+                  <input name="targetAgentCount" type="number" min="0" defaultValue="10" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态"}</span>
+                  <select name="status" defaultValue="draft" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="draft">{locale === "en" ? "Draft" : locale === "zh-TW" ? "草稿" : "草稿"}</option>
+                    <option value="active">{locale === "en" ? "Active" : locale === "zh-TW" ? "進行中" : "进行中"}</option>
+                    <option value="archived">{locale === "en" ? "Archived" : locale === "zh-TW" ? "已歸檔" : "已归档"}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Start time" : locale === "zh-TW" ? "開始時間" : "开始时间"}</span>
+                  <input name="startsAt" type="datetime-local" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "End time" : locale === "zh-TW" ? "結束時間" : "结束时间"}</span>
+                  <input name="endsAt" type="datetime-local" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Description" : locale === "zh-TW" ? "活動說明" : "活动说明"}</span>
+                  <textarea name="description" rows={3} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Incentive policy" : locale === "zh-TW" ? "激勵政策" : "激励政策"}</span>
+                  <textarea name="incentivePolicy" rows={3} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="flex items-center gap-3 text-sm text-slate-300 md:col-span-2">
+                  <input type="checkbox" name="isPublic" className="h-4 w-4 rounded border border-white/15 bg-slate-950/60" />
+                  <span>{locale === "en" ? "Visible to public recruitment page" : locale === "zh-TW" ? "同步到公開招募頁" : "同步到公开招募页"}</span>
+                </label>
+              </div>
+              <button type="submit" className="mt-5 rounded-full border border-lime-300/25 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:border-lime-300/45 hover:bg-lime-300/20">
+                {locale === "en" ? "Save campaign" : locale === "zh-TW" ? "保存活動" : "保存活动"}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.agents.campaigns.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Campaign list" : locale === "zh-TW" ? "活動列表" : "活动列表"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{agentsDashboard.campaigns.length}</span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                {agentsDashboard.campaigns.map((item) => (
+                  <div key={item.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{item.name}</p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {item.description || (locale === "en" ? "No description yet." : locale === "zh-TW" ? "尚未填寫活動說明。" : "尚未填写活动说明。")}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(item.status === "active" ? "good" : item.status === "archived" ? "neutral" : "warn")}`}>
+                        {item.status === "active"
+                          ? locale === "en"
+                            ? "Active"
+                            : locale === "zh-TW"
+                              ? "進行中"
+                              : "进行中"
+                          : item.status === "archived"
+                            ? locale === "en"
+                              ? "Archived"
+                              : locale === "zh-TW"
+                                ? "已歸檔"
+                                : "已归档"
+                            : locale === "en"
+                              ? "Draft"
+                              : locale === "zh-TW"
+                                ? "草稿"
+                                : "草稿"}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {locale === "en" ? "Target" : locale === "zh-TW" ? "目標" : "目标"} {item.targetAgentCount}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {locale === "en" ? "Leads" : locale === "zh-TW" ? "線索" : "线索"} {item.leadCount}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {item.isPublic
+                          ? locale === "en"
+                            ? "Public"
+                            : locale === "zh-TW"
+                              ? "公開"
+                              : "公开"
+                          : locale === "en"
+                            ? "Private"
+                            : locale === "zh-TW"
+                              ? "私域"
+                              : "私域"}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">
+                      {formatAnnouncementWindow(
+                        item.startsAt,
+                        item.endsAt,
+                        displayLocale,
+                        locale === "en" ? "Always available" : locale === "zh-TW" ? "長期有效" : "长期有效",
+                      )}
+                    </p>
+                    {item.incentivePolicy ? <p className="mt-2 text-xs text-sky-100">{item.incentivePolicy}</p> : null}
+                  </div>
+                ))}
+                {agentsDashboard.campaigns.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No campaign yet." : locale === "zh-TW" ? "目前沒有招商活動。" : "当前没有招商活动。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.agents.roster.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Create manual agent profile" : locale === "zh-TW" ? "新增代理檔案" : "新增代理档案"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">
+                  {locale === "en" ? "Invite code and commission settings" : locale === "zh-TW" ? "邀請碼與分佣配置" : "邀请码与分佣配置"}
+                </span>
+              </div>
+              <input type="hidden" name="intent" value="save-agent" />
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Display name" : locale === "zh-TW" ? "代理名稱" : "代理名称"}</span>
+                  <input name="displayName" required className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Invite code" : locale === "zh-TW" ? "邀請碼" : "邀请码"}</span>
+                  <input name="inviteCode" placeholder={locale === "en" ? "Auto generate when empty" : locale === "zh-TW" ? "留空自動生成" : "留空自动生成"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Level" : locale === "zh-TW" ? "級別" : "级别"}</span>
+                  <select name="level" defaultValue="level1" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="level1">{getAgentLevelLabel("level1", locale)}</option>
+                    <option value="level2">{getAgentLevelLabel("level2", locale)}</option>
+                    <option value="level3">{getAgentLevelLabel("level3", locale)}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态"}</span>
+                  <select name="status" defaultValue="active" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="active">{getAgentStatusMeta("active", locale).label}</option>
+                    <option value="frozen">{getAgentStatusMeta("frozen", locale).label}</option>
+                    <option value="inactive">{getAgentStatusMeta("inactive", locale).label}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Commission rate" : locale === "zh-TW" ? "直推分佣比" : "直推分佣比"}</span>
+                  <input name="commissionRate" type="number" step="0.1" defaultValue="18" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Downstream rate" : locale === "zh-TW" ? "下級分佣比" : "下级分佣比"}</span>
+                  <input name="downstreamRate" type="number" step="0.1" defaultValue="8" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Parent agent" : locale === "zh-TW" ? "上級代理" : "上级代理"}</span>
+                  <select name="parentAgentId" defaultValue="" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="">{locale === "en" ? "Top level" : locale === "zh-TW" ? "頂級直屬" : "顶级直属"}</option>
+                    {agentsDashboard.agentOptions.map((agent) => (
+                      <option key={`create-agent-${agent.id}`} value={agent.id}>
+                        {agent.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Contact name" : locale === "zh-TW" ? "聯絡人" : "联系人"}</span>
+                  <input name="contactName" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Contact phone" : locale === "zh-TW" ? "聯絡電話" : "联系电话"}</span>
+                  <input name="contactPhone" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Referred users" : locale === "zh-TW" ? "累計導入會員" : "累计导入会员"}</span>
+                  <input name="totalReferredUsers" type="number" min="0" defaultValue="0" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Monthly recharge" : locale === "zh-TW" ? "月充值額" : "月充值额"}</span>
+                  <input name="monthlyRechargeAmount" type="number" min="0" defaultValue="0" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Total commission" : locale === "zh-TW" ? "累計佣金" : "累计佣金"}</span>
+                  <input name="totalCommission" type="number" min="0" defaultValue="0" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Unsettled commission" : locale === "zh-TW" ? "待結算佣金" : "待结算佣金"}</span>
+                  <input name="unsettledCommission" type="number" min="0" defaultValue="0" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Channel summary" : locale === "zh-TW" ? "渠道說明" : "渠道说明"}</span>
+                  <textarea name="channelSummary" rows={3} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Payout account" : locale === "zh-TW" ? "收款帳戶" : "收款账户"}</span>
+                  <input name="payoutAccount" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Notes" : locale === "zh-TW" ? "備註" : "备注"}</span>
+                  <textarea name="notes" rows={2} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+              </div>
+              <button type="submit" className="mt-5 rounded-full border border-lime-300/25 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:border-lime-300/45 hover:bg-lime-300/20">
+                {locale === "en" ? "Save agent profile" : locale === "zh-TW" ? "保存代理資料" : "保存代理资料"}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.agents.roster.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Agent roster and hierarchy" : locale === "zh-TW" ? "代理名冊與層級" : "代理名册与层级"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{agentsDashboard.agents.length}</span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                {agentsDashboard.agents.map((agent) => {
+                  const statusMeta = getAgentStatusMeta(agent.status, locale);
+                  return (
+                    <div key={agent.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{agent.displayName}</p>
+                          <p className="mt-2 text-sm text-slate-400">
+                            {getAgentLevelLabel(agent.level, locale)}
+                            {agent.parentAgentName ? ` / ${agent.parentAgentName}` : ""}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>{statusMeta.label}</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">Code {agent.inviteCode}</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Direct" : locale === "zh-TW" ? "直推" : "直推"} {formatPercentValue(agent.commissionRate)}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Downstream" : locale === "zh-TW" ? "下級" : "下级"} {formatPercentValue(agent.downstreamRate)}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Users" : locale === "zh-TW" ? "會員" : "会员"} {agent.totalReferredUsers}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-sm text-slate-300 md:grid-cols-2">
+                        <p>{locale === "en" ? "Monthly recharge" : locale === "zh-TW" ? "月充值額" : "月充值额"}: CNY {formatAdminCoinAmount(agent.monthlyRechargeAmount, displayLocale)}</p>
+                        <p>{locale === "en" ? "Unsettled commission" : locale === "zh-TW" ? "待結算佣金" : "待结算佣金"}: CNY {formatAdminCoinAmount(agent.unsettledCommission, displayLocale)}</p>
+                        {agent.contactPhone ? <p>{locale === "en" ? "Contact" : locale === "zh-TW" ? "聯絡方式" : "联系方式"}: {agent.contactPhone}</p> : null}
+                        {agent.payoutAccount ? <p>{locale === "en" ? "Payout account" : locale === "zh-TW" ? "收款帳戶" : "收款账户"}: {agent.payoutAccount}</p> : null}
+                      </div>
+                      {agent.inviteUrl ? <p className="mt-2 text-xs text-slate-500">{agent.inviteUrl}</p> : null}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <form action="/api/admin/agents" method="post">
+                          <input type="hidden" name="intent" value="toggle-agent-status" />
+                          <input type="hidden" name="id" value={agent.id} />
+                          <button type="submit" className="rounded-full border border-white/12 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                            {agent.status === "active"
+                              ? locale === "en"
+                                ? "Freeze"
+                                : locale === "zh-TW"
+                                  ? "凍結"
+                                  : "冻结"
+                              : locale === "en"
+                                ? "Restore"
+                                : locale === "zh-TW"
+                                  ? "恢復"
+                                  : "恢复"}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  );
+                })}
+                {agentsDashboard.agents.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No agent profile yet." : locale === "zh-TW" ? "目前沒有代理資料。" : "当前没有代理资料。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.agents.withdrawals.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Create withdrawal request" : locale === "zh-TW" ? "新增提現申請" : "新增提现申请"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">
+                  {locale === "en" ? "Commission payout review queue" : locale === "zh-TW" ? "佣金打款審核" : "佣金打款审核"}
+                </span>
+              </div>
+              <input type="hidden" name="intent" value="save-withdrawal" />
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Agent" : locale === "zh-TW" ? "代理" : "代理"}</span>
+                  <select name="agentId" defaultValue={agentsDashboard.agentOptions[0]?.id ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    {agentsDashboard.agentOptions.length === 0 ? (
+                      <option value="">{locale === "en" ? "No agent available" : locale === "zh-TW" ? "暫無代理可選" : "暂无代理可选"}</option>
+                    ) : null}
+                    {agentsDashboard.agentOptions.map((agent) => (
+                      <option key={`withdrawal-agent-${agent.id}`} value={agent.id}>
+                        {agent.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Amount" : locale === "zh-TW" ? "金額" : "金额"}</span>
+                  <input name="amount" type="number" min="1" defaultValue="1000" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态"}</span>
+                  <select name="status" defaultValue="pending" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="pending">{getWithdrawalStatusMeta("pending", locale).label}</option>
+                    <option value="reviewing">{getWithdrawalStatusMeta("reviewing", locale).label}</option>
+                    <option value="paying">{getWithdrawalStatusMeta("paying", locale).label}</option>
+                    <option value="settled">{getWithdrawalStatusMeta("settled", locale).label}</option>
+                    <option value="rejected">{getWithdrawalStatusMeta("rejected", locale).label}</option>
+                    <option value="frozen">{getWithdrawalStatusMeta("frozen", locale).label}</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Payout account" : locale === "zh-TW" ? "打款帳戶" : "打款账户"}</span>
+                  <input name="payoutAccount" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Proof URL" : locale === "zh-TW" ? "憑證 URL" : "凭证 URL"}</span>
+                  <input name="proofUrl" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Note" : locale === "zh-TW" ? "備註" : "备注"}</span>
+                  <textarea name="note" rows={2} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Rejection reason" : locale === "zh-TW" ? "拒絕原因" : "拒绝原因"}</span>
+                  <textarea name="rejectionReason" rows={2} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+              </div>
+              <button type="submit" className="mt-5 rounded-full border border-lime-300/25 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:border-lime-300/45 hover:bg-lime-300/20">
+                {locale === "en" ? "Save withdrawal" : locale === "zh-TW" ? "保存提現申請" : "保存提现申请"}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.agents.withdrawals.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Withdrawal review queue" : locale === "zh-TW" ? "提現審核隊列" : "提现审核队列"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{agentsDashboard.withdrawals.length}</span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                {agentsDashboard.withdrawals.map((item) => {
+                  const statusMeta = getWithdrawalStatusMeta(item.status, locale);
+                  return (
+                    <div key={item.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{item.agentName}</p>
+                          <p className="mt-2 text-sm text-slate-400">CNY {formatAdminCoinAmount(item.amount, displayLocale)}</p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>{statusMeta.label}</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(item.requestedAt, displayLocale)}</span>
+                        {item.payoutAccount ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{item.payoutAccount}</span> : null}
+                        {item.settledAt ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(item.settledAt, displayLocale)}</span> : null}
+                      </div>
+                      {item.note ? <p className="mt-3 text-sm text-slate-300">{item.note}</p> : null}
+                      {item.rejectionReason ? <p className="mt-2 text-xs text-rose-100">{item.rejectionReason}</p> : null}
+                      <form action="/api/admin/agents" method="post" className="mt-4 grid gap-3">
+                        <input type="hidden" name="intent" value="save-withdrawal" />
+                        <input type="hidden" name="id" value={item.id} />
+                        <input type="hidden" name="agentId" value={item.agentId} />
+                        <input type="hidden" name="amount" value={item.amount} />
+                        <input type="hidden" name="payoutAccount" value={item.payoutAccount ?? ""} />
+                        <input type="hidden" name="proofUrl" value={item.proofUrl ?? ""} />
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                          <select name="status" defaultValue={item.status} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                            <option value="pending">{getWithdrawalStatusMeta("pending", locale).label}</option>
+                            <option value="reviewing">{getWithdrawalStatusMeta("reviewing", locale).label}</option>
+                            <option value="paying">{getWithdrawalStatusMeta("paying", locale).label}</option>
+                            <option value="settled">{getWithdrawalStatusMeta("settled", locale).label}</option>
+                            <option value="rejected">{getWithdrawalStatusMeta("rejected", locale).label}</option>
+                            <option value="frozen">{getWithdrawalStatusMeta("frozen", locale).label}</option>
+                          </select>
+                          <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                            {locale === "en" ? "Update status" : locale === "zh-TW" ? "更新狀態" : "更新状态"}
+                          </button>
+                        </div>
+                        <textarea name="note" rows={2} defaultValue={item.note ?? ""} placeholder={locale === "en" ? "Review note" : locale === "zh-TW" ? "審核備註" : "审核备注"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                        <textarea name="rejectionReason" rows={2} defaultValue={item.rejectionReason ?? ""} placeholder={locale === "en" ? "Rejection reason" : locale === "zh-TW" ? "拒絕原因" : "拒绝原因"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                      </form>
+                    </div>
+                  );
+                })}
+                {agentsDashboard.withdrawals.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No withdrawal request yet." : locale === "zh-TW" ? "目前沒有提現申請。" : "当前没有提现申请。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         </section>
       ) : null}
@@ -4372,11 +5644,241 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             title={adminExpansion.system.title}
             description={adminExpansion.system.description}
           />
+          {systemNotice ? (
+            <div
+              className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                error === "system" ? "border-rose-300/25 bg-rose-400/10 text-rose-100" : "border-lime-300/20 bg-lime-300/10 text-lime-100"
+              }`}
+            >
+              {systemNotice}
+            </div>
+          ) : null}
+          <div className="mt-6">
+            <ExpansionMetricGrid items={systemDashboard.metrics} />
+          </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
-            <ExpansionRowsPanel title={adminExpansion.system.roleMatrix.title} rows={adminExpansion.system.roleMatrix.rows} />
-            <ExpansionRowsPanel title={adminExpansion.system.auditLogs.title} rows={adminExpansion.system.auditLogs.rows} />
-            <ExpansionRowsPanel title={adminExpansion.system.alerts.title} rows={adminExpansion.system.alerts.rows} />
-            <ExpansionParametersPanel title={adminExpansion.system.parameters.title} rows={adminExpansion.system.parameters.rows} />
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.system.roleMatrix.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "RBAC policies" : locale === "zh-TW" ? "RBAC 策略" : "RBAC 策略"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{systemDashboard.policies.length}</span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                {systemDashboard.policies.map((policy) => (
+                  <form key={policy.id} action="/api/admin/system" method="post" className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <input type="hidden" name="intent" value="save-role-policy" />
+                    <input type="hidden" name="role" value={policy.role} />
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{roleLabels[policy.role as keyof typeof roleLabels] ?? policy.role}</p>
+                        <p className="mt-2 text-sm text-slate-400">{policy.description ?? (locale === "en" ? "Custom policy." : locale === "zh-TW" ? "自訂策略。" : "自定义策略。")}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${policy.canAccessAdminConsole ? "bg-lime-300/12 text-lime-100" : "bg-white/8 text-slate-300"}`}>
+                        {policy.canAccessAdminConsole
+                          ? locale === "en"
+                            ? "Admin access"
+                            : locale === "zh-TW"
+                              ? "可進後台"
+                              : "可进后台"
+                          : locale === "en"
+                            ? "Front only"
+                            : locale === "zh-TW"
+                              ? "前台角色"
+                              : "前台角色"}
+                      </span>
+                    </div>
+                    <input name="description" defaultValue={policy.description ?? ""} className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" name="canAccessAdminConsole" defaultChecked={policy.canAccessAdminConsole} className="h-4 w-4 rounded border border-white/15 bg-slate-950/60" /><span>Admin console</span></label>
+                      <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" name="canManageContent" defaultChecked={policy.canManageContent} className="h-4 w-4 rounded border border-white/15 bg-slate-950/60" /><span>{locale === "en" ? "Content" : locale === "zh-TW" ? "內容" : "内容"}</span></label>
+                      <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" name="canManageFinance" defaultChecked={policy.canManageFinance} className="h-4 w-4 rounded border border-white/15 bg-slate-950/60" /><span>{locale === "en" ? "Finance" : locale === "zh-TW" ? "財務" : "财务"}</span></label>
+                      <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" name="canManageAgents" defaultChecked={policy.canManageAgents} className="h-4 w-4 rounded border border-white/15 bg-slate-950/60" /><span>{locale === "en" ? "Agents" : locale === "zh-TW" ? "代理" : "代理"}</span></label>
+                      <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" name="canManageSystem" defaultChecked={policy.canManageSystem} className="h-4 w-4 rounded border border-white/15 bg-slate-950/60" /><span>{locale === "en" ? "System" : locale === "zh-TW" ? "系統" : "系统"}</span></label>
+                      <label className="flex items-center gap-3 text-sm text-slate-300"><input type="checkbox" name="canViewReports" defaultChecked={policy.canViewReports} className="h-4 w-4 rounded border border-white/15 bg-slate-950/60" /><span>{locale === "en" ? "Reports" : locale === "zh-TW" ? "報表" : "报表"}</span></label>
+                    </div>
+                    <button type="submit" className="mt-4 rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                      {locale === "en" ? "Save policy" : locale === "zh-TW" ? "保存策略" : "保存策略"}
+                    </button>
+                  </form>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.system.auditLogs.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Recent audit trail" : locale === "zh-TW" ? "最近審計軌跡" : "最近审计轨迹"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{systemDashboard.auditLogs.length}</span>
+              </div>
+              <div className="mt-5 grid gap-4">
+                {systemDashboard.auditLogs.map((log) => (
+                  <div key={log.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{log.actorDisplayName} / {roleLabels[log.actorRole as keyof typeof roleLabels] ?? log.actorRole}</p>
+                        <p className="mt-2 text-sm text-slate-400">{log.action} / {log.scope}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${log.status === "success" ? "bg-lime-300/12 text-lime-100" : "bg-orange-300/12 text-orange-100"}`}>
+                        {log.status}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(log.createdAt, displayLocale)}</span>
+                      {log.targetType ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{log.targetType}</span> : null}
+                      {log.targetId ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{log.targetId}</span> : null}
+                      {log.ipAddress ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{log.ipAddress}</span> : null}
+                    </div>
+                    {log.detail ? <p className="mt-3 text-sm text-slate-300">{log.detail}</p> : null}
+                  </div>
+                ))}
+                {systemDashboard.auditLogs.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No audit logs yet." : locale === "zh-TW" ? "目前沒有審計日誌。" : "当前没有审计日志。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.system.alerts.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Alert channels and incidents" : locale === "zh-TW" ? "告警通道與事件" : "告警通道与事件"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{systemDashboard.alertEvents.length}</span>
+              </div>
+              <form action="/api/admin/system" method="post" className="mt-5 rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                <input type="hidden" name="intent" value="save-alert-channel" />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <input name="name" placeholder={locale === "en" ? "Channel name" : locale === "zh-TW" ? "通道名稱" : "通道名称"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <input name="provider" placeholder="telegram / email / webhook" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <input name="target" placeholder={locale === "en" ? "Target address" : locale === "zh-TW" ? "目標地址" : "目标地址"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <input name="severityFilter" defaultValue="warn,error,critical" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <select name="status" defaultValue="active" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                    <option value="active">{locale === "en" ? "Active" : locale === "zh-TW" ? "啟用" : "启用"}</option>
+                    <option value="inactive">{locale === "en" ? "Inactive" : locale === "zh-TW" ? "停用" : "停用"}</option>
+                  </select>
+                  <input name="note" placeholder={locale === "en" ? "Note" : locale === "zh-TW" ? "備註" : "备注"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                </div>
+                <button type="submit" className="mt-4 rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                  {locale === "en" ? "Save alert channel" : locale === "zh-TW" ? "保存告警通道" : "保存告警通道"}
+                </button>
+              </form>
+              <form action="/api/admin/system" method="post" className="mt-4 rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                <input type="hidden" name="intent" value="save-alert-event" />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <input name="source" placeholder={locale === "en" ? "Source" : locale === "zh-TW" ? "事件來源" : "事件来源"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <input name="title" placeholder={locale === "en" ? "Alert title" : locale === "zh-TW" ? "告警標題" : "告警标题"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <select name="severity" defaultValue="warn" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                    <option value="info">Info</option>
+                    <option value="warn">Warn</option>
+                    <option value="error">Error</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                  <select name="channelId" defaultValue="" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
+                    <option value="">{locale === "en" ? "No channel bind" : locale === "zh-TW" ? "不綁定通道" : "不绑定通道"}</option>
+                    {systemDashboard.alertChannels.map((channel) => (
+                      <option key={channel.id} value={channel.id}>{channel.name}</option>
+                    ))}
+                  </select>
+                  <textarea name="message" rows={2} placeholder={locale === "en" ? "Alert message" : locale === "zh-TW" ? "告警內容" : "告警内容"} className="md:col-span-2 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <textarea name="detail" rows={2} placeholder={locale === "en" ? "Detail" : locale === "zh-TW" ? "詳細信息" : "详细信息"} className="md:col-span-2 rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                </div>
+                <button type="submit" className="mt-4 rounded-full border border-rose-300/25 bg-rose-400/10 px-4 py-2 text-sm text-rose-100 transition hover:border-rose-300/45 hover:bg-rose-400/20">
+                  {locale === "en" ? "Create alert" : locale === "zh-TW" ? "建立告警" : "建立告警"}
+                </button>
+              </form>
+              <div className="mt-4 grid gap-4">
+                {systemDashboard.alertEvents.map((event) => (
+                  <div key={event.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{event.title}</p>
+                        <p className="mt-2 text-sm text-slate-400">{event.source} / {event.message}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${event.status === "resolved" ? "bg-lime-300/12 text-lime-100" : event.severity === "critical" || event.severity === "error" ? "bg-rose-400/12 text-rose-100" : "bg-orange-300/12 text-orange-100"}`}>
+                        {event.status} / {event.severity}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(event.createdAt, displayLocale)}</span>
+                      {event.channelName ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{event.channelName}</span> : null}
+                      {event.resolvedAt ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(event.resolvedAt, displayLocale)}</span> : null}
+                    </div>
+                    {event.detail ? <p className="mt-3 text-sm text-slate-300">{event.detail}</p> : null}
+                    {event.status !== "resolved" ? (
+                      <form action="/api/admin/system" method="post" className="mt-4">
+                        <input type="hidden" name="intent" value="resolve-alert-event" />
+                        <input type="hidden" name="id" value={event.id} />
+                        <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                          {locale === "en" ? "Resolve" : locale === "zh-TW" ? "標記已解決" : "标记已解决"}
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.system.parameters.title}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "System parameters" : locale === "zh-TW" ? "系統參數" : "系统参数"}
+                  </h3>
+                </div>
+                <span className="text-sm text-slate-500">{systemDashboard.parameters.length}</span>
+              </div>
+              <form action="/api/admin/system" method="post" className="mt-5 rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                <input type="hidden" name="intent" value="save-parameter" />
+                <div className="grid gap-4 md:grid-cols-2">
+                  <input name="key" placeholder="reports.export_limit" className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <input name="category" placeholder={locale === "en" ? "Category" : locale === "zh-TW" ? "分類" : "分类"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                  <input name="value" placeholder={locale === "en" ? "Value" : locale === "zh-TW" ? "值" : "值"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none md:col-span-2" />
+                  <textarea name="description" rows={2} placeholder={locale === "en" ? "Description" : locale === "zh-TW" ? "說明" : "说明"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none md:col-span-2" />
+                </div>
+                <button type="submit" className="mt-4 rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                  {locale === "en" ? "Save parameter" : locale === "zh-TW" ? "保存參數" : "保存参数"}
+                </button>
+              </form>
+              <div className="mt-4 grid gap-4">
+                {systemDashboard.parameters.map((item) => (
+                  <form key={item.id} action="/api/admin/system" method="post" className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <input type="hidden" name="intent" value="save-parameter" />
+                    <input type="hidden" name="key" value={item.key} />
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{item.key}</p>
+                        <p className="mt-2 text-sm text-slate-400">{item.description ?? item.category}</p>
+                      </div>
+                      <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">{item.category}</span>
+                    </div>
+                    <input name="value" defaultValue={item.value} className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <input name="category" defaultValue={item.category} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                      <input name="description" defaultValue={item.description ?? ""} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-xs text-slate-500">{formatDateTime(item.updatedAt, displayLocale)}</span>
+                      <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                        {locale === "en" ? "Update" : locale === "zh-TW" ? "更新" : "更新"}
+                      </button>
+                    </div>
+                  </form>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       ) : null}
@@ -4389,11 +5891,59 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             description={adminExpansion.reports.description}
           />
           <div className="mt-6">
-            <ExpansionMetricGrid items={adminExpansion.reports.metrics} />
+            <ExpansionMetricGrid items={reportsDashboard.metrics} />
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
-            <ExpansionRowsPanel title={adminExpansion.reports.boards.title} rows={adminExpansion.reports.boards.rows} />
-            <ExpansionRowsPanel title={adminExpansion.reports.exports.title} rows={adminExpansion.reports.exports.rows} />
+            <ExpansionRowsPanel
+              title={locale === "en" ? "Revenue and conversion" : locale === "zh-TW" ? "營收與轉化" : "营收与转化"}
+              rows={reportsDashboard.revenueRows}
+            />
+            <ExpansionRowsPanel
+              title={locale === "en" ? "Growth and channel" : locale === "zh-TW" ? "增長與渠道" : "增长与渠道"}
+              rows={reportsDashboard.growthRows}
+            />
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <ExpansionRowsPanel
+              title={locale === "en" ? "Operations snapshot" : locale === "zh-TW" ? "運營快照" : "运营快照"}
+              rows={reportsDashboard.operationsRows}
+            />
+            <ExpansionRowsPanel
+              title={locale === "en" ? "Runtime and risk" : locale === "zh-TW" ? "運行與風險" : "运行与风险"}
+              rows={reportsDashboard.stabilityRows}
+            />
+          </div>
+          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="section-label">{adminExpansion.reports.exports.title}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {locale === "en" ? "Export center" : locale === "zh-TW" ? "匯出中心" : "导出中心"}
+                </h3>
+              </div>
+              <span className="text-sm text-slate-500">{reportsDashboard.exportCards.length}</span>
+            </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {reportsDashboard.exportCards.map((item) => (
+                <div key={item.href} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">{item.title}</p>
+                      <p className="mt-2 text-sm text-slate-400">{item.description}</p>
+                    </div>
+                    <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">
+                      {item.badge}
+                    </span>
+                  </div>
+                  <a
+                    href={item.href}
+                    className="mt-4 inline-flex items-center justify-center rounded-full border border-sky-300/25 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20"
+                  >
+                    {locale === "en" ? "Download CSV" : locale === "zh-TW" ? "下載 CSV" : "下载 CSV"}
+                  </a>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       ) : null}

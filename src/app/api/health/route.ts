@@ -32,6 +32,8 @@ export async function GET() {
       syncLock,
       recentFailedCallbackCount,
       recentConflictCallbackCount,
+      expiredPendingRechargeCount,
+      stalePendingRechargeCount,
     ] = await Promise.all([
       prisma.syncRun.findFirst({
         orderBy: { startedAt: "desc" },
@@ -72,6 +74,21 @@ export async function GET() {
         where: {
           processingStatus: "conflict",
           lastSeenAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+        },
+      }),
+      prisma.coinRechargeOrder.count({
+        where: {
+          status: "pending",
+          expiresAt: {
+            not: null,
+            lt: now,
+          },
+        },
+      }),
+      prisma.coinRechargeOrder.count({
+        where: {
+          status: "pending",
+          createdAt: { lt: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
         },
       }),
     ]);
@@ -131,6 +148,14 @@ export async function GET() {
       warnings.push(`${recentConflictCallbackCount} payment callbacks were marked conflict in the last 24h.`);
     }
 
+    if (expiredPendingRechargeCount > 0) {
+      warnings.push(`${expiredPendingRechargeCount} coin recharge orders are expired but still pending.`);
+    }
+
+    if (stalePendingRechargeCount > 0) {
+      warnings.push(`${stalePendingRechargeCount} coin recharge orders have been pending for over 24h.`);
+    }
+
     const status =
       criticalAlerts.length > 0 ? "degraded" : warnings.length > 0 ? "degraded" : "ok";
     const ok = criticalAlerts.length === 0;
@@ -187,6 +212,10 @@ export async function GET() {
           callbacks: {
             failedLast24h: recentFailedCallbackCount,
             conflictLast24h: recentConflictCallbackCount,
+          },
+          finance: {
+            expiredPendingRechargeCount,
+            stalePendingRechargeCount,
           },
         },
         warnings,

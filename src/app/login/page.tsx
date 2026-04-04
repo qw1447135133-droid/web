@@ -20,6 +20,7 @@ export default async function LoginPage({
   const { authPageCopy, roleLabels } = getSiteCopy(displayLocale);
   const resolved = await searchParams;
   const next = pickValue(resolved.next);
+  const inviteCode = pickValue(resolved.invite, "").trim().toUpperCase();
 
   return (
     <div className="mx-auto flex min-h-[70vh] w-full max-w-5xl items-center px-4 py-10 sm:px-6 lg:px-8">
@@ -35,6 +36,7 @@ export default async function LoginPage({
               <input type="hidden" name="email" value="ops@signalnine.demo" />
               <input type="hidden" name="role" value="admin" />
               <input type="hidden" name="returnTo" value={next || "/admin"} />
+              <input type="hidden" name="inviteCode" value={inviteCode} />
               <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{authPageCopy.adminEyebrow}</p>
               <h2 className="mt-2 text-2xl font-semibold text-white">{authPageCopy.adminTitle}</h2>
               <p className="mt-3 text-sm leading-7 text-slate-400">{authPageCopy.adminDescription}</p>
@@ -51,6 +53,7 @@ export default async function LoginPage({
               <input type="hidden" name="email" value="member@signalnine.demo" />
               <input type="hidden" name="role" value="member" />
               <input type="hidden" name="returnTo" value={next || "/member"} />
+              <input type="hidden" name="inviteCode" value={inviteCode} />
               <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{authPageCopy.memberEyebrow}</p>
               <h2 className="mt-2 text-2xl font-semibold text-white">{authPageCopy.memberTitle}</h2>
               <p className="mt-3 text-sm leading-7 text-slate-400">{authPageCopy.memberDescription}</p>
@@ -67,8 +70,18 @@ export default async function LoginPage({
         <section className="glass-panel rounded-[2rem] p-8">
           <p className="section-label">{authPageCopy.customEyebrow}</p>
           <h2 className="display-title mt-3 text-3xl font-semibold text-white">{authPageCopy.customTitle}</h2>
+          {inviteCode ? (
+            <div className="mt-4 rounded-[1.2rem] border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+              {displayLocale === "en"
+                ? `Agent invite detected: ${inviteCode}. Your account will be attributed after login.`
+                : displayLocale === "zh-TW"
+                  ? `已識別代理邀請碼：${inviteCode}，登入後會自動綁定歸因。`
+                  : `已识别代理邀请码：${inviteCode}，登录后会自动绑定归因。`}
+            </div>
+          ) : null}
           <form action="/api/auth/login" method="post" className="mt-6 space-y-4">
             <input type="hidden" name="returnTo" value={next || "/member"} />
+            <input type="hidden" name="inviteCode" value={inviteCode} />
             <label className="block space-y-2 text-sm">
               <span className="text-slate-400">{authPageCopy.displayName}</span>
               <input
@@ -96,6 +109,7 @@ export default async function LoginPage({
               >
                 <option value="member">{roleLabels.member}</option>
                 <option value="operator">{roleLabels.operator}</option>
+                <option value="finance">{roleLabels.finance}</option>
                 <option value="admin">{roleLabels.admin}</option>
               </select>
             </label>

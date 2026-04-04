@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  adjustCoinAccountByAdmin,
+  closeExpiredCoinRechargeOrders,
   closePendingCoinRechargeOrder,
   createManualCoinRechargeOrder,
   markCoinRechargeOrderFailedByAdmin,
@@ -30,6 +32,7 @@ export async function POST(request: NextRequest) {
   const packageId = String(formData.get("packageId") || "").trim();
   const paymentReference = String(formData.get("paymentReference") || "").trim();
   const reason = String(formData.get("reason") || "").trim();
+  const amount = Number.parseInt(String(formData.get("amount") || "0").trim(), 10);
 
   try {
     if (intent === "create") {
@@ -58,16 +61,49 @@ export async function POST(request: NextRequest) {
         orderId,
         reason,
       });
+    } else if (intent === "manual-credit") {
+      await adjustCoinAccountByAdmin({
+        userId,
+        direction: "credit",
+        amount,
+        note: reason,
+      });
+    } else if (intent === "manual-debit") {
+      await adjustCoinAccountByAdmin({
+        userId,
+        direction: "debit",
+        amount,
+        note: reason,
+      });
+    } else if (intent === "close-expired") {
+      await closeExpiredCoinRechargeOrders();
     } else {
       return redirectToAdmin(request, "&error=coin-recharge-order");
     }
   } catch (error) {
     if (error instanceof Error && error.message === "COIN_ACCOUNT_INSUFFICIENT_BALANCE") {
-      return redirectToAdmin(request, "&error=coin-recharge-order-balance");
+      return redirectToAdmin(
+        request,
+        intent === "manual-debit" ? "&error=coin-adjustment-balance" : "&error=coin-recharge-order-balance",
+      );
     }
 
-    return redirectToAdmin(request, "&error=coin-recharge-order");
+    return redirectToAdmin(
+      request,
+      intent === "manual-credit" || intent === "manual-debit"
+        ? "&error=coin-adjustment"
+        : intent === "close-expired"
+          ? "&error=coin-expiry"
+          : "&error=coin-recharge-order",
+    );
   }
 
-  return redirectToAdmin(request, "&saved=coin-recharge-order");
+  return redirectToAdmin(
+    request,
+    intent === "manual-credit" || intent === "manual-debit"
+      ? "&saved=coin-adjustment"
+      : intent === "close-expired"
+        ? "&saved=coin-expiry"
+        : "&saved=coin-recharge-order",
+  );
 }

@@ -273,6 +273,184 @@ db.exec(`
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS "AgentProfile" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "displayName" TEXT NOT NULL,
+    "level" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "inviteCode" TEXT NOT NULL,
+    "inviteUrl" TEXT,
+    "commissionRate" REAL NOT NULL DEFAULT 0,
+    "downstreamRate" REAL NOT NULL DEFAULT 0,
+    "contactName" TEXT,
+    "contactPhone" TEXT,
+    "channelSummary" TEXT,
+    "payoutAccount" TEXT,
+    "totalReferredUsers" INTEGER NOT NULL DEFAULT 0,
+    "monthlyRechargeAmount" INTEGER NOT NULL DEFAULT 0,
+    "totalCommission" INTEGER NOT NULL DEFAULT 0,
+    "unsettledCommission" INTEGER NOT NULL DEFAULT 0,
+    "notes" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT,
+    "parentAgentId" TEXT,
+    CONSTRAINT "AgentProfile_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "AgentProfile_parentAgentId_fkey"
+      FOREIGN KEY ("parentAgentId") REFERENCES "AgentProfile" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "AgentApplication" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "applicantName" TEXT NOT NULL,
+    "phone" TEXT NOT NULL,
+    "contact" TEXT,
+    "channelSummary" TEXT NOT NULL,
+    "expectedMonthlyUsers" INTEGER,
+    "desiredLevel" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "reviewerNote" TEXT,
+    "reviewedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT,
+    "approvedAgentId" TEXT,
+    CONSTRAINT "AgentApplication_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "AgentApplication_approvedAgentId_fkey"
+      FOREIGN KEY ("approvedAgentId") REFERENCES "AgentProfile" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "AgentCampaign" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "incentivePolicy" TEXT,
+    "targetAgentCount" INTEGER NOT NULL DEFAULT 0,
+    "startsAt" DATETIME,
+    "endsAt" DATETIME,
+    "isPublic" BOOLEAN NOT NULL DEFAULT false,
+    "status" TEXT NOT NULL DEFAULT 'draft',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "RecruitmentLead" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "phone" TEXT NOT NULL,
+    "sourceChannel" TEXT NOT NULL,
+    "desiredLevel" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'new',
+    "note" TEXT,
+    "ownerName" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "campaignId" TEXT,
+    "agentId" TEXT,
+    CONSTRAINT "RecruitmentLead_campaignId_fkey"
+      FOREIGN KEY ("campaignId") REFERENCES "AgentCampaign" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "RecruitmentLead_agentId_fkey"
+      FOREIGN KEY ("agentId") REFERENCES "AgentProfile" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "AgentWithdrawal" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "amount" INTEGER NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "payoutAccount" TEXT,
+    "note" TEXT,
+    "proofUrl" TEXT,
+    "requestedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "reviewedAt" DATETIME,
+    "settledAt" DATETIME,
+    "rejectionReason" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "agentId" TEXT NOT NULL,
+    CONSTRAINT "AgentWithdrawal_agentId_fkey"
+      FOREIGN KEY ("agentId") REFERENCES "AgentProfile" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "AdminRolePolicy" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "role" TEXT NOT NULL,
+    "description" TEXT,
+    "canAccessAdminConsole" BOOLEAN NOT NULL DEFAULT false,
+    "canManageContent" BOOLEAN NOT NULL DEFAULT false,
+    "canManageFinance" BOOLEAN NOT NULL DEFAULT false,
+    "canManageAgents" BOOLEAN NOT NULL DEFAULT false,
+    "canManageSystem" BOOLEAN NOT NULL DEFAULT false,
+    "canViewReports" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "AdminAuditLog" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "actorDisplayName" TEXT NOT NULL,
+    "actorRole" TEXT NOT NULL,
+    "action" TEXT NOT NULL,
+    "scope" TEXT NOT NULL,
+    "targetType" TEXT,
+    "targetId" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'success',
+    "detail" TEXT,
+    "ipAddress" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "actorUserId" TEXT,
+    CONSTRAINT "AdminAuditLog_actorUserId_fkey"
+      FOREIGN KEY ("actorUserId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "SystemAlertChannel" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "target" TEXT NOT NULL,
+    "severityFilter" TEXT NOT NULL DEFAULT 'warn,error',
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "note" TEXT,
+    "lastTriggeredAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "SystemAlertEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "source" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "severity" TEXT NOT NULL DEFAULT 'warn',
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "detail" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "resolvedAt" DATETIME,
+    "channelId" TEXT,
+    CONSTRAINT "SystemAlertEvent_channelId_fkey"
+      FOREIGN KEY ("channelId") REFERENCES "SystemAlertChannel" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "SystemParameter" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "key" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    "category" TEXT NOT NULL DEFAULT 'general',
+    "description" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS "League" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "source" TEXT NOT NULL DEFAULT 'nowscore',
@@ -706,6 +884,10 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinAccount_userId_key" ON "CoinAccount"("userId");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinPackage_key_key" ON "CoinPackage"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_orderNo_key" ON "CoinRechargeOrder"("orderNo");
+  CREATE UNIQUE INDEX IF NOT EXISTS "AgentProfile_inviteCode_key" ON "AgentProfile"("inviteCode");
+  CREATE UNIQUE INDEX IF NOT EXISTS "AgentProfile_userId_key" ON "AgentProfile"("userId");
+  CREATE UNIQUE INDEX IF NOT EXISTS "AdminRolePolicy_role_key" ON "AdminRolePolicy"("role");
+  CREATE UNIQUE INDEX IF NOT EXISTS "SystemParameter_key_key" ON "SystemParameter"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "League_slug_key" ON "League"("slug");
   CREATE UNIQUE INDEX IF NOT EXISTS "League_source_sourceKey_key" ON "League"("source", "sourceKey");
   CREATE UNIQUE INDEX IF NOT EXISTS "Team_leagueId_slug_key" ON "Team"("leagueId", "slug");
@@ -736,6 +918,24 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_orderType_orderId_idx" ON "PaymentCallbackEvent"("orderType", "orderId");
+  CREATE INDEX IF NOT EXISTS "AgentApplication_status_updatedAt_idx" ON "AgentApplication"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AgentApplication_userId_updatedAt_idx" ON "AgentApplication"("userId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AgentProfile_status_level_updatedAt_idx" ON "AgentProfile"("status", "level", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AgentProfile_parentAgentId_updatedAt_idx" ON "AgentProfile"("parentAgentId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AgentCampaign_status_updatedAt_idx" ON "AgentCampaign"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "RecruitmentLead_status_updatedAt_idx" ON "RecruitmentLead"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "RecruitmentLead_campaignId_updatedAt_idx" ON "RecruitmentLead"("campaignId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "RecruitmentLead_agentId_updatedAt_idx" ON "RecruitmentLead"("agentId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AgentWithdrawal_status_updatedAt_idx" ON "AgentWithdrawal"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AgentWithdrawal_agentId_updatedAt_idx" ON "AgentWithdrawal"("agentId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AdminAuditLog_scope_createdAt_idx" ON "AdminAuditLog"("scope", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AdminAuditLog_status_createdAt_idx" ON "AdminAuditLog"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AdminAuditLog_actorUserId_createdAt_idx" ON "AdminAuditLog"("actorUserId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SystemAlertChannel_status_updatedAt_idx" ON "SystemAlertChannel"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "SystemAlertEvent_status_createdAt_idx" ON "SystemAlertEvent"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SystemAlertEvent_severity_createdAt_idx" ON "SystemAlertEvent"("severity", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SystemAlertEvent_channelId_createdAt_idx" ON "SystemAlertEvent"("channelId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SystemParameter_category_updatedAt_idx" ON "SystemParameter"("category", "updatedAt");
   CREATE INDEX IF NOT EXISTS "League_sport_featured_sortOrder_idx" ON "League"("sport", "featured", "sortOrder");
   CREATE INDEX IF NOT EXISTS "Team_leagueId_ranking_idx" ON "Team"("leagueId", "ranking");
   CREATE INDEX IF NOT EXISTS "Match_sport_kickoff_idx" ON "Match"("sport", "kickoff");

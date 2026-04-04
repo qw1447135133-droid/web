@@ -14,15 +14,24 @@ model User {
   role                String
   membershipPlanId    String?
   membershipExpiresAt DateTime?
+  referredAt          DateTime?
+  referredByAgentId   String?
   sessions            Session[]
   membershipOrders    MembershipOrder[]
   contentOrders       ContentOrder[]
   coinAccount         CoinAccount?
   coinRechargeOrders  CoinRechargeOrder[]
+  agentApplications   AgentApplication[]
+  agentProfile        AgentProfile?
+  adminAuditLogs      AdminAuditLog[]
+  referredByAgent     AgentProfile?     @relation("AgentReferralUsers", fields: [referredByAgentId], references: [id], onDelete: SetNull)
+  agentCommissionLedgers AgentCommissionLedger[]
   assistantConversations AssistantConversation[]
   assistantHandoffRequests AssistantHandoffRequest[]
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
+
+  @@index([referredByAgentId, createdAt])
 }
 
 model Session {
@@ -167,6 +176,7 @@ model CoinRechargeOrder {
   userId           String
   package          CoinPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
   user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentCommissionLedger AgentCommissionLedger?
 
   @@unique([provider, providerOrderId])
   @@index([status, updatedAt])
@@ -195,6 +205,224 @@ model PaymentCallbackEvent {
   @@index([provider, createdAt])
   @@index([processingStatus, lastSeenAt])
   @@index([orderType, orderId])
+}
+
+model AgentApplication {
+  id                 String       @id @default(cuid())
+  applicantName      String
+  phone              String
+  contact            String?
+  channelSummary     String
+  expectedMonthlyUsers Int?
+  desiredLevel       String
+  status             String       @default("pending")
+  reviewerNote       String?
+  reviewedAt         DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  userId             String?
+  approvedAgentId    String?
+  user               User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  approvedAgent      AgentProfile? @relation(fields: [approvedAgentId], references: [id], onDelete: SetNull)
+
+  @@index([status, updatedAt])
+  @@index([userId, updatedAt])
+}
+
+model AgentProfile {
+  id                  String             @id @default(cuid())
+  displayName         String
+  level               String
+  status              String             @default("active")
+  inviteCode          String             @unique
+  inviteUrl           String?
+  commissionRate      Float              @default(0)
+  downstreamRate      Float              @default(0)
+  contactName         String?
+  contactPhone        String?
+  channelSummary      String?
+  payoutAccount       String?
+  totalReferredUsers  Int                @default(0)
+  monthlyRechargeAmount Int              @default(0)
+  totalCommission     Int                @default(0)
+  unsettledCommission Int                @default(0)
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  userId              String?            @unique
+  parentAgentId       String?
+  user                User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parentAgent         AgentProfile?      @relation("AgentHierarchy", fields: [parentAgentId], references: [id], onDelete: SetNull)
+  childAgents         AgentProfile[]     @relation("AgentHierarchy")
+  referredUsers       User[]             @relation("AgentReferralUsers")
+  approvedApplications AgentApplication[]
+  withdrawals         AgentWithdrawal[]
+  leads               RecruitmentLead[]
+  commissionLedgers   AgentCommissionLedger[]
+
+  @@index([status, level, updatedAt])
+  @@index([parentAgentId, updatedAt])
+}
+
+model AgentCommissionLedger {
+  id               String            @id @default(cuid())
+  rechargeAmount   Int
+  commissionRate   Float             @default(0)
+  commissionAmount Int
+  status           String            @default("pending")
+  note             String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  settledAt        DateTime?
+  reversedAt       DateTime?
+  agentId          String
+  userId           String
+  rechargeOrderId  String            @unique
+  agent            AgentProfile      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rechargeOrder    CoinRechargeOrder @relation(fields: [rechargeOrderId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, status, createdAt])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model AgentCampaign {
+  id                String            @id @default(cuid())
+  name              String
+  description       String?
+  incentivePolicy   String?
+  targetAgentCount  Int               @default(0)
+  startsAt          DateTime?
+  endsAt            DateTime?
+  isPublic          Boolean           @default(false)
+  status            String            @default("draft")
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  leads             RecruitmentLead[]
+
+  @@index([status, updatedAt])
+}
+
+model RecruitmentLead {
+  id              String         @id @default(cuid())
+  name            String
+  phone           String
+  sourceChannel   String
+  desiredLevel    String
+  status          String         @default("new")
+  note            String?
+  ownerName       String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  campaignId      String?
+  agentId         String?
+  campaign        AgentCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  agent           AgentProfile?  @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([status, updatedAt])
+  @@index([campaignId, updatedAt])
+  @@index([agentId, updatedAt])
+}
+
+model AgentWithdrawal {
+  id             String       @id @default(cuid())
+  amount         Int
+  status         String       @default("pending")
+  payoutAccount  String?
+  note           String?
+  proofUrl       String?
+  requestedAt    DateTime     @default(now())
+  reviewedAt     DateTime?
+  settledAt      DateTime?
+  rejectionReason String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  agentId        String
+  agent          AgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
+  @@index([agentId, updatedAt])
+}
+
+model AdminRolePolicy {
+  id                    String   @id @default(cuid())
+  role                  String   @unique
+  description           String?
+  canAccessAdminConsole Boolean  @default(false)
+  canManageContent      Boolean  @default(false)
+  canManageFinance      Boolean  @default(false)
+  canManageAgents       Boolean  @default(false)
+  canManageSystem       Boolean  @default(false)
+  canViewReports        Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model AdminAuditLog {
+  id               String   @id @default(cuid())
+  actorDisplayName String
+  actorRole        String
+  action           String
+  scope            String
+  targetType       String?
+  targetId         String?
+  status           String   @default("success")
+  detail           String?
+  ipAddress        String?
+  createdAt        DateTime @default(now())
+  actorUserId      String?
+  actorUser        User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([scope, createdAt])
+  @@index([status, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+model SystemAlertChannel {
+  id              String   @id @default(cuid())
+  name            String
+  provider        String
+  target          String
+  severityFilter  String   @default("warn,error")
+  status          String   @default("active")
+  note            String?
+  lastTriggeredAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  alertEvents     SystemAlertEvent[]
+
+  @@index([status, updatedAt])
+}
+
+model SystemAlertEvent {
+  id          String              @id @default(cuid())
+  source      String
+  title       String
+  message     String
+  severity    String              @default("warn")
+  status      String              @default("open")
+  detail      String?
+  createdAt   DateTime            @default(now())
+  resolvedAt  DateTime?
+  channelId   String?
+  channel     SystemAlertChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([severity, createdAt])
+  @@index([channelId, createdAt])
+}
+
+model SystemParameter {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  category    String   @default("general")
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category, updatedAt])
 }
 
 model League {

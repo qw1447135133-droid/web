@@ -32,6 +32,8 @@ export type AdminUserRecord = {
   displayName: string;
   email: string;
   role: UserRole;
+  referredByAgentName?: string;
+  referredByAgentCode?: string;
   membershipPlanId?: string;
   membershipExpiresAt?: string;
   coinBalance: number;
@@ -526,6 +528,12 @@ export async function getAdminUsersDashboard(input: AdminUsersDashboardFilters =
         displayName: true,
         email: true,
         role: true,
+        referredByAgent: {
+          select: {
+            displayName: true,
+            inviteCode: true,
+          },
+        },
         membershipPlanId: true,
         membershipExpiresAt: true,
         coinAccount: {
@@ -652,6 +660,8 @@ export async function getAdminUsersDashboard(input: AdminUsersDashboardFilters =
       displayName: user.displayName,
       email: user.email,
       role: user.role as UserRole,
+      referredByAgentName: user.referredByAgent?.displayName ?? undefined,
+      referredByAgentCode: user.referredByAgent?.inviteCode ?? undefined,
       membershipPlanId: user.membershipPlanId ?? undefined,
       membershipExpiresAt: user.membershipExpiresAt?.toISOString(),
       coinBalance: user.coinAccount?.balance ?? 0,

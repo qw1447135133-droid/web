@@ -409,6 +409,7 @@ const zhCnCopy: SiteCopy = {
     visitor: "游客",
     member: "会员",
     operator: "运营",
+    finance: "财务",
     admin: "管理员",
   },
   orderStatusLabels: {
@@ -830,6 +831,7 @@ const zhTwCopy: SiteCopy = {
     visitor: "訪客",
     member: "會員",
     operator: "營運",
+    finance: "財務",
     admin: "管理員",
   },
   orderStatusLabels: {
@@ -1239,6 +1241,7 @@ const enCopy: SiteCopy = {
     visitor: "Visitor",
     member: "Member",
     operator: "Operator",
+    finance: "Finance",
     admin: "Admin",
   },
   orderStatusLabels: {
@@ -1641,6 +1644,7 @@ const thCopy: SiteCopy = {
     visitor: "ผู้เยี่ยมชม",
     member: "สมาชิก",
     operator: "ผู้ดูแลระบบ",
+    finance: "การเงิน",
     admin: "แอดมิน",
   },
   orderStatusLabels: {
@@ -1883,7 +1887,7 @@ const viCopy: SiteCopy = {
     { href: "/admin", label: "Quản trị" },
   ],
   matchStatusLabels: { live: "Đang diễn ra", upcoming: "Sắp diễn ra", finished: "Đã kết thúc" },
-  roleLabels: { visitor: "Khách", member: "Hội viên", operator: "Vận hành", admin: "Quản trị" },
+  roleLabels: { visitor: "Khách", member: "Hội viên", operator: "Vận hành", finance: "Tài chính", admin: "Quản trị" },
   orderStatusLabels: { pending: "Chờ thanh toán", paid: "Đã thanh toán", failed: "Thanh toán lỗi", closed: "Đã đóng", refunded: "Đã hoàn tiền" },
   sessionUiCopy: { visitorMode: "Chế độ khách", loginExperience: "Đăng nhập để trải nghiệm", logout: "Đăng xuất" },
   authPageCopy: {
@@ -2049,7 +2053,7 @@ const hiCopy: SiteCopy = {
     { href: "/admin", label: "एडमिन" },
   ],
   matchStatusLabels: { live: "लाइव", upcoming: "आगामी", finished: "समाप्त" },
-  roleLabels: { visitor: "विज़िटर", member: "सदस्य", operator: "ऑपरेटर", admin: "एडमिन" },
+  roleLabels: { visitor: "विज़िटर", member: "सदस्य", operator: "ऑपरेटर", finance: "वित्त", admin: "एडमिन" },
   orderStatusLabels: { pending: "भुगतान लंबित", paid: "भुगतान हुआ", failed: "भुगतान विफल", closed: "बंद", refunded: "रिफंड" },
   sessionUiCopy: { visitorMode: "विज़िटर मोड", loginExperience: "फ्लो टेस्ट करने के लिए साइन इन करें", logout: "साइन आउट" },
   authPageCopy: {

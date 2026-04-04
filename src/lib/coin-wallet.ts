@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { revalidatePath } from "next/cache";
+import { ensureDefaultCoinPackages } from "@/lib/admin-finance";
+import type { Locale } from "@/lib/i18n-config";
 import { membershipPlans } from "@/lib/mock-data";
 import { prisma } from "@/lib/prisma";
 import type { MembershipPlanId } from "@/lib/types";
@@ -46,10 +49,24 @@ export type MemberCoinCenter = {
   rechargeOrders: MemberCoinRechargeRecord[];
 };
 
+export type PublicCoinPackage = {
+  id: string;
+  key: string;
+  title: string;
+  description?: string;
+  coinAmount: number;
+  bonusAmount: number;
+  totalCoins: number;
+  price: number;
+  validityDays?: number;
+  badge?: string;
+};
+
 const ARTICLE_COIN_RATE = 6;
 const ARTICLE_COIN_MINIMUM = 120;
 const MEMBERSHIP_COIN_RATE = 6;
 const MEMBERSHIP_COIN_MINIMUM = 300;
+const memberSurfacePaths = ["/member", "/admin", "/"];
 
 function createCoinContentReference() {
   return `COIN-CONTENT-${randomUUID().slice(0, 8).toUpperCase()}`;
@@ -65,6 +82,24 @@ function createCoinMembershipReference() {
 
 function createCoinMembershipProviderOrderId() {
   return `COIN-MEM-${randomUUID().slice(0, 10).toUpperCase()}`;
+}
+
+function createCoinRechargeOrderNo() {
+  const now = new Date();
+  const dateLabel = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("");
+  return `CR${dateLabel}${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+}
+
+function createCoinRechargeReference() {
+  return `MANUAL-COIN-${randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+function createCoinRechargeProviderOrderId() {
+  return `MANUAL-COIN-ORDER-${randomUUID().slice(0, 10).toUpperCase()}`;
 }
 
 function getCoinPrice(price: number, rate: number, minimum: number) {
@@ -86,6 +121,145 @@ function nextMembershipExpiry(currentExpiry: Date | null, durationDays: number) 
   const expiresAt = new Date(base);
   expiresAt.setDate(expiresAt.getDate() + durationDays);
   return expiresAt;
+}
+
+function localizeCoinPackageText(
+  value: {
+    zhCn: string;
+    zhTw: string;
+    en: string;
+  },
+  locale: Locale,
+) {
+  if (locale === "zh-TW") {
+    return value.zhTw;
+  }
+
+  if (locale === "en") {
+    return value.en;
+  }
+
+  return value.zhCn;
+}
+
+function safeRevalidate(paths: string[]) {
+  for (const path of paths) {
+    try {
+      revalidatePath(path);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("static generation store missing")) {
+        throw error;
+      }
+    }
+  }
+}
+
+export async function getAvailableCoinPackages(locale: Locale): Promise<PublicCoinPackage[]> {
+  await ensureDefaultCoinPackages();
+
+  const packages = await prisma.coinPackage.findMany({
+    where: {
+      status: "active",
+    },
+    orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
+    select: {
+      id: true,
+      key: true,
+      titleZhCn: true,
+      titleZhTw: true,
+      titleEn: true,
+      descriptionZhCn: true,
+      descriptionZhTw: true,
+      descriptionEn: true,
+      coinAmount: true,
+      bonusAmount: true,
+      price: true,
+      validityDays: true,
+      badge: true,
+    },
+  });
+
+  return packages.map((item) => ({
+    id: item.id,
+    key: item.key,
+    title: localizeCoinPackageText(
+      {
+        zhCn: item.titleZhCn,
+        zhTw: item.titleZhTw,
+        en: item.titleEn,
+      },
+      locale,
+    ),
+    description: localizeCoinPackageText(
+      {
+        zhCn: item.descriptionZhCn ?? "",
+        zhTw: item.descriptionZhTw ?? item.descriptionZhCn ?? "",
+        en: item.descriptionEn ?? item.descriptionZhCn ?? "",
+      },
+      locale,
+    ).trim() || undefined,
+    coinAmount: item.coinAmount,
+    bonusAmount: item.bonusAmount,
+    totalCoins: item.coinAmount + item.bonusAmount,
+    price: item.price,
+    validityDays: item.validityDays ?? undefined,
+    badge: item.badge ?? undefined,
+  }));
+}
+
+export async function createMemberCoinRechargeOrder(input: {
+  userId: string;
+  packageId: string;
+}) {
+  await ensureDefaultCoinPackages();
+
+  const [user, coinPackage] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { id: true },
+    }),
+    prisma.coinPackage.findFirst({
+      where: {
+        id: input.packageId,
+        status: "active",
+      },
+      select: {
+        id: true,
+        coinAmount: true,
+        bonusAmount: true,
+        price: true,
+      },
+    }),
+  ]);
+
+  if (!user || !coinPackage) {
+    throw new Error("COIN_PACKAGE_NOT_FOUND");
+  }
+
+  const created = await prisma.coinRechargeOrder.create({
+    data: {
+      orderNo: createCoinRechargeOrderNo(),
+      coinAmount: coinPackage.coinAmount,
+      bonusAmount: coinPackage.bonusAmount,
+      amount: coinPackage.price,
+      status: "pending",
+      provider: "manual",
+      providerOrderId: createCoinRechargeProviderOrderId(),
+      expiresAt: null,
+      paymentReference: createCoinRechargeReference(),
+      userId: user.id,
+      packageId: coinPackage.id,
+      callbackPayload: JSON.stringify({
+        source: "member-center",
+      }),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  safeRevalidate(memberSurfacePaths);
+  return created;
 }
 
 export async function unlockArticleWithCoins(input: {

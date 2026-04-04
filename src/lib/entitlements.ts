@@ -22,7 +22,7 @@ export function canAccessContent(session: SessionUser, contentId: string) {
 }
 
 export function canAccessAdminConsole(session: SessionUser) {
-  return session.role === "admin";
+  return session.role === "admin" || session.role === "operator" || session.role === "finance";
 }
 
 export function canManageContent(session: SessionUser) {
@@ -33,12 +33,21 @@ export function getSessionEntitlements(session: SessionUser): SessionEntitlement
   const isAuthenticated = isAuthenticatedSession(session);
   const activeMembership = hasActiveMembership(session);
   const adminAccess = canAccessAdminConsole(session);
+  const canManageContent = session.role === "admin" || session.role === "operator";
+  const canManageFinance = session.role === "admin" || session.role === "finance";
+  const canManageAgents = session.role === "admin";
+  const canManageSystem = session.role === "admin";
+  const canViewReports = adminAccess;
 
   return {
     isAuthenticated,
     activeMembership,
     canAccessMemberCenter: isAuthenticated,
     canAccessAdminConsole: adminAccess,
-    canManageContent: adminAccess,
+    canManageContent,
+    canManageFinance,
+    canManageAgents,
+    canManageSystem,
+    canViewReports,
   };
 }

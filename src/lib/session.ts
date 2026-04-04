@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
-import { canAccessContent, getSessionEntitlements, hasActiveMembership } from "@/lib/entitlements";
+import { canAccessContent, hasActiveMembership, isAuthenticatedSession } from "@/lib/entitlements";
+import { getRolePolicyEntitlements } from "@/lib/admin-system";
 import { normalizePaymentProvider } from "@/lib/payment-provider";
 import { prisma } from "@/lib/prisma";
 import type { MembershipPlanId, OrderStatus, SessionContext, SessionUser, UserRole } from "@/lib/types";
@@ -217,10 +218,23 @@ export async function getSessionUser() {
 
 export async function getSessionContext(): Promise<SessionContext> {
   const session = await getSessionUser();
+  const rolePolicy = await getRolePolicyEntitlements(session.role);
+  const isAuthenticated = isAuthenticatedSession(session);
+  const activeMembership = hasActiveMembership(session);
 
   return {
     session,
-    entitlements: getSessionEntitlements(session),
+    entitlements: {
+      isAuthenticated,
+      activeMembership,
+      canAccessMemberCenter: isAuthenticated,
+      canAccessAdminConsole: isAuthenticated && rolePolicy.canAccessAdminConsole,
+      canManageContent: isAuthenticated && rolePolicy.canManageContent,
+      canManageFinance: isAuthenticated && rolePolicy.canManageFinance,
+      canManageAgents: isAuthenticated && rolePolicy.canManageAgents,
+      canManageSystem: isAuthenticated && rolePolicy.canManageSystem,
+      canViewReports: isAuthenticated && rolePolicy.canViewReports,
+    },
   };
 }
 
