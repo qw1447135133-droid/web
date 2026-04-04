@@ -7,7 +7,8 @@ import {
   getPaymentCheckoutFlow,
   getPaymentLaunchRedirectPath,
 } from "@/lib/payment-gateway";
-import { getCurrentLocale } from "@/lib/i18n";
+import type { DisplayLocale } from "@/lib/i18n-config";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getOpsCopy } from "@/lib/ops-copy";
 import {
   getCheckoutOrder,
@@ -60,41 +61,176 @@ function getCheckoutHint(type: PaymentOrderType, order: CheckoutOrder, copy: Ret
   return copy.hint.refunded;
 }
 
-export default async function CheckoutPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
-  const locale = await getCurrentLocale();
-  const { checkoutPageCopy } = getSiteCopy(locale);
-  const opsCopy = getOpsCopy(locale);
-  const paymentRuntime = getPaymentRuntimeConfig();
-  const manualCollection = getPaymentManualCollectionConfig();
-  const paymentPendingLabel = locale === "en" ? `${paymentRuntime.pendingMinutes} min` : locale === "zh-TW" ? `${paymentRuntime.pendingMinutes} 分鐘` : `${paymentRuntime.pendingMinutes} 分钟`;
+function getCheckoutDisplayCopy(locale: DisplayLocale, pendingMinutes: number) {
+  const paymentPendingLabel =
+    locale === "en"
+      ? `${pendingMinutes} min`
+      : locale === "zh-TW"
+        ? `${pendingMinutes} 分鐘`
+        : locale === "th"
+          ? `${pendingMinutes} นาที`
+          : locale === "vi"
+            ? `${pendingMinutes} phut`
+            : locale === "hi"
+              ? `${pendingMinutes} min`
+              : `${pendingMinutes} 分钟`;
+
   const hostedCopy = {
-    title: locale === "en" ? "Continue to gateway" : locale === "zh-TW" ? "繼續前往支付通道" : "继续前往支付通道",
+    title:
+      locale === "en"
+        ? "Continue to gateway"
+        : locale === "zh-TW"
+          ? "繼續前往支付通道"
+          : locale === "th"
+            ? "ไปยังช่องทางชำระเงิน"
+            : locale === "vi"
+              ? "Tiep tuc toi cong thanh toan"
+              : locale === "hi"
+                ? "Gateway par jari rakhein"
+                : "继续前往支付通道",
     description:
       locale === "en"
         ? "This order is configured for a hosted payment page. Continue to the external gateway to complete the payment, then return here to view the final status."
         : locale === "zh-TW"
           ? "這筆訂單會跳轉到第三方託管支付頁完成付款，付款後再返回此頁查看最終狀態。"
-          : "这笔订单会跳转到第三方托管支付页完成付款，付款后再返回此页查看最终状态。",
-    button: locale === "en" ? "Open payment page" : locale === "zh-TW" ? "打開支付頁" : "打开支付页",
+          : locale === "th"
+            ? "คำสั่งซื้อนี้จะพาไปยังหน้าชำระเงินภายนอก หลังชำระแล้วให้กลับมาหน้านี้เพื่อตรวจสอบสถานะสุดท้าย"
+            : locale === "vi"
+              ? "Don hang nay su dung trang thanh toan hosted. Hay tiep tuc toi cong thanh toan ben ngoai roi quay lai day de xem trang thai cuoi cung."
+              : locale === "hi"
+                ? "Yeh order hosted payment page par configured hai. Payment complete karke yahan wapas aakar final status dekhein."
+                : "这笔订单会跳转到第三方托管支付页完成付款，付款后再返回此页查看最终状态。",
+    button:
+      locale === "en"
+        ? "Open payment page"
+        : locale === "zh-TW"
+          ? "打開支付頁"
+          : locale === "th"
+            ? "เปิดหน้าชำระเงิน"
+            : locale === "vi"
+              ? "Mo trang thanh toan"
+              : locale === "hi"
+                ? "Payment page kholen"
+                : "打开支付页",
   } as const;
+
   const manualCollectionCopy = {
-    channel: locale === "en" ? "Collection channel" : locale === "zh-TW" ? "收款通道" : "收款通道",
-    accountName: locale === "en" ? "Account name" : locale === "zh-TW" ? "收款戶名" : "收款户名",
-    accountNo: locale === "en" ? "Account / wallet" : locale === "zh-TW" ? "收款帳號" : "收款账号",
-    qrCode: locale === "en" ? "QR code" : locale === "zh-TW" ? "收款二維碼" : "收款二维码",
-    qrOpen: locale === "en" ? "Open image" : locale === "zh-TW" ? "打開圖片" : "打开图片",
-    note: locale === "en" ? "Payment note" : locale === "zh-TW" ? "付款備註" : "付款备注",
+    channel:
+      locale === "en"
+        ? "Collection channel"
+        : locale === "zh-TW"
+          ? "收款通道"
+          : locale === "th"
+            ? "ช่องทางรับเงิน"
+            : locale === "vi"
+              ? "Kenh thu tien"
+              : locale === "hi"
+                ? "Collection channel"
+                : "收款通道",
+    accountName:
+      locale === "en"
+        ? "Account name"
+        : locale === "zh-TW"
+          ? "收款戶名"
+          : locale === "th"
+            ? "ชื่อบัญชี"
+            : locale === "vi"
+              ? "Ten tai khoan"
+              : locale === "hi"
+                ? "Account name"
+                : "收款户名",
+    accountNo:
+      locale === "en"
+        ? "Account / wallet"
+        : locale === "zh-TW"
+          ? "收款帳號"
+          : locale === "th"
+            ? "เลขบัญชี / วอลเล็ท"
+            : locale === "vi"
+              ? "Tai khoan / vi"
+              : locale === "hi"
+                ? "Account / wallet"
+                : "收款账号",
+    qrCode:
+      locale === "en"
+        ? "QR code"
+        : locale === "zh-TW"
+          ? "收款二維碼"
+          : locale === "th"
+            ? "คิวอาร์โค้ด"
+            : locale === "vi"
+              ? "Ma QR"
+              : locale === "hi"
+                ? "QR code"
+                : "收款二维码",
+    qrOpen:
+      locale === "en"
+        ? "Open image"
+        : locale === "zh-TW"
+          ? "打開圖片"
+          : locale === "th"
+            ? "เปิดรูปภาพ"
+            : locale === "vi"
+              ? "Mo anh"
+              : locale === "hi"
+                ? "Image kholen"
+                : "打开图片",
+    note:
+      locale === "en"
+        ? "Payment note"
+        : locale === "zh-TW"
+          ? "付款備註"
+          : locale === "th"
+            ? "หมายเหตุการชำระเงิน"
+            : locale === "vi"
+              ? "Ghi chu thanh toan"
+              : locale === "hi"
+                ? "Payment note"
+                : "付款备注",
     missing:
       locale === "en"
         ? "Manual collection details are not configured yet. Use the payment reference below when coordinating with operations."
         : locale === "zh-TW"
           ? "目前尚未配置人工收款資訊，請先使用下方支付流水號與營運核對。"
-          : "目前尚未配置人工收款信息，请先使用下方支付流水号与运营核对。",
+          : locale === "th"
+            ? "ยังไม่ได้ตั้งค่าข้อมูลรับชำระแบบแมนนวล ใช้เลขอ้างอิงด้านล่างเพื่อติดต่อทีมปฏิบัติการก่อน"
+            : locale === "vi"
+              ? "Thong tin thu tien thu cong chua duoc cau hinh. Hay dung ma tham chieu ben duoi khi lam viec voi bo phan van hanh."
+              : locale === "hi"
+                ? "Manual collection details abhi configured nahin hain. Neeche diya gaya payment reference operations ke saath use karein."
+                : "目前尚未配置人工收款信息，请先使用下方支付流水号与运营核对。",
   } as const;
+
+  const mockFailureReason =
+    locale === "en"
+      ? "Mock channel returned a failure response. Please create a new order."
+      : locale === "zh-TW"
+        ? "模擬通道返回失敗，請重新建立訂單。"
+        : locale === "th"
+          ? "ช่องทางจำลองส่งผลล้มเหลวกลับมา กรุณาสร้างคำสั่งซื้อใหม่"
+          : locale === "vi"
+            ? "Kenh mock tra ve that bai. Vui long tao don hang moi."
+            : locale === "hi"
+              ? "Mock channel ne failure response diya. Kripya naya order banayen."
+              : "模拟通道返回失败，请重新建立订单。";
+
+  return { paymentPendingLabel, hostedCopy, manualCollectionCopy, mockFailureReason };
+}
+
+export default async function CheckoutPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const [, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { checkoutPageCopy } = getSiteCopy(displayLocale);
+  const opsCopy = getOpsCopy(displayLocale);
+  const paymentRuntime = getPaymentRuntimeConfig();
+  const manualCollection = getPaymentManualCollectionConfig();
+  const { paymentPendingLabel, hostedCopy, manualCollectionCopy, mockFailureReason } = getCheckoutDisplayCopy(
+    displayLocale,
+    paymentRuntime.pendingMinutes,
+  );
   const current = await getCurrentUserRecord();
 
   if (!current) {
@@ -107,7 +243,7 @@ export default async function CheckoutPage({
   const orderId = readValue(resolved.orderId);
   const returnTo = sanitizeReturnTo(readValue(resolved.returnTo, fallbackReturnTo), fallbackReturnTo);
   const payment = readValue(resolved.payment);
-  const paymentResult = getPaymentResultMeta("checkout", payment, locale);
+  const paymentResult = getPaymentResultMeta("checkout", payment, displayLocale);
   const order = orderId
     ? await getCheckoutOrder({
         type,
@@ -150,15 +286,15 @@ export default async function CheckoutPage({
   }
 
   const isPending = order.status === "pending";
-  const statusMeta = getOrderStatusMeta(order.status, locale);
-  const activityMeta = getOrderActivityMeta(order, locale);
-  const failureMeta = getOrderFailureMeta(order, locale);
+  const statusMeta = getOrderStatusMeta(order.status, displayLocale);
+  const activityMeta = getOrderActivityMeta(order, displayLocale);
+  const failureMeta = getOrderFailureMeta(order, displayLocale);
   const orderIssueToneClass =
     failureMeta?.tone === "info"
       ? "border-sky-300/20 bg-sky-400/10 text-sky-100"
       : "border-rose-300/20 bg-rose-400/10 text-rose-100";
   const orderTypeLabel = checkoutPageCopy.orderTypeLabel(type);
-  const providerLabel = getPaymentProviderLabel(order.provider, locale);
+  const providerLabel = getPaymentProviderLabel(order.provider, displayLocale);
   const checkoutFlow = getPaymentCheckoutFlow(order.provider);
   const checkoutActions = getPaymentCheckoutActionTargets({
     type,
@@ -215,22 +351,22 @@ export default async function CheckoutPage({
 
           <div className="mt-6 flex flex-wrap gap-4 text-sm text-slate-300">
             <span>
-              {checkoutPageCopy.amount} {formatPrice(order.amount, locale)}
+              {checkoutPageCopy.amount} {formatPrice(order.amount, displayLocale)}
             </span>
             <span>
-              {checkoutPageCopy.createdAt} {formatDateTime(order.createdAt, locale)}
+              {checkoutPageCopy.createdAt} {formatDateTime(order.createdAt, displayLocale)}
             </span>
             <span>
               {checkoutPageCopy.paymentProvider} {providerLabel}
             </span>
             {activityMeta.value ? (
               <span>
-                {activityMeta.label} {formatDateTime(activityMeta.value, locale)}
+                {activityMeta.label} {formatDateTime(activityMeta.value, displayLocale)}
               </span>
             ) : null}
             {order.expiresAt ? (
               <span>
-                {checkoutPageCopy.expiresAt} {formatDateTime(order.expiresAt, locale)}
+                {checkoutPageCopy.expiresAt} {formatDateTime(order.expiresAt, displayLocale)}
               </span>
             ) : null}
             {order.paymentReference ? (
@@ -350,7 +486,7 @@ export default async function CheckoutPage({
                 <input
                   type="hidden"
                   name="reason"
-                  value={locale === "en" ? "Mock channel returned a failure response. Please create a new order." : locale === "zh-TW" ? "模擬通道返回失敗，請重新建立訂單。" : "模拟通道返回失败，请重新建立订单。"}
+                  value={mockFailureReason}
                 />
                 <button
                   type="submit"

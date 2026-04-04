@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { ScoreboardTable } from "@/components/scoreboard-table";
 import { SectionHeading } from "@/components/section-heading";
-import { formatDateTime, formatOdd, formatPrice } from "@/lib/format";
+import { getArticleCoinPrice } from "@/lib/coin-wallet";
+import { formatDateTime, formatOdd } from "@/lib/format";
 import { getArticlePlans, getAuthorTeams, getPredictions } from "@/lib/content-data";
-import { getCurrentLocale } from "@/lib/i18n";
-import type { Locale } from "@/lib/i18n-config";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 import { getDatabaseSnapshot, getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
 import type { AuthorTeam, Match, PredictionRecord, Team } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
@@ -70,7 +71,7 @@ function pickValue(value: string | string[] | undefined, fallback: string) {
   return value ?? fallback;
 }
 
-function getCricketPageCopy(locale: Locale): CricketPageCopy {
+function getCricketPageCopy(locale: Locale | DisplayLocale): CricketPageCopy {
   switch (locale) {
     case "zh-TW":
       return {
@@ -289,9 +290,9 @@ export default async function CricketLivePage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { homePageCopy, livePageCopy, matchStatusLabels, uiCopy } = getSiteCopy(locale);
-  const cricketPageCopy = getCricketPageCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { homePageCopy, livePageCopy, matchStatusLabels, uiCopy } = getSiteCopy(displayLocale);
+  const cricketPageCopy = getCricketPageCopy(displayLocale);
   const resolved = await searchParams;
   const league = pickValue(resolved.league, "all");
   const status = pickValue(resolved.status, "all");
@@ -323,7 +324,7 @@ export default async function CricketLivePage({
 
   items = [...items].sort((left, right) => {
     if (sort === "league") {
-      return left.leagueSlug.localeCompare(right.leagueSlug, locale);
+      return left.leagueSlug.localeCompare(right.leagueSlug, displayLocale);
     }
 
     return new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime();
@@ -373,6 +374,31 @@ export default async function CricketLivePage({
   const featuredAuthors = sortAuthors(
     allAuthors.filter((author) => featuredPlans.some((plan) => plan.authorId === author.id)),
   ).slice(0, 2);
+  const formatCoinAmount = (amount: number) => {
+    const formatted = new Intl.NumberFormat(displayLocale).format(amount);
+
+    if (displayLocale === "en") {
+      return `${formatted} coins`;
+    }
+
+    if (displayLocale === "zh-TW") {
+      return `${formatted} 球幣`;
+    }
+
+    if (displayLocale === "th") {
+      return `${formatted} เหรียญ`;
+    }
+
+    if (displayLocale === "vi") {
+      return `${formatted} coin`;
+    }
+
+    if (displayLocale === "hi") {
+      return `${formatted} coins`;
+    }
+
+    return `${formatted} 球币`;
+  };
 
   const metricCards = [
     {
@@ -532,7 +558,7 @@ export default async function CricketLivePage({
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-300">
                       <span className="rounded-full bg-slate-950/50 px-3 py-1">{match.score}</span>
-                      <span>{formatDateTime(match.kickoff, locale)}</span>
+                      <span>{formatDateTime(match.kickoff, displayLocale)}</span>
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <div className="rounded-2xl border border-white/8 bg-slate-950/35 p-3">
@@ -559,7 +585,7 @@ export default async function CricketLivePage({
         </div>
       </section>
 
-      <ScoreboardTable matches={items} sportLabel={livePageCopy.cricket.sportLabel} locale={locale} />
+      <ScoreboardTable matches={items} sportLabel={livePageCopy.cricket.sportLabel} locale={displayLocale} />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="glass-panel rounded-[2rem] p-6">
@@ -588,7 +614,7 @@ export default async function CricketLivePage({
                           <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">{plan.league}</span>
                           <span className="rounded-full bg-orange-400/12 px-3 py-1 text-xs text-orange-200">{plan.performance}</span>
                         </div>
-                        <span className="text-sm font-semibold text-orange-200">{formatPrice(plan.price, locale)}</span>
+                        <span className="text-sm font-semibold text-orange-200">{formatCoinAmount(getArticleCoinPrice(plan.price))}</span>
                       </div>
                       <h3 className="mt-4 text-xl font-semibold text-white">{plan.title}</h3>
                       <p className="mt-3 text-sm leading-7 text-slate-400">{plan.teaser}</p>
@@ -601,7 +627,7 @@ export default async function CricketLivePage({
                       </div>
                       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/8 pt-4 text-sm text-slate-400">
                         <div>
-                          <p>{formatDateTime(plan.kickoff, locale)}</p>
+                          <p>{formatDateTime(plan.kickoff, displayLocale)}</p>
                           <p className="mt-1">
                             {cricketPageCopy.authorLabel} {author?.name ?? "--"}
                           </p>
@@ -809,7 +835,7 @@ export default async function CricketLivePage({
                             {match.homeTeam} <span className="text-slate-500">vs</span> {match.awayTeam}
                           </p>
                           <p className="mt-2 text-sm text-sky-100">{match.score}</p>
-                          <p className="mt-2 text-xs text-slate-400">{formatDateTime(match.kickoff, locale)}</p>
+                          <p className="mt-2 text-xs text-slate-400">{formatDateTime(match.kickoff, displayLocale)}</p>
                         </Link>
                       ))
                     ) : (

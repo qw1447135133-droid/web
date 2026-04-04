@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatDateTime, formatOdd } from "@/lib/format";
-import type { Locale } from "@/lib/i18n-config";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 import type { Match } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -17,17 +17,51 @@ export function ScoreboardTable({
 }: {
   matches: Match[];
   sportLabel: string;
-  locale: Locale;
+  locale: Locale | DisplayLocale;
 }) {
   const { matchStatusLabels, uiCopy } = getSiteCopy(locale);
-  const spreadLabel = locale === "en" ? "Spread" : locale === "zh-TW" ? "讓分" : "让分";
-  const totalLabel = locale === "en" ? "Total" : locale === "zh-TW" ? "總分" : "总分";
+  const spreadLabel =
+    locale === "zh-CN"
+      ? "让分"
+      : locale === "zh-TW"
+        ? "讓分"
+        : locale === "th"
+          ? "แฮนดิแคป"
+          : locale === "vi"
+            ? "Kèo chấp"
+            : locale === "hi"
+              ? "स्प्रेड"
+              : "Spread";
+  const totalLabel =
+    locale === "zh-CN"
+      ? "总分"
+      : locale === "zh-TW"
+        ? "總分"
+        : locale === "th"
+          ? "รวมแต้ม"
+          : locale === "vi"
+            ? "Tổng điểm"
+            : locale === "hi"
+              ? "कुल"
+              : "Total";
 
   return (
     <div className="glass-panel overflow-hidden rounded-[2rem]">
       <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
         <div>
-          <p className="section-label">Live Board</p>
+          <p className="section-label">
+            {locale === "zh-CN"
+              ? "即时看板"
+              : locale === "zh-TW"
+                ? "即時看板"
+                : locale === "th"
+                  ? "บอร์ดสด"
+                  : locale === "vi"
+                    ? "Bảng trực tiếp"
+                    : locale === "hi"
+                      ? "लाइव बोर्ड"
+                      : "Live Board"}
+          </p>
           <h3 className="display-title text-2xl font-semibold text-white">
             {sportLabel} {uiCopy.instantBoard}
           </h3>

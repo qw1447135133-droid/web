@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SectionHeading } from "@/components/section-heading";
+import { getArticleCoinPrice } from "@/lib/coin-wallet";
 import { getArticleBySlug, getArticlePlans, getAuthorTeams, getPredictionByMatchId } from "@/lib/content-data";
 import { canAccessContent } from "@/lib/entitlements";
-import { formatDateTime, formatPrice } from "@/lib/format";
-import { getCurrentLocale } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format";
+import type { DisplayLocale } from "@/lib/i18n-config";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getPaymentResultMeta } from "@/lib/payment-ui";
 import { findRelatedMatch, findSiblingPlans } from "@/lib/plan-match-linking";
 import { getSessionContext } from "@/lib/session";
@@ -22,7 +24,91 @@ function readValue(value: string | string[] | undefined, fallback = "") {
   return value ?? fallback;
 }
 
-function getCricketPlanCopy(locale: string) {
+function formatCoinLabel(amount: number, locale: DisplayLocale) {
+  const formatted = new Intl.NumberFormat(locale).format(amount);
+
+  if (locale === "en") {
+    return `${formatted} coins`;
+  }
+
+  if (locale === "zh-TW") {
+    return `${formatted} 球幣`;
+  }
+
+  if (locale === "th") {
+    return `${formatted} เหรียญ`;
+  }
+
+  if (locale === "vi") {
+    return `${formatted} coin`;
+  }
+
+  if (locale === "hi") {
+    return `${formatted} coins`;
+  }
+
+  return `${formatted} 球币`;
+}
+
+function getCoinPlanNotice(coin: string, locale: DisplayLocale) {
+  if (coin === "success") {
+    return {
+      className: "mt-4 rounded-[1.25rem] border border-lime-300/20 bg-lime-300/10 px-5 py-4 text-sm text-lime-100",
+      message:
+        locale === "en"
+          ? "Content unlocked with coins."
+          : locale === "zh-TW"
+            ? "已使用球幣解鎖內容。"
+            : locale === "th"
+              ? "ปลดล็อกคอนเทนต์ด้วยเหรียญแล้ว"
+              : locale === "vi"
+                ? "Da mo khoa noi dung bang coin."
+                : locale === "hi"
+                  ? "कॉन्टेंट कॉइन्स से अनलॉक हो गया।"
+                  : "已使用球币解锁内容。",
+    };
+  }
+
+  if (coin === "insufficient") {
+    return {
+      className: "mt-4 rounded-[1.25rem] border border-rose-300/20 bg-rose-400/10 px-5 py-4 text-sm text-rose-100",
+      message:
+        locale === "en"
+          ? "Coin balance is insufficient. Recharge from the member center first."
+          : locale === "zh-TW"
+            ? "球幣餘額不足，請先到會員中心充值。"
+            : locale === "th"
+              ? "เหรียญไม่พอ กรุณาเติมในศูนย์สมาชิกก่อน"
+              : locale === "vi"
+                ? "So du coin khong du, hay nap them trong trung tam hoi vien."
+                : locale === "hi"
+                  ? "कॉइन बैलेंस पर्याप्त नहीं है, पहले सदस्य केंद्र में रिचार्ज करें।"
+                  : "球币余额不足，请先到会员中心充值。",
+    };
+  }
+
+  if (coin === "error") {
+    return {
+      className: "mt-4 rounded-[1.25rem] border border-rose-300/20 bg-rose-400/10 px-5 py-4 text-sm text-rose-100",
+      message:
+        locale === "en"
+          ? "Coin unlock failed. Please try again."
+          : locale === "zh-TW"
+            ? "球幣解鎖失敗，請稍後重試。"
+            : locale === "th"
+              ? "ปลดล็อกด้วยเหรียญไม่สำเร็จ กรุณาลองใหม่"
+              : locale === "vi"
+                ? "Mo khoa bang coin that bai, vui long thu lai."
+                : locale === "hi"
+                  ? "कॉइन अनलॉक विफल रहा, कृपया फिर कोशिश करें।"
+                  : "球币解锁失败，请稍后重试。",
+    };
+  }
+
+  return null;
+}
+
+function getCricketPlanCopy(locale: DisplayLocale) {
   if (locale === "en") {
     return {
       matchEyebrow: "Match Link",
@@ -65,6 +151,52 @@ function getCricketPlanCopy(locale: string) {
     };
   }
 
+  if (locale === "th" || locale === "vi" || locale === "hi") {
+    return {
+      matchEyebrow: "Match Link",
+      matchTitle: locale === "th" ? "บริบทแมตช์ที่เชื่อมโยง" : locale === "vi" ? "Boi canh tran dau lien ket" : "Linked match context",
+      matchDescription:
+        locale === "th"
+          ? "ผูกแผน cricket เข้ากับแมตช์จริง เพื่อให้ผู้ใช้สลับระหว่างบทวิเคราะห์กับสถานะแมตช์สดได้"
+          : locale === "vi"
+            ? "Gan plan cricket voi tran thuc te de nguoi dung chuyen qua lai giua bai phan tich va trang thai live."
+            : "Keep the cricket plan tied to the actual fixture so users can move between the recommendation and the live match state.",
+      archiveTitle: locale === "th" ? "คลังลีก" : locale === "vi" ? "Luu tru giai dau" : "League archive",
+      archiveDescription:
+        locale === "th"
+          ? "ดึงตารางลีกและคอนเทนต์ใกล้เคียงเข้ามาในหน้าแผน"
+          : locale === "vi"
+            ? "Dua bang giai dau va noi dung lan can vao trang plan."
+            : "Surface the current league table and nearby content so the plan page carries more than one article.",
+      aiTitle: "AI angle",
+      relatedTitle: locale === "th" ? "แผน cricket เพิ่มเติม" : locale === "vi" ? "Them cricket plans" : "More cricket plans",
+      statusLabel: locale === "th" ? "สถานะ" : locale === "vi" ? "Trang thai" : "Status",
+      scoreLabel: locale === "th" ? "สกอร์" : locale === "vi" ? "Ti so" : "Score",
+      marketLabel: locale === "th" ? "ตลาด" : locale === "vi" ? "Thi truong" : "Market",
+      openMatch: locale === "th" ? "ดูแมตช์" : locale === "vi" ? "Mo tran" : "Open match",
+      openDatabase: locale === "th" ? "เปิดฐานข้อมูลลีก" : locale === "vi" ? "Mo database giai dau" : "Open league database",
+      openPlan: locale === "th" ? "ดูแผน" : locale === "vi" ? "Mo plan" : "Open plan",
+      noMatch:
+        locale === "th"
+          ? "ยังไม่พบแมตช์ cricket ที่เชื่อมกับแผนนี้"
+          : locale === "vi"
+            ? "Chua tim thay tran cricket lien ket voi plan nay."
+            : "No linked cricket match was found for this plan yet.",
+      noPrediction:
+        locale === "th"
+          ? "ยังไม่มี AI angle ที่เชื่อมกับแมตช์นี้"
+          : locale === "vi"
+            ? "Chua co AI angle lien ket voi tran nay."
+            : "No AI angle is linked to the related match yet.",
+      noRelated:
+        locale === "th"
+          ? "ตอนนี้ยังไม่มีแผน cricket เพิ่มเติม"
+          : locale === "vi"
+            ? "Hien chua co them cricket plan nao."
+            : "No additional cricket plans are available right now.",
+    };
+  }
+
   return {
     matchEyebrow: "Match Link",
     matchTitle: "对应比赛脉络",
@@ -85,7 +217,7 @@ function getCricketPlanCopy(locale: string) {
   };
 }
 
-function getEsportsPlanCopy(locale: string) {
+function getEsportsPlanCopy(locale: DisplayLocale) {
   if (locale === "en") {
     return {
       matchEyebrow: "Series Link",
@@ -129,6 +261,54 @@ function getEsportsPlanCopy(locale: string) {
       noRelated: "目前沒有更多可顯示的電競計畫單。",
       archivePulseTitle: "聯賽脈搏",
       archiveSamplesTitle: "系列賽樣本",
+    };
+  }
+
+  if (locale === "th" || locale === "vi" || locale === "hi") {
+    return {
+      matchEyebrow: "Series Link",
+      matchTitle: locale === "th" ? "บริบทซีรีส์ที่เชื่อมโยง" : locale === "vi" ? "Boi canh series lien ket" : "Linked series context",
+      matchDescription:
+        locale === "th"
+          ? "ผูกแผนอีสปอร์ตเข้ากับซีรีส์สด เพื่อให้ผู้ใช้กลับจากบทวิเคราะห์ไปยังแมตช์ปัจจุบันได้ทันที"
+          : locale === "vi"
+            ? "Gan esports plan voi series live de nguoi dung chuyen tu bai phan tich tra phi sang trang thai tran dau hien tai."
+            : "Keep the esports plan tied to the live series so users can move from paid analysis into the current match state without leaving the channel.",
+      archiveTitle: locale === "th" ? "คลังอีสปอร์ต" : locale === "vi" ? "Luu tru esports" : "Esports archive",
+      archiveDescription:
+        locale === "th"
+          ? "นำตัวอย่างลีก โน้ตการเจอกัน และทางเข้าฐานข้อมูลมารวมไว้ในหน้าแผน"
+          : locale === "vi"
+            ? "Dua mau giai dau, ghi chu doi dau va loi vao database len trang plan."
+            : "Bring league ranking samples, matchup notes, and the database entry onto the plan page.",
+      aiTitle: "AI angle",
+      relatedTitle: locale === "th" ? "แผนอีสปอร์ตเพิ่มเติม" : locale === "vi" ? "Them esports plans" : "More esports plans",
+      statusLabel: locale === "th" ? "สถานะ" : locale === "vi" ? "Trang thai" : "Status",
+      scoreLabel: locale === "th" ? "สกอร์ซีรีส์" : locale === "vi" ? "Ti so series" : "Series score",
+      marketLabel: locale === "th" ? "สรุปราคา" : locale === "vi" ? "Tom tat keo" : "Odds summary",
+      openMatch: locale === "th" ? "ดูแมตช์" : locale === "vi" ? "Mo tran" : "Open match",
+      openDatabase: locale === "th" ? "เปิดฐานข้อมูลอีสปอร์ต" : locale === "vi" ? "Mo esports database" : "Open esports database",
+      openPlan: locale === "th" ? "ดูแผน" : locale === "vi" ? "Mo plan" : "Open plan",
+      noMatch:
+        locale === "th"
+          ? "ยังไม่พบแมตช์อีสปอร์ตที่เชื่อมกับแผนนี้"
+          : locale === "vi"
+            ? "Chua tim thay tran esports lien ket voi plan nay."
+            : "No linked esports match was found for this plan yet.",
+      noPrediction:
+        locale === "th"
+          ? "ยังไม่มี AI angle ที่เชื่อมกับซีรีส์นี้"
+          : locale === "vi"
+            ? "Chua co AI angle lien ket voi series nay."
+            : "No AI angle is linked to the related series yet.",
+      noRelated:
+        locale === "th"
+          ? "ตอนนี้ยังไม่มีแผนอีสปอร์ตเพิ่มเติม"
+          : locale === "vi"
+            ? "Hien chua co them esports plan nao."
+            : "No additional esports plans are available right now.",
+      archivePulseTitle: locale === "th" ? "ชีพจรลีก" : locale === "vi" ? "Nhip giai dau" : "League pulse",
+      archiveSamplesTitle: locale === "th" ? "ตัวอย่างซีรีส์" : locale === "vi" ? "Mau series" : "Series samples",
     };
   }
 
@@ -200,10 +380,10 @@ export default async function PlanDetailPage({
   params: Params;
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { planDetailCopy, uiCopy } = getSiteCopy(locale);
-  const cricketPlanCopy = getCricketPlanCopy(locale);
-  const esportsPlanCopy = getEsportsPlanCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { planDetailCopy, uiCopy } = getSiteCopy(displayLocale);
+  const cricketPlanCopy = getCricketPlanCopy(displayLocale);
+  const esportsPlanCopy = getEsportsPlanCopy(displayLocale);
   const { slug } = await params;
   const [plan, authors, { session }, resolved] = await Promise.all([
     getArticleBySlug(slug, locale),
@@ -219,7 +399,10 @@ export default async function PlanDetailPage({
   const author = authors.find((item) => item.id === plan.authorId);
   const unlocked = canAccessContent(session, plan.id);
   const payment = readValue(resolved.payment);
-  const paymentResult = getPaymentResultMeta("plan", payment, locale);
+  const coin = readValue(resolved.coin);
+  const paymentResult = getPaymentResultMeta("plan", payment, displayLocale);
+  const coinResult = getCoinPlanNotice(coin, displayLocale);
+  const coinPrice = getArticleCoinPrice(plan.price);
   const cricketMatches = plan.sport === "cricket" ? await getMatchesBySport("cricket", locale) : [];
   const relatedMatch = plan.sport === "cricket" ? findRelatedMatch(plan, cricketMatches) : null;
   const cricketLeagueSlug =
@@ -269,11 +452,12 @@ export default async function PlanDetailPage({
           </div>
           <div className="rounded-[1.3rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-sm text-slate-500">{planDetailCopy.kickoff}</p>
-            <p className="mt-2 text-lg font-semibold text-white">{formatDateTime(plan.kickoff, locale)}</p>
+            <p className="mt-2 text-lg font-semibold text-white">{formatDateTime(plan.kickoff, displayLocale)}</p>
           </div>
           <div className="rounded-[1.3rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-sm text-slate-500">{planDetailCopy.singlePrice}</p>
-            <p className="mt-2 text-lg font-semibold text-orange-200">{formatPrice(plan.price, locale)}</p>
+            <p className="mt-2 text-lg font-semibold text-orange-200">{formatCoinLabel(coinPrice, displayLocale)}</p>
+            <p className="mt-2 text-xs text-slate-400">{plan.marketSummary}</p>
           </div>
           <div className="rounded-[1.3rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-sm text-slate-500">{uiCopy.oddsSummary}</p>
@@ -282,6 +466,7 @@ export default async function PlanDetailPage({
         </div>
 
         {paymentResult ? <div className={paymentResult.className}>{paymentResult.message}</div> : null}
+        {coinResult ? <div className={coinResult.className}>{coinResult.message}</div> : null}
       </section>
 
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
@@ -297,16 +482,18 @@ export default async function PlanDetailPage({
               {planDetailCopy.fullAnalysisUnlocked}
             </span>
           ) : (
-            <form action="/api/content/purchase" method="post" className="flex flex-wrap gap-3">
-              <input type="hidden" name="contentId" value={plan.id} />
-              <input type="hidden" name="returnTo" value={`/plans/${plan.slug}`} />
-              <button
-                type="submit"
-                className="rounded-full bg-orange-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
-              >
-                {planDetailCopy.payNowPrefix} {formatPrice(plan.price, locale)}
-              </button>
-            </form>
+            <div className="flex flex-wrap gap-3">
+              <form action="/api/content/purchase-coins" method="post">
+                <input type="hidden" name="contentId" value={plan.id} />
+                <input type="hidden" name="returnTo" value={`/plans/${plan.slug}`} />
+                <button
+                  type="submit"
+                  className="rounded-full border border-lime-300/20 bg-lime-300/10 px-5 py-3 text-sm font-semibold text-lime-100 transition hover:bg-lime-300/15"
+                >
+                  {formatCoinLabel(coinPrice, displayLocale)}
+                </button>
+              </form>
+            </div>
           )}
         </div>
 
@@ -362,7 +549,7 @@ export default async function PlanDetailPage({
                     </div>
                     <div className="rounded-2xl bg-slate-950/35 p-3">
                       <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{planDetailCopy.kickoff}</p>
-                      <p className="mt-2 text-white">{formatDateTime(relatedMatch.kickoff, locale)}</p>
+                      <p className="mt-2 text-white">{formatDateTime(relatedMatch.kickoff, displayLocale)}</p>
                     </div>
                   </div>
                   <p className="mt-4 text-sm leading-7 text-slate-400">{relatedMatch.statLine}</p>
@@ -494,7 +681,7 @@ export default async function PlanDetailPage({
                     </div>
                     <div className="rounded-2xl bg-slate-950/35 p-3">
                       <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{planDetailCopy.kickoff}</p>
-                      <p className="mt-2 text-white">{formatDateTime(esportsRelatedMatch.kickoff, locale)}</p>
+                      <p className="mt-2 text-white">{formatDateTime(esportsRelatedMatch.kickoff, displayLocale)}</p>
                     </div>
                   </div>
                   <p className="mt-4 text-sm leading-7 text-slate-400">{esportsRelatedMatch.statLine}</p>

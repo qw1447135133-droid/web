@@ -17,6 +17,8 @@ model User {
   sessions            Session[]
   membershipOrders    MembershipOrder[]
   contentOrders       ContentOrder[]
+  coinAccount         CoinAccount?
+  coinRechargeOrders  CoinRechargeOrder[]
   assistantConversations AssistantConversation[]
   assistantHandoffRequests AssistantHandoffRequest[]
   createdAt           DateTime          @default(now())
@@ -80,6 +82,96 @@ model ContentOrder {
 
   @@unique([provider, providerOrderId])
   @@index([status, updatedAt])
+}
+
+model CoinAccount {
+  id               String             @id @default(cuid())
+  balance          Int                @default(0)
+  lifetimeCredited Int                @default(0)
+  lifetimeDebited  Int                @default(0)
+  lastActivityAt   DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  userId           String             @unique
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgers          CoinLedger[]
+
+  @@index([balance, updatedAt])
+}
+
+model CoinLedger {
+  id             String      @id @default(cuid())
+  direction      String
+  reason         String
+  amount         Int
+  balanceBefore  Int
+  balanceAfter   Int
+  referenceType  String?
+  referenceId    String?
+  note           String?
+  expiresAt      DateTime?
+  createdAt      DateTime    @default(now())
+  accountId      String
+  account        CoinAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([referenceType, referenceId])
+  @@index([reason, createdAt])
+}
+
+model CoinPackage {
+  id              String              @id @default(cuid())
+  key             String              @unique
+  titleZhCn       String
+  titleZhTw       String
+  titleEn         String
+  descriptionZhCn String?
+  descriptionZhTw String?
+  descriptionEn   String?
+  coinAmount      Int
+  bonusAmount     Int                 @default(0)
+  price           Int
+  validityDays    Int?
+  badge           String?
+  status          String              @default("active")
+  sortOrder       Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  rechargeOrders  CoinRechargeOrder[]
+
+  @@index([status, sortOrder])
+}
+
+model CoinRechargeOrder {
+  id               String      @id @default(cuid())
+  orderNo          String      @unique
+  coinAmount       Int
+  bonusAmount      Int         @default(0)
+  amount           Int
+  status           String      @default("pending")
+  provider         String      @default("manual")
+  providerOrderId  String?
+  expiresAt        DateTime?
+  callbackPayload  String?
+  paymentReference String?
+  paidAt           DateTime?
+  failedAt         DateTime?
+  failureReason    String?
+  closedAt         DateTime?
+  refundedAt       DateTime?
+  refundReason     String?
+  creditedAt       DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  packageId        String
+  userId           String
+  package          CoinPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerOrderId])
+  @@index([status, updatedAt])
+  @@index([userId, updatedAt])
+  @@index([packageId, updatedAt])
 }
 
 model PaymentCallbackEvent {

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { SectionHeading } from "@/components/section-heading";
-import { formatDateTime, formatPrice } from "@/lib/format";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getArticleCoinPrice } from "@/lib/coin-wallet";
+import { formatDateTime } from "@/lib/format";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { searchSite } from "@/lib/search-data";
 import type { Sport } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
@@ -90,12 +91,37 @@ export default async function SearchPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const copy = getSiteCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const copy = getSiteCopy(displayLocale);
   const sportLabels = getSportLabels(copy);
   const resolved = await searchParams;
   const query = readValue(resolved.q).trim();
   const results = query ? await searchSite(query, locale) : undefined;
+  const formatCoinAmount = (amount: number) => {
+    const formatted = new Intl.NumberFormat(displayLocale).format(amount);
+
+    if (displayLocale === "en") {
+      return `${formatted} coins`;
+    }
+
+    if (displayLocale === "zh-TW") {
+      return `${formatted} 球幣`;
+    }
+
+    if (displayLocale === "th") {
+      return `${formatted} เหรียญ`;
+    }
+
+    if (displayLocale === "vi") {
+      return `${formatted} coin`;
+    }
+
+    if (displayLocale === "hi") {
+      return `${formatted} coins`;
+    }
+
+    return `${formatted} 球币`;
+  };
   const quickLinks = ["/live/football", "/database", "/plans"].map((href) => ({
     href,
     label: copy.siteNavItems.find((item) => item.href === href)?.label ?? href,
@@ -167,7 +193,7 @@ export default async function SearchPage({
                 <p className="mt-3 text-sm leading-7 text-slate-400">{item.summary}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <MetaPill label={copy.searchCopy.labels.league} value={item.league} />
-                  <MetaPill label={copy.searchCopy.labels.kickoff} value={formatDateTime(item.kickoff, locale)} />
+                  <MetaPill label={copy.searchCopy.labels.kickoff} value={formatDateTime(item.kickoff, displayLocale)} />
                 </div>
                 <div className="mt-5">
                   <Link
@@ -215,14 +241,14 @@ export default async function SearchPage({
                     {sportLabels[item.sport]}
                   </span>
                   <span className="rounded-full bg-orange-400/12 px-3 py-1 text-xs text-orange-100">
-                    {formatPrice(item.price, locale)}
+                    {formatCoinAmount(getArticleCoinPrice(item.price))}
                   </span>
                 </div>
                 <h2 className="mt-4 text-2xl font-semibold text-white">{item.title}</h2>
                 <p className="mt-3 text-sm leading-7 text-slate-400">{item.summary}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <MetaPill label={copy.searchCopy.labels.league} value={item.league} />
-                  <MetaPill label={copy.searchCopy.labels.kickoff} value={formatDateTime(item.kickoff, locale)} />
+                  <MetaPill label={copy.searchCopy.labels.kickoff} value={formatDateTime(item.kickoff, displayLocale)} />
                 </div>
                 <div className="mt-5">
                   <Link

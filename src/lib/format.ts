@@ -1,6 +1,6 @@
-import { defaultLocale, getIntlLocale, type Locale } from "@/lib/i18n-config";
+import { defaultLocale, getIntlLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 
-export function formatPrice(amount: number, locale: Locale = defaultLocale) {
+export function formatPrice(amount: number, locale: Locale | DisplayLocale = defaultLocale) {
   return new Intl.NumberFormat(getIntlLocale(locale), {
     style: "currency",
     currency: "CNY",
@@ -8,7 +8,7 @@ export function formatPrice(amount: number, locale: Locale = defaultLocale) {
   }).format(amount);
 }
 
-export function formatDateTime(input: string, locale: Locale = defaultLocale) {
+export function formatDateTime(input: string, locale: Locale | DisplayLocale = defaultLocale) {
   return new Intl.DateTimeFormat(getIntlLocale(locale), {
     month: "2-digit",
     day: "2-digit",

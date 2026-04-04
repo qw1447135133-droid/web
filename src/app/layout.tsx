@@ -3,7 +3,7 @@ import { Barlow_Condensed, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import { SiteShell } from "@/components/site-shell";
 import { getSiteAnnouncements } from "@/lib/content-data";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentDisplayLocale, getCurrentLocale, getIntlLocale } from "@/lib/i18n";
 import { getSessionContext } from "@/lib/session";
 
 const displayFont = Barlow_Condensed({
@@ -32,7 +32,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const locale = await getCurrentLocale();
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
   const [{ session, entitlements }, announcements] = await Promise.all([
     getSessionContext(),
     getSiteAnnouncements(locale),
@@ -40,11 +40,12 @@ export default async function RootLayout({
 
   return (
     <html
-      lang={locale}
+      lang={getIntlLocale(displayLocale)}
       className={`${displayFont.variable} ${bodyFont.variable} h-full antialiased`}
     >
       <body className="min-h-full">
         <SiteShell
+          displayLocale={displayLocale}
           locale={locale}
           session={session}
           entitlements={entitlements}

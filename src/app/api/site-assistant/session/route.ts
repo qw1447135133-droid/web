@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserRecord } from "@/lib/session";
-import { normalizeLocale } from "@/lib/i18n-config";
+import { normalizeDisplayLocale } from "@/lib/i18n-config";
 import {
   assistantCookieName,
   createAssistantConversation,
@@ -10,7 +10,7 @@ import {
 } from "@/lib/site-assistant-service";
 
 export async function GET(request: NextRequest) {
-  const locale = normalizeLocale(request.nextUrl.searchParams.get("locale"));
+  const locale = normalizeDisplayLocale(request.nextUrl.searchParams.get("locale"));
   const conversationId = request.nextUrl.searchParams.get("conversationId") ?? undefined;
   const { sessionKey, shouldSetCookie } = resolveAssistantSessionKey(
     request.cookies.get(assistantCookieName)?.value,
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     locale?: string;
     action?: string;
   };
-  const locale = normalizeLocale(body.locale);
+  const locale = normalizeDisplayLocale(body.locale);
   const { sessionKey, shouldSetCookie } = resolveAssistantSessionKey(
     request.cookies.get(assistantCookieName)?.value,
   );

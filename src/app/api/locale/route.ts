@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { localeCookieName, normalizeLocale } from "@/lib/i18n-config";
+import {
+  localeCookieName,
+  localeDisplayCookieName,
+  normalizeDisplayLocale,
+  resolveRenderLocale,
+} from "@/lib/i18n-config";
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as { locale?: string };
-  const locale = normalizeLocale(body.locale);
+  const body = (await request.json().catch(() => ({}))) as { displayLocale?: string; locale?: string };
+  const displayLocale = normalizeDisplayLocale(body.displayLocale ?? body.locale);
+  const locale = resolveRenderLocale(displayLocale);
   const cookieStore = await cookies();
 
   cookieStore.set(localeCookieName, locale, {
@@ -13,5 +19,11 @@ export async function POST(request: Request) {
     maxAge: 60 * 60 * 24 * 365,
   });
 
-  return NextResponse.json({ ok: true, locale });
+  cookieStore.set(localeDisplayCookieName, displayLocale, {
+    path: "/",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+
+  return NextResponse.json({ ok: true, locale, displayLocale });
 }

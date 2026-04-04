@@ -1,4 +1,4 @@
-import type { Locale } from "@/lib/i18n";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 
 export type PaymentProvider = "mock" | "manual" | "hosted";
 export type PaymentManualCollectionConfig = {
@@ -69,7 +69,7 @@ export function getPaymentProviderExpiryMinutes(provider: PaymentProvider = getP
   return paymentProviderExpiryMinutes[provider];
 }
 
-export function getPaymentProviderLabel(provider: PaymentProvider, locale: Locale) {
+export function getPaymentProviderLabel(provider: PaymentProvider, locale: Locale | DisplayLocale) {
   if (provider === "mock") {
     if (locale === "en") {
       return "Mock gateway";
@@ -77,6 +77,18 @@ export function getPaymentProviderLabel(provider: PaymentProvider, locale: Local
 
     if (locale === "zh-TW") {
       return "模擬支付通道";
+    }
+
+    if (locale === "th") {
+      return "ช่องทางชำระเงินจำลอง";
+    }
+
+    if (locale === "vi") {
+      return "Cổng thanh toán mô phỏng";
+    }
+
+    if (locale === "hi") {
+      return "मॉक पेमेंट गेटवे";
     }
 
     return "模拟支付通道";
@@ -91,6 +103,18 @@ export function getPaymentProviderLabel(provider: PaymentProvider, locale: Local
       return "託管支付通道";
     }
 
+    if (locale === "th") {
+      return "ช่องทางชำระเงินแบบโฮสต์";
+    }
+
+    if (locale === "vi") {
+      return "Cổng thanh toán được lưu trữ";
+    }
+
+    if (locale === "hi") {
+      return "होस्टेड पेमेंट गेटवे";
+    }
+
     return "托管支付通道";
   }
 
@@ -100,6 +124,18 @@ export function getPaymentProviderLabel(provider: PaymentProvider, locale: Local
 
   if (locale === "zh-TW") {
     return "人工審核收款";
+  }
+
+  if (locale === "th") {
+    return "ตรวจสอบการชำระเงินด้วยตนเอง";
+  }
+
+  if (locale === "vi") {
+    return "Đối soát thanh toán thủ công";
+  }
+
+  if (locale === "hi") {
+    return "मैन्युअल भुगतान सत्यापन";
   }
 
   return "人工审核收款";

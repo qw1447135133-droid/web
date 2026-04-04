@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUserRecord } from "@/lib/session";
-import { normalizeLocale } from "@/lib/i18n-config";
+import { normalizeDisplayLocale } from "@/lib/i18n-config";
 import {
   assistantCookieName,
   getAssistantCookieConfig,
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     contactMethod?: string;
     note?: string;
   };
-  const locale = normalizeLocale(body.locale);
+  const locale = normalizeDisplayLocale(body.locale);
   const { sessionKey, shouldSetCookie } = resolveAssistantSessionKey(
     request.cookies.get(assistantCookieName)?.value,
   );

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { SectionHeading } from "@/components/section-heading";
+import { getArticleCoinPrice } from "@/lib/coin-wallet";
 import { canAccessContent } from "@/lib/entitlements";
-import { formatDateTime, formatPrice } from "@/lib/format";
-import { getCurrentLocale } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format";
+import type { DisplayLocale } from "@/lib/i18n-config";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getPaymentResultMeta } from "@/lib/payment-ui";
 import { getSessionContext } from "@/lib/session";
 import { getArticlePlans, getAuthorTeams } from "@/lib/content-data";
@@ -20,7 +22,7 @@ function readValue(value: string | string[] | undefined, fallback = "") {
   return value ?? fallback;
 }
 
-function getPlanFilterCopy(locale: "zh-CN" | "zh-TW" | "en") {
+function getPlanFilterCopy(locale: DisplayLocale) {
   if (locale === "en") {
     return {
       filterLabel: "Content lane",
@@ -47,6 +49,45 @@ function getPlanFilterCopy(locale: "zh-CN" | "zh-TW" | "en") {
     };
   }
 
+  if (locale === "th") {
+    return {
+      filterLabel: "หมวดคอนเทนต์",
+      all: "ทั้งหมด",
+      football: "ฟุตบอล",
+      basketball: "บาสเกตบอล",
+      cricket: "คริกเก็ต",
+      esports: "อีสปอร์ต",
+      empty: "ยังไม่มีแผนในหมวดนี้ตอนนี้",
+      authorHint: "แถบผู้เขียนจะเปลี่ยนตามหมวดที่เลือก",
+    };
+  }
+
+  if (locale === "vi") {
+    return {
+      filterLabel: "Tuyen noi dung",
+      all: "Tat ca",
+      football: "Bong da",
+      basketball: "Bong ro",
+      cricket: "Cricket",
+      esports: "Esports",
+      empty: "Hien chua co plan nao trong nhom nay.",
+      authorHint: "Thanh tac gia se di theo nhom noi dung dang chon.",
+    };
+  }
+
+  if (locale === "hi") {
+    return {
+      filterLabel: "Content lane",
+      all: "Sabhi",
+      football: "Football",
+      basketball: "Basketball",
+      cricket: "Cricket",
+      esports: "Esports",
+      empty: "Is lane mein abhi koi plan uplabdh nahin hai.",
+      authorHint: "Author rail ab chuni hui lane ke saath sync hoti hai.",
+    };
+  }
+
   return {
     filterLabel: "内容赛道",
     all: "全部",
@@ -59,7 +100,11 @@ function getPlanFilterCopy(locale: "zh-CN" | "zh-TW" | "en") {
   };
 }
 
-function buildPlansHref(sport: PlanSportFilter, payment?: string) {
+function buildPlansHrefWithCoinState(
+  sport: PlanSportFilter,
+  payment: string | undefined,
+  coin: string | undefined,
+) {
   const params = new URLSearchParams();
 
   if (sport !== "all") {
@@ -70,8 +115,73 @@ function buildPlansHref(sport: PlanSportFilter, payment?: string) {
     params.set("payment", payment);
   }
 
+  if (coin) {
+    params.set("coin", coin);
+  }
+
   const query = params.toString();
   return query ? `/plans?${query}` : "/plans";
+}
+
+function getCoinPurchaseMessage(
+  coin: string,
+  locale: DisplayLocale,
+) {
+  if (coin === "success") {
+    return {
+      className: "mt-6 rounded-[1.25rem] border border-lime-300/20 bg-lime-300/10 px-5 py-4 text-sm text-lime-100",
+      message:
+        locale === "en"
+          ? "Content unlocked with coins."
+          : locale === "zh-TW"
+            ? "已使用球幣解鎖內容。"
+            : locale === "th"
+              ? "ปลดล็อกคอนเทนต์ด้วยเหรียญแล้ว"
+              : locale === "vi"
+                ? "Da mo khoa noi dung bang coin."
+                : locale === "hi"
+                  ? "कॉन्टेंट कॉइन्स से अनलॉक हो गया।"
+                  : "已使用球币解锁内容。",
+    };
+  }
+
+  if (coin === "insufficient") {
+    return {
+      className: "mt-6 rounded-[1.25rem] border border-rose-300/20 bg-rose-400/10 px-5 py-4 text-sm text-rose-100",
+      message:
+        locale === "en"
+          ? "Coin balance is insufficient. Recharge from the member center first."
+          : locale === "zh-TW"
+            ? "球幣餘額不足，請先到會員中心充值。"
+            : locale === "th"
+              ? "เหรียญไม่พอ กรุณาเติมในศูนย์สมาชิกก่อน"
+              : locale === "vi"
+                ? "So du coin khong du, hay nap them trong trung tam hoi vien."
+                : locale === "hi"
+                  ? "कॉइन बैलेंस पर्याप्त नहीं है, पहले सदस्य केंद्र में रिचार्ज करें।"
+                  : "球币余额不足，请先到会员中心充值。",
+    };
+  }
+
+  if (coin === "error") {
+    return {
+      className: "mt-6 rounded-[1.25rem] border border-rose-300/20 bg-rose-400/10 px-5 py-4 text-sm text-rose-100",
+      message:
+        locale === "en"
+          ? "Coin unlock failed. Please try again."
+          : locale === "zh-TW"
+            ? "球幣解鎖失敗，請稍後重試。"
+            : locale === "th"
+              ? "ปลดล็อกด้วยเหรียญไม่สำเร็จ กรุณาลองใหม่"
+              : locale === "vi"
+                ? "Mo khoa bang coin that bai, vui long thu lai."
+                : locale === "hi"
+                  ? "कॉइन अनलॉक विफल रहा, कृपया फिर कोशिश करें।"
+                  : "球币解锁失败，请稍后重试。",
+    };
+  }
+
+  return null;
 }
 
 export default async function PlansPage({
@@ -79,9 +189,9 @@ export default async function PlansPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { plansPageCopy, uiCopy } = getSiteCopy(locale);
-  const filterCopy = getPlanFilterCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { plansPageCopy, uiCopy } = getSiteCopy(displayLocale);
+  const filterCopy = getPlanFilterCopy(displayLocale);
   const [{ session, entitlements }, articlePlans, authorTeams, resolved] = await Promise.all([
     getSessionContext(),
     getArticlePlans(undefined, locale),
@@ -89,8 +199,10 @@ export default async function PlansPage({
     searchParams,
   ]);
   const payment = readValue(resolved.payment);
+  const coin = readValue(resolved.coin);
   const selectedSport = readValue(resolved.sport, "all") as PlanSportFilter;
-  const paymentResult = getPaymentResultMeta("plans", payment, locale);
+  const paymentResult = getPaymentResultMeta("plans", payment, displayLocale);
+  const coinResult = getCoinPurchaseMessage(coin, displayLocale);
   const sportOptions: PlanSportFilter[] = ["all", "football", "basketball", "cricket", "esports"];
   const filteredPlans = selectedSport === "all" ? articlePlans : articlePlans.filter((plan) => plan.sport === selectedSport);
   const visibleAuthorIds = new Set(filteredPlans.map((plan) => plan.authorId));
@@ -116,7 +228,7 @@ export default async function PlansPage({
               return (
                 <Link
                   key={option}
-                  href={buildPlansHref(option, payment)}
+                  href={buildPlansHrefWithCoinState(option, payment, coin)}
                   className={`rounded-full border px-4 py-2 text-sm transition ${
                     active
                       ? "border-orange-300/40 bg-orange-300/12 text-orange-100"
@@ -130,6 +242,7 @@ export default async function PlansPage({
           </div>
           <p className="mt-4 text-sm text-slate-400">{filterCopy.authorHint}</p>
         </div>
+        {coinResult ? <div className={coinResult.className}>{coinResult.message}</div> : null}
 
         <div className="mt-6 grid gap-4 md:grid-cols-4">
           {visibleAuthors.map((author) => (
@@ -153,6 +266,7 @@ export default async function PlansPage({
         ) : (
           filteredPlans.map((plan) => {
             const unlocked = canAccessContent(session, plan.id);
+            const coinPrice = getArticleCoinPrice(plan.price);
 
             return (
               <article key={plan.id} className="glass-panel flex flex-col rounded-[1.8rem] p-5">
@@ -173,23 +287,50 @@ export default async function PlansPage({
                 </div>
 
                 <div className="mt-6 rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{formatDateTime(plan.kickoff, locale)}</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{formatDateTime(plan.kickoff, displayLocale)}</p>
                   <p className="mt-2 text-sm text-slate-300">{plan.marketSummary}</p>
                   <div className="mt-4 flex items-center justify-between gap-3">
-                    <p className="text-lg font-semibold text-orange-200">{formatPrice(plan.price, locale)}</p>
+                    <div>
+                      <p className="text-lg font-semibold text-orange-200">
+                        {displayLocale === "en"
+                          ? `${coinPrice} coins`
+                          : displayLocale === "zh-TW"
+                            ? `${coinPrice} 球幣`
+                            : displayLocale === "th"
+                              ? `${coinPrice} เหรียญ`
+                              : displayLocale === "vi"
+                                ? `${coinPrice} coin`
+                                : displayLocale === "hi"
+                                  ? `${coinPrice} coins`
+                                  : `${coinPrice} 球币`}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">{plan.marketSummary}</p>
+                    </div>
                     {unlocked ? (
                       <span className="rounded-full bg-lime-300/12 px-3 py-1 text-xs text-lime-100">{uiCopy.unlocked}</span>
                     ) : (
-                      <form action="/api/content/purchase" method="post">
-                        <input type="hidden" name="contentId" value={plan.id} />
-                        <input type="hidden" name="returnTo" value={returnTo} />
-                        <button
-                          type="submit"
-                          className="rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
-                        >
-                          {plansPageCopy.payNow}
-                        </button>
-                      </form>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <form action="/api/content/purchase-coins" method="post">
+                          <input type="hidden" name="contentId" value={plan.id} />
+                          <input type="hidden" name="returnTo" value={returnTo} />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm font-semibold text-lime-100 transition hover:bg-lime-300/15"
+                          >
+                            {displayLocale === "en"
+                              ? `${coinPrice} coins`
+                              : displayLocale === "zh-TW"
+                                ? `${coinPrice} 球幣解鎖`
+                                : displayLocale === "th"
+                                  ? `${coinPrice} เหรียญ`
+                                  : displayLocale === "vi"
+                                    ? `${coinPrice} coin`
+                                    : displayLocale === "hi"
+                                      ? `${coinPrice} coins`
+                                      : `${coinPrice} 球币解锁`}
+                          </button>
+                        </form>
+                      </div>
                     )}
                   </div>
                 </div>

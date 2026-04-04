@@ -6,6 +6,10 @@ const zhCn = {
     { value: "events", label: "\u8d5b\u4e8b" },
     { value: "content", label: "\u5185\u5bb9" },
     { value: "users", label: "\u7528\u6237\u8ba2\u5355" },
+    { value: "finance", label: "\u7403\u5e01\u8d22\u52a1" },
+    { value: "agents", label: "\u4ee3\u7406\u62db\u5546" },
+    { value: "system", label: "\u7cfb\u7edf\u5b89\u5168" },
+    { value: "reports", label: "\u62a5\u8868\u4e2d\u5fc3" },
     { value: "ai", label: "AI \u5bfc\u5165" },
   ],
   hero: {
@@ -229,6 +233,7 @@ const zhCn = {
       setHot: "\u8bbe\u4e3a\u70ed\u95e8",
       clearHot: "\u53d6\u6d88\u70ed\u95e8",
       archive: "\u5f52\u6863",
+      empty: "\u5f53\u524d\u7b5b\u9009\u6761\u4ef6\u4e0b\u6ca1\u6709\u8ba1\u5212\u5355\u3002",
       statusLabels: { draft: "\u8349\u7a3f", published: "\u5df2\u53d1\u5e03", archived: "\u5df2\u5f52\u6863" },
     },
     moduleForm: {
@@ -328,6 +333,7 @@ const zhCn = {
       noWindow: "\u957f\u671f\u5c55\u793a",
       cta: "CTA",
       localePreview: "\u591a\u8bed\u9884\u89c8",
+      empty: "\u5f53\u524d\u8fd8\u6ca1\u6709\u7ad9\u5185\u516c\u544a\uff0c\u521b\u5efa\u540e\u4f1a\u663e\u793a\u5728\u5168\u7ad9\u5934\u90e8\u3002",
       toneLabels: { info: "\u666e\u901a", success: "\u6210\u529f", warning: "\u63d0\u9192" },
       statusLabels: { active: "\u542f\u7528", inactive: "\u505c\u7528" },
     },
@@ -467,6 +473,7 @@ const zhCn = {
     empty: "\u5f53\u524d\u8fd8\u6ca1\u6709 AI \u9884\u6d4b\u8bb0\u5f55\uff0c\u53ef\u5148\u5f55\u5165\u7535\u7ade\u6216\u8db3\u7bee\u793a\u4f8b\u5185\u5bb9\u3002",
     edit: "\u7f16\u8f91",
     delete: "\u5220\u9664",
+    openMatch: "\u67e5\u770b\u6bd4\u8d5b",
   },
   shared: {
     cancelEdit: "\u53d6\u6d88\u7f16\u8f91",
@@ -482,6 +489,10 @@ const zhTw = {
     { value: "events", label: "\u8cfd\u4e8b" },
     { value: "content", label: "\u5167\u5bb9" },
     { value: "users", label: "\u7528\u6236\u8a02\u55ae" },
+    { value: "finance", label: "\u7403\u5e63\u8ca1\u52d9" },
+    { value: "agents", label: "\u4ee3\u7406\u62db\u5546" },
+    { value: "system", label: "\u7cfb\u7d71\u5b89\u5168" },
+    { value: "reports", label: "\u5831\u8868\u4e2d\u5fc3" },
     { value: "ai", label: "AI \u532f\u5165" },
   ],
   hero: {
@@ -705,6 +716,7 @@ const zhTw = {
       setHot: "\u8a2d\u70ba\u71b1\u9580",
       clearHot: "\u53d6\u6d88\u71b1\u9580",
       archive: "\u6b78\u6a94",
+      empty: "\u76ee\u524d\u7be9\u9078\u689d\u4ef6\u4e0b\u6c92\u6709\u8a08\u756b\u55ae\u3002",
       statusLabels: { draft: "\u8349\u7a3f", published: "\u5df2\u767c\u5e03", archived: "\u5df2\u6b78\u6a94" },
     },
     moduleForm: {
@@ -804,6 +816,7 @@ const zhTw = {
       noWindow: "\u9577\u671f\u986f\u793a",
       cta: "CTA",
       localePreview: "\u591a\u8a9e\u9810\u89bd",
+      empty: "\u76ee\u524d\u9084\u6c92\u6709\u7ad9\u5167\u516c\u544a\uff0c\u5efa\u7acb\u5f8c\u6703\u986f\u793a\u5728\u5168\u7ad9\u982d\u90e8\u3002",
       toneLabels: { info: "\u4e00\u822c", success: "\u6210\u529f", warning: "\u63d0\u9192" },
       statusLabels: { active: "\u555f\u7528", inactive: "\u505c\u7528" },
     },
@@ -943,6 +956,7 @@ const zhTw = {
     empty: "\u76ee\u524d\u9084\u6c92\u6709 AI \u9810\u6e2c\u8a18\u9304\uff0c\u53ef\u5148\u9304\u5165\u96fb\u7af6\u6216\u8db3\u7c43\u793a\u4f8b\u5167\u5bb9\u3002",
     edit: "\u7de8\u8f2f",
     delete: "\u522a\u9664",
+    openMatch: "\u67e5\u770b\u8cfd\u4e8b",
   },
   shared: {
     cancelEdit: "\u53d6\u6d88\u7de8\u8f2f",
@@ -958,6 +972,10 @@ const en = {
     { value: "events", label: "Events" },
     { value: "content", label: "Content" },
     { value: "users", label: "Users & Orders" },
+    { value: "finance", label: "Coins & Finance" },
+    { value: "agents", label: "Agents & Growth" },
+    { value: "system", label: "System & Security" },
+    { value: "reports", label: "Reports" },
     { value: "ai", label: "AI Import" },
   ],
   hero: {
@@ -1181,6 +1199,7 @@ const en = {
       setHot: "Mark hot",
       clearHot: "Clear hot",
       archive: "Archive",
+      empty: "No plans match the current sport filter.",
       statusLabels: { draft: "Draft", published: "Published", archived: "Archived" },
     },
     moduleForm: {
@@ -1280,6 +1299,7 @@ const en = {
       noWindow: "Always visible",
       cta: "CTA",
       localePreview: "Locale preview",
+      empty: "No site announcements yet. Create one to expose cross-site operating messages in the header.",
       toneLabels: { info: "Info", success: "Success", warning: "Warning" },
       statusLabels: { active: "Active", inactive: "Inactive" },
     },
@@ -1419,6 +1439,7 @@ const en = {
     empty: "No AI prediction records yet. Start with an esports or core-sports sample.",
     edit: "Edit",
     delete: "Delete",
+    openMatch: "Open match",
   },
   shared: {
     cancelEdit: "Cancel edit",

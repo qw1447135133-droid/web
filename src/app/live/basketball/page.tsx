@@ -1,6 +1,6 @@
 import { ScoreboardTable } from "@/components/scoreboard-table";
 import { SectionHeading } from "@/components/section-heading";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -19,8 +19,8 @@ export default async function BasketballLivePage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { livePageCopy, uiCopy } = getSiteCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { livePageCopy, uiCopy } = getSiteCopy(displayLocale);
   const resolved = await searchParams;
   const league = pickValue(resolved.league, "all");
   const [allLeagues, allMatches] = await Promise.all([
@@ -68,7 +68,7 @@ export default async function BasketballLivePage({
         </form>
       </section>
 
-      <ScoreboardTable matches={items} sportLabel={livePageCopy.basketball.sportLabel} locale={locale} />
+      <ScoreboardTable matches={items} sportLabel={livePageCopy.basketball.sportLabel} locale={displayLocale} />
     </div>
   );
 }

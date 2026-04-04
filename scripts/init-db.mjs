@@ -171,6 +171,89 @@ db.exec(`
       ON DELETE CASCADE ON UPDATE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS "CoinAccount" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "balance" INTEGER NOT NULL DEFAULT 0,
+    "lifetimeCredited" INTEGER NOT NULL DEFAULT 0,
+    "lifetimeDebited" INTEGER NOT NULL DEFAULT 0,
+    "lastActivityAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+    CONSTRAINT "CoinAccount_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "CoinLedger" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "direction" TEXT NOT NULL,
+    "reason" TEXT NOT NULL,
+    "amount" INTEGER NOT NULL,
+    "balanceBefore" INTEGER NOT NULL,
+    "balanceAfter" INTEGER NOT NULL,
+    "referenceType" TEXT,
+    "referenceId" TEXT,
+    "note" TEXT,
+    "expiresAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "accountId" TEXT NOT NULL,
+    CONSTRAINT "CoinLedger_accountId_fkey"
+      FOREIGN KEY ("accountId") REFERENCES "CoinAccount" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "CoinPackage" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "key" TEXT NOT NULL,
+    "titleZhCn" TEXT NOT NULL,
+    "titleZhTw" TEXT NOT NULL,
+    "titleEn" TEXT NOT NULL,
+    "descriptionZhCn" TEXT,
+    "descriptionZhTw" TEXT,
+    "descriptionEn" TEXT,
+    "coinAmount" INTEGER NOT NULL,
+    "bonusAmount" INTEGER NOT NULL DEFAULT 0,
+    "price" INTEGER NOT NULL,
+    "validityDays" INTEGER,
+    "badge" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "CoinRechargeOrder" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "orderNo" TEXT NOT NULL,
+    "coinAmount" INTEGER NOT NULL,
+    "bonusAmount" INTEGER NOT NULL DEFAULT 0,
+    "amount" INTEGER NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "provider" TEXT NOT NULL DEFAULT 'manual',
+    "providerOrderId" TEXT,
+    "expiresAt" DATETIME,
+    "callbackPayload" TEXT,
+    "paymentReference" TEXT,
+    "paidAt" DATETIME,
+    "failedAt" DATETIME,
+    "failureReason" TEXT,
+    "closedAt" DATETIME,
+    "refundedAt" DATETIME,
+    "refundReason" TEXT,
+    "creditedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "packageId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    CONSTRAINT "CoinRechargeOrder_packageId_fkey"
+      FOREIGN KEY ("packageId") REFERENCES "CoinPackage" ("id")
+      ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "CoinRechargeOrder_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS "PaymentCallbackEvent" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "provider" TEXT NOT NULL DEFAULT 'mock',
@@ -620,6 +703,9 @@ db.exec(`
 
   CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
   CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token");
+  CREATE UNIQUE INDEX IF NOT EXISTS "CoinAccount_userId_key" ON "CoinAccount"("userId");
+  CREATE UNIQUE INDEX IF NOT EXISTS "CoinPackage_key_key" ON "CoinPackage"("key");
+  CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_orderNo_key" ON "CoinRechargeOrder"("orderNo");
   CREATE UNIQUE INDEX IF NOT EXISTS "League_slug_key" ON "League"("slug");
   CREATE UNIQUE INDEX IF NOT EXISTS "League_source_sourceKey_key" ON "League"("source", "sourceKey");
   CREATE UNIQUE INDEX IF NOT EXISTS "Team_leagueId_slug_key" ON "Team"("leagueId", "slug");
@@ -639,6 +725,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId");
   CREATE INDEX IF NOT EXISTS "MembershipOrder_userId_idx" ON "MembershipOrder"("userId");
   CREATE INDEX IF NOT EXISTS "ContentOrder_userId_idx" ON "ContentOrder"("userId");
+  CREATE INDEX IF NOT EXISTS "CoinAccount_balance_updatedAt_idx" ON "CoinAccount"("balance", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "CoinLedger_accountId_createdAt_idx" ON "CoinLedger"("accountId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "CoinLedger_referenceType_referenceId_idx" ON "CoinLedger"("referenceType", "referenceId");
+  CREATE INDEX IF NOT EXISTS "CoinLedger_reason_createdAt_idx" ON "CoinLedger"("reason", "createdAt");
+  CREATE INDEX IF NOT EXISTS "CoinPackage_status_sortOrder_idx" ON "CoinPackage"("status", "sortOrder");
+  CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_status_updatedAt_idx" ON "CoinRechargeOrder"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_userId_updatedAt_idx" ON "CoinRechargeOrder"("userId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_packageId_updatedAt_idx" ON "CoinRechargeOrder"("packageId", "updatedAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_orderType_orderId_idx" ON "PaymentCallbackEvent"("orderType", "orderId");
@@ -704,6 +798,57 @@ ensureColumn("ContentOrder", "closedAt", "DATETIME");
 ensureColumn("ContentOrder", "refundedAt", "DATETIME");
 ensureColumn("ContentOrder", "refundReason", "TEXT");
 ensureColumn("ContentOrder", "updatedAt", "DATETIME");
+ensureColumn("CoinAccount", "balance", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinAccount", "lifetimeCredited", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinAccount", "lifetimeDebited", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinAccount", "lastActivityAt", "DATETIME");
+ensureColumn("CoinAccount", "createdAt", "DATETIME");
+ensureColumn("CoinAccount", "updatedAt", "DATETIME");
+ensureColumn("CoinLedger", "direction", "TEXT");
+ensureColumn("CoinLedger", "reason", "TEXT");
+ensureColumn("CoinLedger", "amount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinLedger", "balanceBefore", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinLedger", "balanceAfter", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinLedger", "referenceType", "TEXT");
+ensureColumn("CoinLedger", "referenceId", "TEXT");
+ensureColumn("CoinLedger", "note", "TEXT");
+ensureColumn("CoinLedger", "expiresAt", "DATETIME");
+ensureColumn("CoinLedger", "createdAt", "DATETIME");
+ensureColumn("CoinPackage", "key", "TEXT");
+ensureColumn("CoinPackage", "titleZhCn", "TEXT");
+ensureColumn("CoinPackage", "titleZhTw", "TEXT");
+ensureColumn("CoinPackage", "titleEn", "TEXT");
+ensureColumn("CoinPackage", "descriptionZhCn", "TEXT");
+ensureColumn("CoinPackage", "descriptionZhTw", "TEXT");
+ensureColumn("CoinPackage", "descriptionEn", "TEXT");
+ensureColumn("CoinPackage", "coinAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinPackage", "bonusAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinPackage", "price", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinPackage", "validityDays", "INTEGER");
+ensureColumn("CoinPackage", "badge", "TEXT");
+ensureColumn("CoinPackage", "status", "TEXT DEFAULT 'active'");
+ensureColumn("CoinPackage", "sortOrder", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinPackage", "createdAt", "DATETIME");
+ensureColumn("CoinPackage", "updatedAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "orderNo", "TEXT");
+ensureColumn("CoinRechargeOrder", "coinAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinRechargeOrder", "bonusAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinRechargeOrder", "amount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("CoinRechargeOrder", "status", "TEXT DEFAULT 'pending'");
+ensureColumn("CoinRechargeOrder", "provider", "TEXT DEFAULT 'manual'");
+ensureColumn("CoinRechargeOrder", "providerOrderId", "TEXT");
+ensureColumn("CoinRechargeOrder", "expiresAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "callbackPayload", "TEXT");
+ensureColumn("CoinRechargeOrder", "paymentReference", "TEXT");
+ensureColumn("CoinRechargeOrder", "paidAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "failedAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "failureReason", "TEXT");
+ensureColumn("CoinRechargeOrder", "closedAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "refundedAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "refundReason", "TEXT");
+ensureColumn("CoinRechargeOrder", "creditedAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "createdAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "updatedAt", "DATETIME");
 ensureColumn("PaymentCallbackEvent", "provider", "TEXT DEFAULT 'mock'");
 ensureColumn("PaymentCallbackEvent", "providerEventId", "TEXT");
 ensureColumn("PaymentCallbackEvent", "eventKey", "TEXT");
@@ -784,6 +929,60 @@ db.exec(`
   UPDATE "ContentOrder"
   SET "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
   WHERE "updatedAt" IS NULL;
+  UPDATE "CoinAccount"
+  SET
+    "balance" = COALESCE("balance", 0),
+    "lifetimeCredited" = COALESCE("lifetimeCredited", 0),
+    "lifetimeDebited" = COALESCE("lifetimeDebited", 0),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "balance" IS NULL
+    OR "lifetimeCredited" IS NULL
+    OR "lifetimeDebited" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL;
+  UPDATE "CoinLedger"
+  SET
+    "amount" = COALESCE("amount", 0),
+    "balanceBefore" = COALESCE("balanceBefore", 0),
+    "balanceAfter" = COALESCE("balanceAfter", 0),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "amount" IS NULL
+    OR "balanceBefore" IS NULL
+    OR "balanceAfter" IS NULL
+    OR "createdAt" IS NULL;
+  UPDATE "CoinPackage"
+  SET
+    "bonusAmount" = COALESCE("bonusAmount", 0),
+    "price" = COALESCE("price", 0),
+    "status" = COALESCE("status", 'active'),
+    "sortOrder" = COALESCE("sortOrder", 0),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "bonusAmount" IS NULL
+    OR "price" IS NULL
+    OR "status" IS NULL
+    OR "sortOrder" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL;
+  UPDATE "CoinRechargeOrder"
+  SET
+    "bonusAmount" = COALESCE("bonusAmount", 0),
+    "amount" = COALESCE("amount", 0),
+    "status" = COALESCE("status", 'pending'),
+    "provider" = COALESCE("provider", 'manual'),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "bonusAmount" IS NULL
+    OR "amount" IS NULL
+    OR "status" IS NULL
+    OR "provider" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL;
   UPDATE "PaymentCallbackEvent"
   SET
     "lastSeenAt" = COALESCE("lastSeenAt", "createdAt", CURRENT_TIMESTAMP),
@@ -838,6 +1037,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "ContentOrder_status_updatedAt_idx" ON "ContentOrder"("status", "updatedAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "MembershipOrder_provider_providerOrderId_key" ON "MembershipOrder"("provider", "providerOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "ContentOrder_provider_providerOrderId_key" ON "ContentOrder"("provider", "providerOrderId");
+  CREATE UNIQUE INDEX IF NOT EXISTS "CoinAccount_userId_key" ON "CoinAccount"("userId");
+  CREATE UNIQUE INDEX IF NOT EXISTS "CoinPackage_key_key" ON "CoinPackage"("key");
+  CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_orderNo_key" ON "CoinRechargeOrder"("orderNo");
+  CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_provider_providerOrderId_key" ON "CoinRechargeOrder"("provider", "providerOrderId");
+  CREATE INDEX IF NOT EXISTS "CoinAccount_balance_updatedAt_idx" ON "CoinAccount"("balance", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "CoinLedger_accountId_createdAt_idx" ON "CoinLedger"("accountId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "CoinLedger_referenceType_referenceId_idx" ON "CoinLedger"("referenceType", "referenceId");
+  CREATE INDEX IF NOT EXISTS "CoinLedger_reason_createdAt_idx" ON "CoinLedger"("reason", "createdAt");
+  CREATE INDEX IF NOT EXISTS "CoinPackage_status_sortOrder_idx" ON "CoinPackage"("status", "sortOrder");
+  CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_status_updatedAt_idx" ON "CoinRechargeOrder"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_userId_updatedAt_idx" ON "CoinRechargeOrder"("userId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_packageId_updatedAt_idx" ON "CoinRechargeOrder"("packageId", "updatedAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "PaymentCallbackEvent_eventKey_key" ON "PaymentCallbackEvent"("eventKey");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");

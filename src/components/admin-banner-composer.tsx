@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { AdminHomepageBannerRecord } from "@/lib/admin-operations";
-import type { Locale } from "@/lib/i18n-config";
+import { resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 
 type BannerFormCopy = {
   sectionLabel: string;
@@ -42,7 +42,7 @@ type BannerStatusCopy = {
 };
 
 type Props = {
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   currentBanner: AdminHomepageBannerRecord | undefined;
   homepageBannerCount: number;
   cancelLabel: string;
@@ -98,6 +98,10 @@ const previewLocaleLabels: Record<Locale, Record<PreviewLocale, string>> = {
     en: "English",
   },
 };
+
+function resolveAdminBannerLocale(locale: Locale | DisplayLocale): Locale {
+  return resolveRenderLocale(locale as DisplayLocale);
+}
 
 function toDateTimeLocalValue(value?: string) {
   if (!value) {
@@ -283,23 +287,24 @@ export function AdminBannerComposer({
   statusCopy,
   seedTemplates,
 }: Props) {
+  const adminLocale = resolveAdminBannerLocale(locale);
   const [draft, setDraft] = useState<BannerDraft>(() => getInitialDraft(currentBanner, homepageBannerCount));
-  const [previewLocale, setPreviewLocale] = useState<PreviewLocale>(locale);
+  const [previewLocale, setPreviewLocale] = useState<PreviewLocale>(adminLocale);
   const previewText = getLocalizedBannerValue(draft, previewLocale);
-  const previewStatus = getPreviewStatus(draft, locale);
+  const previewStatus = getPreviewStatus(draft, adminLocale);
   const themeSurface = getThemeSurface(draft.theme);
-  const hrefMeta = getHrefMeta(draft.href, locale);
+  const hrefMeta = getHrefMeta(draft.href, adminLocale);
   const sortOrder = Number.parseInt(draft.sortOrder || "0", 10);
   const projectedSlot =
     Number.isFinite(sortOrder) && sortOrder >= 0 && sortOrder < 3 && previewStatus.label !== statusCopy.inactive
-      ? locale === "en"
+      ? adminLocale === "en"
         ? `Projected hero slot ${sortOrder + 1}`
-        : locale === "zh-TW"
+        : adminLocale === "zh-TW"
           ? `預計首頁第 ${sortOrder + 1} 位`
           : `预计首页第 ${sortOrder + 1} 位`
-      : locale === "en"
+      : adminLocale === "en"
         ? "Projected standby"
-        : locale === "zh-TW"
+        : adminLocale === "zh-TW"
           ? "預計候補位"
           : "预计候补位";
 
@@ -328,16 +333,16 @@ export function AdminBannerComposer({
 
       <div className="mt-4 rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4 text-sm text-slate-300">
         <p className="font-medium text-white">
-          {locale === "en"
+          {adminLocale === "en"
             ? "Homepage hero reads database banners first and shows up to 3 active items by sort order."
-            : locale === "zh-TW"
+            : adminLocale === "zh-TW"
               ? "首頁 Hero 會優先讀取資料庫 Banner，並按排序展示最多 3 條有效項目。"
               : "首页 Hero 会优先读取数据库 Banner，并按排序展示最多 3 条有效项目。"}
         </p>
         <p className="mt-2 text-xs leading-6 text-slate-400">
-          {locale === "en"
+          {adminLocale === "en"
             ? "Use the live preview below to check theme, localized copy, CTA, and destination quality before publishing."
-            : locale === "zh-TW"
+            : adminLocale === "zh-TW"
               ? "發佈前可直接用下方即時預覽核對主題、三語文案、CTA 與跳轉品質。"
               : "发布前可直接用下方实时预览核对主题、三语文案、CTA 与跳转质量。"}
         </p>
@@ -345,7 +350,7 @@ export function AdminBannerComposer({
           <div className="mt-4 border-t border-white/8 pt-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                {locale === "en" ? "Quick fill from seeds" : locale === "zh-TW" ? "快速套用種子" : "快速套用种子"}
+                {adminLocale === "en" ? "Quick fill from seeds" : adminLocale === "zh-TW" ? "快速套用種子" : "快速套用种子"}
               </span>
               {seedTemplates.map((template) => (
                 <button
@@ -369,7 +374,7 @@ export function AdminBannerComposer({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.28em] text-slate-500">
-              {locale === "en" ? "Live preview" : locale === "zh-TW" ? "即時預覽" : "实时预览"}
+              {adminLocale === "en" ? "Live preview" : adminLocale === "zh-TW" ? "即時預覽" : "实时预览"}
             </p>
             <p className="mt-2 text-sm text-slate-300">{hrefMeta}</p>
           </div>
@@ -385,7 +390,7 @@ export function AdminBannerComposer({
                     : "border-white/10 bg-white/[0.03] text-slate-300 hover:border-white/25 hover:text-white"
                 }`}
               >
-                {previewLocaleLabels[locale][item]}
+                {previewLocaleLabels[adminLocale][item]}
               </button>
             ))}
           </div>
@@ -413,16 +418,16 @@ export function AdminBannerComposer({
 
             <div className="mt-8">
               <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">
-                {previewText.subtitle || (locale === "en" ? "Subtitle" : locale === "zh-TW" ? "副標" : "副标")}
+                {previewText.subtitle || (adminLocale === "en" ? "Subtitle" : adminLocale === "zh-TW" ? "副標" : "副标")}
               </p>
               <h4 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">
-                {previewText.title || (locale === "en" ? "Banner title preview" : locale === "zh-TW" ? "Banner 標題預覽" : "Banner 标题预览")}
+                {previewText.title || (adminLocale === "en" ? "Banner title preview" : adminLocale === "zh-TW" ? "Banner 標題預覽" : "Banner 标题预览")}
               </h4>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-200">
                 {previewText.description ||
-                  (locale === "en"
+                  (adminLocale === "en"
                     ? "Description preview updates as you edit the form."
-                    : locale === "zh-TW"
+                    : adminLocale === "zh-TW"
                       ? "表單修改後，這裡會同步更新正文預覽。"
                       : "表单修改后，这里会同步更新正文预览。")}
               </p>

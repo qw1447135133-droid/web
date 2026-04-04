@@ -10,6 +10,11 @@ import {
 } from "@/lib/content-data";
 import { getAdminArticlePlans, getAdminAuthorTeams, getAdminPredictionRecords } from "@/lib/admin-content";
 import {
+  buildFinancePackageCards,
+  getAdminFinanceDashboard,
+  getCoinRechargeOrderStatusMeta,
+} from "@/lib/admin-finance";
+import {
   getAdminAssistantHandoffRequests,
   getAdminHomepageFeaturedMatchSlots,
   getAdminHomepageFeaturedMatches,
@@ -18,6 +23,7 @@ import {
   getAdminSupportKnowledgeItems,
   getAdminSiteAnnouncements,
 } from "@/lib/admin-operations";
+import { getAdminExpansionData, getExpansionToneClass } from "@/lib/admin-expansion";
 import { getAdminPageCopy } from "@/lib/admin-page-copy";
 import {
   getAdminPaymentCallbackActivity,
@@ -26,7 +32,7 @@ import {
   normalizeAdminOrderFilterType,
 } from "@/lib/admin-users";
 import { formatDateTime, formatPrice } from "@/lib/format";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentDisplayLocale, getIntlLocale, resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n";
 import { localizeMembershipPlan } from "@/lib/localized-content";
 import { homepageBannerSeeds, homepageModules as homepageModuleSeeds, membershipPlans } from "@/lib/mock-data";
 import { getOpsCopy } from "@/lib/ops-copy";
@@ -115,7 +121,7 @@ function formatDurationMs(value?: number) {
 function formatAnnouncementWindow(
   startsAt: string | undefined,
   endsAt: string | undefined,
-  locale: "zh-CN" | "zh-TW" | "en",
+  locale: Locale | DisplayLocale,
   fallback: string,
 ) {
   if (!startsAt && !endsAt) {
@@ -127,14 +133,14 @@ function formatAnnouncementWindow(
   return `${startLabel} -> ${endLabel}`;
 }
 
-function formatShortDateLabel(value: string, locale: "zh-CN" | "zh-TW" | "en") {
+function formatShortDateLabel(value: string, locale: Locale | DisplayLocale) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return "--";
   }
 
-  return new Intl.DateTimeFormat(locale === "en" ? "en-US" : locale === "zh-TW" ? "zh-Hant-TW" : "zh-CN", {
+  return new Intl.DateTimeFormat(getIntlLocale(locale), {
     month: "numeric",
     day: "numeric",
   }).format(date);
@@ -215,7 +221,6 @@ function getTrendMaxValue(
 
 function getReadinessStateMeta(
   state: "ready" | "attention",
-  locale: "zh-CN" | "zh-TW" | "en",
 ) {
   if (state === "ready") {
     return {
@@ -398,7 +403,7 @@ function buildAdminAiHrefWithFilters(filters: {
 function buildAdminOrderFilterSummary(
   filters: AdminUsersTabFilters,
   copy: ReturnType<typeof getAdminPageCopy>,
-  locale: "zh-CN" | "zh-TW" | "en",
+  locale: Locale | DisplayLocale,
 ) {
   const parts: string[] = [
     copy.users.filters.orderTypeOptions[filters.orderType as keyof typeof copy.users.filters.orderTypeOptions] ?? filters.orderType,
@@ -482,6 +487,270 @@ function getPaymentCallbackProcessingMeta(
   };
 }
 
+function getPaymentRuntimeCopy(
+  locale: Locale,
+  paymentRuntime: ReturnType<typeof getPaymentRuntimeConfig>,
+  paymentCheckoutFlow: ReturnType<typeof getPaymentCheckoutFlow>,
+) {
+  return {
+    runtimeTitle: locale === "en" ? "Payment runtime" : locale === "zh-TW" ? "支付執行環境" : "支付运行环境",
+    minutesLabel:
+      locale === "en"
+        ? `${paymentRuntime.pendingMinutes} min`
+        : locale === "zh-TW"
+          ? `${paymentRuntime.pendingMinutes} 分鐘`
+          : `${paymentRuntime.pendingMinutes} 分钟`,
+    authModeLabel:
+      locale === "en"
+        ? paymentRuntime.callbackAuthMode
+        : paymentRuntime.callbackAuthMode === "shared-token"
+          ? "共享令牌"
+          : "共享令牌 + HMAC",
+    authModeTitle: locale === "en" ? "Callback auth" : locale === "zh-TW" ? "回調鑑權" : "回调鉴权",
+    callbackAddressTitle: locale === "en" ? "Callback URL" : locale === "zh-TW" ? "回調完整地址" : "回调完整地址",
+    collectionTitle: locale === "en" ? "Collection config" : locale === "zh-TW" ? "收款配置" : "收款配置",
+    hostedTitle: locale === "en" ? "Hosted gateway" : locale === "zh-TW" ? "託管通道" : "托管通道",
+    checkoutModeTitle: locale === "en" ? "Checkout mode" : locale === "zh-TW" ? "收銀模式" : "收银模式",
+    collectionReady: locale === "en" ? "Configured" : locale === "zh-TW" ? "已配置" : "已配置",
+    collectionMissing: locale === "en" ? "Missing" : locale === "zh-TW" ? "未配置" : "未配置",
+    hostedReady: locale === "en" ? "Ready" : locale === "zh-TW" ? "可用" : "可用",
+    hostedMissing: locale === "en" ? "Not ready" : locale === "zh-TW" ? "未就緒" : "未就绪",
+    checkoutModeLabel:
+      paymentCheckoutFlow.mode === "manual-review"
+        ? locale === "en"
+          ? "Manual review"
+          : locale === "zh-TW"
+            ? "人工核銷"
+            : "人工核销"
+        : locale === "en"
+          ? "Mock actions"
+          : locale === "zh-TW"
+            ? "模擬操作"
+            : "模拟操作",
+    siteUrlHint:
+      locale === "en"
+        ? "Set `PAYMENT_CALLBACK_BASE_URL` or `SITE_URL` so the gateway can call back with a public URL."
+        : locale === "zh-TW"
+          ? "請配置 `PAYMENT_CALLBACK_BASE_URL` 或 `SITE_URL`，讓支付通道能回調到公開位址。"
+          : "请配置 `PAYMENT_CALLBACK_BASE_URL` 或 `SITE_URL`，让支付通道能回调到公开地址。",
+    collectionHint:
+      locale === "en"
+        ? "Set manual collection env fields so checkout can show account or QR details."
+        : locale === "zh-TW"
+          ? "請配置人工收款環境變數，讓收銀頁可展示帳號或二維碼資訊。"
+          : "请配置人工收款环境变量，让收银页可展示账号或二维码信息。",
+    hostedHint:
+      locale === "en"
+        ? "Set hosted gateway URL, merchant ID, and signing secret before switching `PAYMENT_PROVIDER=hosted`."
+        : locale === "zh-TW"
+          ? "切到 `PAYMENT_PROVIDER=hosted` 前，請先配置託管通道 URL、商戶號與簽名密鑰。"
+          : "切到 `PAYMENT_PROVIDER=hosted` 前，请先配置托管通道 URL、商户号与签名密钥。",
+    callbacks: {
+      title: locale === "en" ? "Callback events" : locale === "zh-TW" ? "回調事件" : "回调事件",
+      subtitle:
+        locale === "en"
+          ? "Latest gateway notifications and dedupe results."
+          : locale === "zh-TW"
+            ? "查看最新支付回調與去重結果。"
+            : "查看最新支付回调与去重结果。",
+      metrics: {
+        total: locale === "en" ? "Events" : locale === "zh-TW" ? "事件數" : "事件数",
+        duplicates: locale === "en" ? "Duplicates" : locale === "zh-TW" ? "重複" : "重复",
+        conflicts: locale === "en" ? "Conflicts" : locale === "zh-TW" ? "衝突" : "冲突",
+        failed: locale === "en" ? "Failed" : locale === "zh-TW" ? "失敗" : "失败",
+      },
+      latestLabel: locale === "en" ? "Latest seen" : locale === "zh-TW" ? "最近收到" : "最近收到",
+      empty:
+        locale === "en"
+          ? "No callback events yet. Once the gateway posts back, status and dedupe traces will appear here."
+          : locale === "zh-TW"
+            ? "目前還沒有回調事件。支付通道開始回調後，這裡會顯示狀態與去重痕跡。"
+            : "当前还没有回调事件。支付通道开始回调后，这里会显示状态与去重痕迹。",
+      stateTitle: locale === "en" ? "State" : locale === "zh-TW" ? "回調狀態" : "回调状态",
+      resultTitle: locale === "en" ? "Result" : locale === "zh-TW" ? "處理結果" : "处理结果",
+      orderIdLabel: locale === "en" ? "Order ID" : locale === "zh-TW" ? "訂單 ID" : "订单 ID",
+      eventIdLabel: locale === "en" ? "Event ID" : locale === "zh-TW" ? "事件 ID" : "事件 ID",
+      eventKeyLabel: locale === "en" ? "Event key" : locale === "zh-TW" ? "事件鍵" : "事件键",
+      duplicateSuffix: locale === "en" ? "duplicate hits" : locale === "zh-TW" ? "次重複命中" : "次重复命中",
+    },
+  } as const;
+}
+
+function getAssistantAdminCopy(locale: Locale, isEditingKnowledgeItem: boolean) {
+  return {
+    knowledgeNotice: {
+      saved:
+        locale === "en"
+          ? "Assistant knowledge item saved."
+          : locale === "zh-TW"
+            ? "AI 客服知識條目已保存。"
+            : "AI 客服知识条目已保存。",
+      seeded:
+        locale === "en"
+          ? "Default assistant knowledge seeds imported."
+          : locale === "zh-TW"
+            ? "預設 AI 客服知識種子已導入。"
+            : "默认 AI 客服知识种子已导入。",
+      failed:
+        locale === "en"
+          ? "Assistant knowledge operation failed."
+          : locale === "zh-TW"
+            ? "AI 客服知識操作失敗。"
+            : "AI 客服知识操作失败。",
+    },
+    handoffNotice: {
+      saved:
+        locale === "en"
+          ? "Assistant handoff request marked as resolved."
+          : locale === "zh-TW"
+            ? "AI 助手轉接請求已標記為完成。"
+            : "AI 助手转接请求已标记为完成。",
+      failed:
+        locale === "en"
+          ? "Assistant handoff action failed."
+          : locale === "zh-TW"
+            ? "AI 助手轉接操作失敗。"
+            : "AI 助手转接操作失败。",
+    },
+    support: {
+      eyebrow: locale === "en" ? "Support Queue" : locale === "zh-TW" ? "客服轉接" : "客服转接",
+      title: locale === "en" ? "AI assistant handoff queue" : locale === "zh-TW" ? "AI 助手人工轉接隊列" : "AI 助手人工转接队列",
+      description:
+        locale === "en"
+          ? "Requests raised from the floating assistant will appear here for follow-up."
+          : locale === "zh-TW"
+            ? "使用者在右下角助手中發起的人工轉接請求，會集中顯示在這裡。"
+            : "用户在右下角助手中发起的人工转接请求，会集中显示在这里。",
+      pending: locale === "en" ? "Pending" : locale === "zh-TW" ? "待處理" : "待处理",
+      resolved: locale === "en" ? "Resolved" : locale === "zh-TW" ? "已完成" : "已完成",
+      empty:
+        locale === "en"
+          ? "No assistant handoff requests yet."
+          : locale === "zh-TW"
+            ? "目前還沒有 AI 助手轉接請求。"
+            : "目前还没有 AI 助手转接请求。",
+      contact: locale === "en" ? "Contact" : locale === "zh-TW" ? "聯絡方式" : "联系方式",
+      requester: locale === "en" ? "Requester" : locale === "zh-TW" ? "發起人" : "发起人",
+      note: locale === "en" ? "Note" : locale === "zh-TW" ? "補充說明" : "补充说明",
+      conversation: locale === "en" ? "Conversation" : locale === "zh-TW" ? "會話" : "会话",
+      markResolved: locale === "en" ? "Mark resolved" : locale === "zh-TW" ? "標記完成" : "标记完成",
+      filters: {
+        status: locale === "en" ? "Queue status" : locale === "zh-TW" ? "隊列狀態" : "队列状态",
+        all: locale === "en" ? "All" : locale === "zh-TW" ? "全部" : "全部",
+        apply: locale === "en" ? "Apply" : locale === "zh-TW" ? "套用" : "应用",
+        reset: locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置",
+      },
+    },
+    knowledge: {
+      eyebrow: locale === "en" ? "Knowledge Base" : locale === "zh-TW" ? "知識庫" : "知识库",
+      title: locale === "en" ? "Assistant FAQ knowledge" : locale === "zh-TW" ? "AI 客服 FAQ 知識庫" : "AI 客服 FAQ 知识库",
+      description:
+        locale === "en"
+          ? "Maintain website-specific Q&A entries used by the floating assistant and fallback answers."
+          : locale === "zh-TW"
+            ? "維護右下角 AI 客服使用的站內問答知識，供真實模型與備援回覆共同使用。"
+            : "维护右下角 AI 客服使用的站内问答知识，供真实模型与备用回复共同使用。",
+      formTitle: isEditingKnowledgeItem
+        ? locale === "en"
+          ? "Edit knowledge item"
+          : locale === "zh-TW"
+            ? "編輯知識條目"
+            : "编辑知识条目"
+        : locale === "en"
+          ? "Create knowledge item"
+          : locale === "zh-TW"
+            ? "新增知識條目"
+            : "新增知识条目",
+      count: (count: number) => (locale === "en" ? `${count} items` : locale === "zh-TW" ? `${count} 條` : `${count} 条`),
+      active: locale === "en" ? "Active" : locale === "zh-TW" ? "啟用中" : "启用中",
+      inactive: locale === "en" ? "Inactive" : locale === "zh-TW" ? "未啟用" : "未启用",
+      seed: locale === "en" ? "Import defaults" : locale === "zh-TW" ? "導入預設" : "导入默认",
+      save: locale === "en" ? "Save knowledge" : locale === "zh-TW" ? "保存知識" : "保存知识",
+      edit: locale === "en" ? "Edit" : locale === "zh-TW" ? "編輯" : "编辑",
+      moveUp: locale === "en" ? "Move up" : locale === "zh-TW" ? "上移" : "上移",
+      moveDown: locale === "en" ? "Move down" : locale === "zh-TW" ? "下移" : "下移",
+      enable: locale === "en" ? "Enable" : locale === "zh-TW" ? "啟用" : "启用",
+      disable: locale === "en" ? "Disable" : locale === "zh-TW" ? "停用" : "停用",
+      empty:
+        locale === "en"
+          ? "No assistant knowledge items yet. Import defaults first or create a custom FAQ."
+          : locale === "zh-TW"
+            ? "目前還沒有 AI 客服知識條目，可先導入預設問答或建立自定義 FAQ。"
+            : "目前还没有 AI 客服知识条目，可先导入默认问答或创建自定义 FAQ。",
+      fields: {
+        key: locale === "en" ? "Unique key" : locale === "zh-TW" ? "唯一 key" : "唯一 key",
+        category: locale === "en" ? "Category" : locale === "zh-TW" ? "分類" : "分类",
+        href: locale === "en" ? "Related route" : locale === "zh-TW" ? "關聯路由" : "关联路由",
+        tagsText: locale === "en" ? "Tags" : locale === "zh-TW" ? "標籤" : "标签",
+        sortOrder: locale === "en" ? "Sort order" : locale === "zh-TW" ? "排序" : "排序",
+        status: locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态",
+        questionZhCn: locale === "en" ? "Question (zh-CN)" : locale === "zh-TW" ? "問題（简体）" : "问题（简体）",
+        questionZhTw: locale === "en" ? "Question (zh-TW)" : locale === "zh-TW" ? "問題（繁體）" : "问题（繁体）",
+        questionEn: locale === "en" ? "Question (EN)" : locale === "zh-TW" ? "問題（英文）" : "问题（英文）",
+        answerZhCn: locale === "en" ? "Answer (zh-CN)" : locale === "zh-TW" ? "答案（简体）" : "答案（简体）",
+        answerZhTw: locale === "en" ? "Answer (zh-TW)" : locale === "zh-TW" ? "答案（繁體）" : "答案（繁体）",
+        answerEn: locale === "en" ? "Answer (EN)" : locale === "zh-TW" ? "答案（英文）" : "答案（英文）",
+      },
+      tagsHint:
+        locale === "en"
+          ? "Separate tags with commas, line breaks, or pipes."
+          : locale === "zh-TW"
+            ? "標籤可用逗號、換行或豎線分隔。"
+            : "标签可用逗号、换行或竖线分隔。",
+      statusLabels: {
+        active: locale === "en" ? "Active" : locale === "zh-TW" ? "啟用" : "启用",
+        inactive: locale === "en" ? "Inactive" : locale === "zh-TW" ? "停用" : "停用",
+      },
+      filters: {
+        searchPlaceholder:
+          locale === "en" ? "Search key / question / tags" : locale === "zh-TW" ? "搜尋 key / 問題 / 標籤" : "搜索 key / 问题 / 标签",
+        allCategories: locale === "en" ? "All categories" : locale === "zh-TW" ? "全部分類" : "全部分类",
+        allStatus: locale === "en" ? "All status" : locale === "zh-TW" ? "全部狀態" : "全部状态",
+        apply: locale === "en" ? "Apply" : locale === "zh-TW" ? "套用" : "应用",
+        reset: locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置",
+      },
+      order: (sortOrder: number) => (locale === "en" ? `Order ${sortOrder}` : `排序 ${sortOrder}`),
+      localePreview: locale === "en" ? "Locale preview" : locale === "zh-TW" ? "多語預覽" : "多语预览",
+      answerLabel: locale === "en" ? "Answer" : locale === "zh-TW" ? "答案" : "答案",
+      routeLabel: locale === "en" ? "Route" : locale === "zh-TW" ? "路由" : "路由",
+      updatedAt: locale === "en" ? "Updated" : locale === "zh-TW" ? "更新時間" : "更新时间",
+    },
+  } as const;
+}
+
+function getBannerAnalyticsCopy(locale: Locale) {
+  return {
+    liveCount: (count: number) => (locale === "en" ? `${count} live` : locale === "zh-TW" ? `${count} 條展示中` : `${count} 条展示中`),
+    scheduledCount: (count: number) =>
+      locale === "en" ? `${count} scheduled` : locale === "zh-TW" ? `${count} 條待生效` : `${count} 条待生效`,
+    inactiveCount: (count: number) =>
+      locale === "en" ? `${count} inactive` : locale === "zh-TW" ? `${count} 條未啟用` : `${count} 条未启用`,
+    heroSlot: (slot: number) => (locale === "en" ? `Hero slot ${slot}` : locale === "zh-TW" ? `首頁第 ${slot} 位` : `首页第 ${slot} 位`),
+    standby: locale === "en" ? "Standby" : locale === "zh-TW" ? "候補位" : "候补位",
+    order: (sortOrder: number) => (locale === "en" ? `Order ${sortOrder}` : `排序 ${sortOrder}`),
+    performance: locale === "en" ? "Performance" : locale === "zh-TW" ? "表現數據" : "表现数据",
+    impressions: locale === "en" ? "Impressions" : locale === "zh-TW" ? "曝光" : "曝光",
+    clicks: locale === "en" ? "Clicks" : locale === "zh-TW" ? "點擊" : "点击",
+    recentImpressions: locale === "en" ? "7D impressions" : locale === "zh-TW" ? "7日曝光" : "7日曝光",
+    recentClicks: locale === "en" ? "7D clicks" : locale === "zh-TW" ? "7日點擊" : "7日点击",
+    primarySlot: locale === "en" ? "Primary slot" : locale === "zh-TW" ? "主位表現" : "主位表现",
+    secondarySlot: locale === "en" ? "Secondary slot" : locale === "zh-TW" ? "次位表現" : "次位表现",
+    shortImpressions: locale === "en" ? "Imp" : locale === "zh-TW" ? "曝光" : "曝光",
+    shortClicks: locale === "en" ? "Clk" : locale === "zh-TW" ? "點擊" : "点击",
+    lastImpression: locale === "en" ? "Last impression" : locale === "zh-TW" ? "最近曝光" : "最近曝光",
+    lastClick: locale === "en" ? "Last click" : locale === "zh-TW" ? "最近點擊" : "最近点击",
+    trendTitle: locale === "en" ? "7 day trend" : locale === "zh-TW" ? "7日趨勢" : "7日趋势",
+    targetLink: locale === "en" ? "Target link" : locale === "zh-TW" ? "跳轉連結" : "跳转链接",
+    duplicate: locale === "en" ? "Duplicate" : locale === "zh-TW" ? "複製" : "复制",
+    empty:
+      locale === "en"
+        ? "No homepage banners yet. Create one to let the homepage hero prefer database-managed banners."
+        : locale === "zh-TW"
+          ? "目前還沒有首頁 Banner，建立後首頁首屏會優先讀取資料庫設定。"
+          : "当前还没有首页 Banner，创建后首页首屏会优先读取数据库配置。",
+  } as const;
+}
+
 function PaginationControls({
   summary,
   previousLabel,
@@ -528,8 +797,218 @@ function PaginationControls({
   );
 }
 
+function ExpansionMetricGrid({ items }: { items: Array<{ label: string; value: string; description: string }> }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => (
+        <div key={`${item.label}-${item.value}`} className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+          <p className="text-sm text-slate-500">{item.label}</p>
+          <p className="mt-2 text-3xl font-semibold text-white">{item.value}</p>
+          <p className="mt-2 text-sm text-slate-400">{item.description}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ExpansionRowsPanel({ title, rows }: { title: string; rows: Array<{ title: string; subtitle?: string; status?: string; tone?: "good" | "warn" | "neutral"; meta?: string[] }> }) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <span className="text-sm text-slate-500">{rows.length}</span>
+      </div>
+      <div className="mt-5 grid gap-4">
+        {rows.map((row) => (
+          <div key={`${title}-${row.title}`} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium text-white">{row.title}</p>
+                {row.subtitle ? <p className="mt-2 text-sm text-slate-400">{row.subtitle}</p> : null}
+              </div>
+              {row.status ? <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(row.tone)}`}>{row.status}</span> : null}
+            </div>
+            {row.meta && row.meta.length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {row.meta.map((item) => (
+                  <span key={`${row.title}-${item}`} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExpansionParametersPanel({ title, rows }: { title: string; rows: Array<{ label: string; value: string; hint?: string }> }) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+      <h3 className="text-xl font-semibold text-white">{title}</h3>
+      <div className="mt-5 grid gap-3">
+        {rows.map((row) => (
+          <div key={`${title}-${row.label}`} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-medium text-white">{row.label}</p>
+              <code className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-200">{row.value}</code>
+            </div>
+            {row.hint ? <p className="mt-2 text-sm text-slate-400">{row.hint}</p> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FinanceRechargeOrdersPanel({
+  title,
+  locale,
+  orders,
+}: {
+  title: string;
+  locale: Locale;
+  orders: Array<{
+    id: string;
+    orderNo: string;
+    userDisplayName: string;
+    userEmail: string;
+    packageTitle: string;
+    totalCoins: number;
+    amount: number;
+    status: "pending" | "paid" | "failed" | "closed" | "refunded";
+    provider: "mock" | "manual" | "hosted";
+    paymentReference?: string;
+    failureReason?: string;
+    refundReason?: string;
+    createdAt: string;
+    updatedAt: string;
+    paidAt?: string;
+    creditedAt?: string;
+  }>;
+}) {
+  const actionLabel = {
+    markPaid:
+      locale === "en" ? "Mark paid" : locale === "zh-TW" ? "補單入賬" : "补单入账",
+    markFailed:
+      locale === "en" ? "Mark failed" : locale === "zh-TW" ? "記為失敗" : "记为失败",
+    close: locale === "en" ? "Close" : locale === "zh-TW" ? "關閉" : "关闭",
+    refund: locale === "en" ? "Refund" : locale === "zh-TW" ? "退款" : "退款",
+    empty:
+      locale === "en"
+        ? "No coin recharge orders yet. Create one manually from the admin form above."
+        : locale === "zh-TW"
+          ? "目前還沒有球幣充值訂單，可先用上方表單建立手動訂單。"
+          : "当前还没有球币充值订单，可先用上方表单建立手动订单。",
+  };
+
+  return (
+    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <span className="text-sm text-slate-500">{orders.length}</span>
+      </div>
+      <div className="mt-5 grid gap-4">
+        {orders.length > 0 ? (
+          orders.map((order) => {
+            const statusMeta = getCoinRechargeOrderStatusMeta(order.status, locale);
+
+            return (
+              <div key={order.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-white">{order.orderNo}</p>
+                    <p className="mt-2 text-sm text-slate-400">
+                      {order.userDisplayName} / {order.userEmail}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-300">
+                      {order.packageTitle} / {order.totalCoins} / {formatPrice(order.amount, locale)}
+                    </p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>
+                    {statusMeta.label}
+                  </span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {order.provider}
+                  </span>
+                  {order.paymentReference ? (
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                      {order.paymentReference}
+                    </span>
+                  ) : null}
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {formatDateTime(order.updatedAt, locale)}
+                  </span>
+                  {order.creditedAt ? (
+                    <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-xs text-lime-100">
+                      {locale === "en"
+                        ? `Credited ${formatDateTime(order.creditedAt, locale)}`
+                        : locale === "zh-TW"
+                          ? `已入賬 ${formatDateTime(order.creditedAt, locale)}`
+                          : `已入账 ${formatDateTime(order.creditedAt, locale)}`}
+                    </span>
+                  ) : null}
+                </div>
+                {order.failureReason ? <p className="mt-3 text-sm text-orange-100">{order.failureReason}</p> : null}
+                {order.refundReason ? <p className="mt-3 text-sm text-slate-300">{order.refundReason}</p> : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(order.status === "pending" || order.status === "failed" || order.status === "closed") ? (
+                    <form action="/api/admin/finance/recharge-orders" method="post">
+                      <input type="hidden" name="intent" value="mark-paid" />
+                      <input type="hidden" name="orderId" value={order.id} />
+                      <button type="submit" className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:bg-lime-300/15">
+                        {actionLabel.markPaid}
+                      </button>
+                    </form>
+                  ) : null}
+                  {order.status === "pending" ? (
+                    <>
+                      <form action="/api/admin/finance/recharge-orders" method="post">
+                        <input type="hidden" name="intent" value="mark-failed" />
+                        <input type="hidden" name="orderId" value={order.id} />
+                        <button type="submit" className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15">
+                          {actionLabel.markFailed}
+                        </button>
+                      </form>
+                      <form action="/api/admin/finance/recharge-orders" method="post">
+                        <input type="hidden" name="intent" value="close" />
+                        <input type="hidden" name="orderId" value={order.id} />
+                        <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/20 hover:text-white">
+                          {actionLabel.close}
+                        </button>
+                      </form>
+                    </>
+                  ) : null}
+                  {order.status === "paid" ? (
+                    <form action="/api/admin/finance/recharge-orders" method="post">
+                      <input type="hidden" name="intent" value="refund" />
+                      <input type="hidden" name="orderId" value={order.id} />
+                      <button type="submit" className="rounded-full border border-rose-300/20 bg-rose-400/10 px-4 py-2 text-sm text-rose-100 transition hover:bg-rose-400/15">
+                        {actionLabel.refund}
+                      </button>
+                    </form>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="rounded-[1.2rem] border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-sm text-slate-400">
+            {actionLabel.empty}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default async function AdminPage({ searchParams }: { searchParams: SearchParams }) {
-  const locale = await getCurrentLocale();
+  const displayLocale = await getCurrentDisplayLocale();
+  const locale = resolveRenderLocale(displayLocale);
   const { entitlements } = await getSessionContext();
 
   if (!entitlements.isAuthenticated) {
@@ -541,90 +1020,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   }
 
   const adminPageCopy = getAdminPageCopy(locale);
+  const adminExpansion = getAdminExpansionData(locale);
   const aiImportPanelCopy = adminPageCopy.aiImport;
   const opsCopy = getOpsCopy(locale);
   const paymentRuntime = getPaymentRuntimeConfig();
   const manualCollection = getPaymentManualCollectionConfig();
   const paymentCheckoutFlow = getPaymentCheckoutFlow(paymentRuntime.provider);
-  const paymentRuntimeTitle = locale === "en" ? "Payment runtime" : locale === "zh-TW" ? "支付執行環境" : "支付运行环境";
-  const paymentMinutesLabel = locale === "en" ? `${paymentRuntime.pendingMinutes} min` : locale === "zh-TW" ? `${paymentRuntime.pendingMinutes} 分鐘` : `${paymentRuntime.pendingMinutes} 分钟`;
-  const paymentAuthModeLabel =
-    locale === "en"
-      ? paymentRuntime.callbackAuthMode
-      : locale === "zh-TW"
-        ? paymentRuntime.callbackAuthMode === "shared-token"
-          ? "共享令牌"
-          : "共享令牌 + HMAC"
-        : paymentRuntime.callbackAuthMode === "shared-token"
-          ? "共享令牌"
-          : "共享令牌 + HMAC";
-  const paymentAuthModeTitle = locale === "en" ? "Callback auth" : locale === "zh-TW" ? "回調鑑權" : "回调鉴权";
-  const paymentCallbackAddressTitle = locale === "en" ? "Callback URL" : locale === "zh-TW" ? "回調完整地址" : "回调完整地址";
-  const paymentCollectionTitle = locale === "en" ? "Collection config" : locale === "zh-TW" ? "收款配置" : "收款配置";
-  const paymentHostedTitle = locale === "en" ? "Hosted gateway" : locale === "zh-TW" ? "託管通道" : "托管通道";
-  const paymentCheckoutModeTitle = locale === "en" ? "Checkout mode" : locale === "zh-TW" ? "收銀模式" : "收银模式";
-  const paymentCollectionReady = locale === "en" ? "Configured" : locale === "zh-TW" ? "已配置" : "已配置";
-  const paymentCollectionMissing = locale === "en" ? "Missing" : locale === "zh-TW" ? "未配置" : "未配置";
-  const paymentHostedReady = locale === "en" ? "Ready" : locale === "zh-TW" ? "可用" : "可用";
-  const paymentHostedMissing = locale === "en" ? "Not ready" : locale === "zh-TW" ? "未就緒" : "未就绪";
-  const paymentCheckoutModeLabel =
-    paymentCheckoutFlow.mode === "manual-review"
-      ? locale === "en"
-        ? "Manual review"
-        : locale === "zh-TW"
-          ? "人工核銷"
-          : "人工核销"
-      : locale === "en"
-        ? "Mock actions"
-        : locale === "zh-TW"
-          ? "模擬操作"
-          : "模拟操作";
-  const paymentSiteUrlHint =
-    locale === "en"
-      ? "Set `PAYMENT_CALLBACK_BASE_URL` or `SITE_URL` so the gateway can call back with a public URL."
-      : locale === "zh-TW"
-        ? "請配置 `PAYMENT_CALLBACK_BASE_URL` 或 `SITE_URL`，讓支付通道能回調到公開位址。"
-        : "请配置 `PAYMENT_CALLBACK_BASE_URL` 或 `SITE_URL`，让支付通道能回调到公开地址。";
-  const paymentCollectionHint =
-    locale === "en"
-      ? "Set manual collection env fields so checkout can show account or QR details."
-      : locale === "zh-TW"
-        ? "請配置人工收款環境變數，讓收銀頁可展示帳號或二維碼資訊。"
-        : "请配置人工收款环境变量，让收银页可展示账号或二维码信息。";
-  const paymentHostedHint =
-    locale === "en"
-      ? "Set hosted gateway URL, merchant ID, and signing secret before switching `PAYMENT_PROVIDER=hosted`."
-      : locale === "zh-TW"
-        ? "切到 `PAYMENT_PROVIDER=hosted` 前，請先配置託管通道 URL、商戶號與簽名密鑰。"
-        : "切到 `PAYMENT_PROVIDER=hosted` 前，请先配置托管通道 URL、商户号与签名密钥。";
-  const paymentCallbacksCopy = {
-    title: locale === "en" ? "Callback events" : locale === "zh-TW" ? "回調事件" : "回调事件",
-    subtitle:
-      locale === "en"
-        ? "Latest gateway notifications and dedupe results."
-        : locale === "zh-TW"
-          ? "查看最新支付回調與去重結果。"
-          : "查看最新支付回调与去重结果。",
-    metrics: {
-      total: locale === "en" ? "Events" : locale === "zh-TW" ? "事件數" : "事件数",
-      duplicates: locale === "en" ? "Duplicates" : locale === "zh-TW" ? "重複" : "重复",
-      conflicts: locale === "en" ? "Conflicts" : locale === "zh-TW" ? "衝突" : "冲突",
-      failed: locale === "en" ? "Failed" : locale === "zh-TW" ? "失敗" : "失败",
-    },
-    latestLabel: locale === "en" ? "Latest seen" : locale === "zh-TW" ? "最近收到" : "最近收到",
-    empty:
-      locale === "en"
-        ? "No callback events yet. Once the gateway posts back, status and dedupe traces will appear here."
-        : locale === "zh-TW"
-          ? "目前還沒有回調事件。支付通道開始回調後，這裡會顯示狀態與去重痕跡。"
-          : "当前还没有回调事件。支付通道开始回调后，这里会显示状态与去重痕迹。",
-    stateTitle: locale === "en" ? "State" : locale === "zh-TW" ? "回調狀態" : "回调状态",
-    resultTitle: locale === "en" ? "Result" : locale === "zh-TW" ? "處理結果" : "处理结果",
-    orderIdLabel: locale === "en" ? "Order ID" : locale === "zh-TW" ? "訂單 ID" : "订单 ID",
-    eventIdLabel: locale === "en" ? "Event ID" : locale === "zh-TW" ? "事件 ID" : "事件 ID",
-    eventKeyLabel: locale === "en" ? "Event key" : locale === "zh-TW" ? "事件鍵" : "事件键",
-    duplicateSuffix: locale === "en" ? "duplicate hits" : locale === "zh-TW" ? "次重複命中" : "次重复命中",
-  } as const;
+  const paymentRuntimeCopy = getPaymentRuntimeCopy(locale, paymentRuntime, paymentCheckoutFlow);
   const { matchStatusLabels, roleLabels } = getSiteCopy(locale);
   const resolved = await searchParams;
   const tab = pickValue(resolved.tab, "overview");
@@ -660,7 +1062,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const membershipPage = pickPositiveInt(resolved.membershipPage, 1);
   const contentPage = pickPositiveInt(resolved.contentPage, 1);
 
-  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests] = await Promise.all([
+  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard] = await Promise.all([
     getMatchesBySport("football", locale),
     getMatchesBySport("basketball", locale),
     getMatchesBySport("cricket", locale),
@@ -692,6 +1094,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     getRecentSyncRuns(),
     getSyncRotationPlan(),
     getAdminAssistantHandoffRequests(),
+    getAdminFinanceDashboard(locale),
   ]);
 
   const matches = [...footballMatches, ...basketballMatches, ...cricketMatches, ...esportsMatches];
@@ -727,6 +1130,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const currentAnnouncement = siteAnnouncements.find((item) => item.id === editAnnouncementId);
   const currentPrediction = predictionRecords.find((item) => item.id === editPredictionId);
   const currentKnowledgeItem = supportKnowledgeItems.find((item) => item.id === editKnowledgeId);
+  const assistantAdminCopy = getAssistantAdminCopy(locale, Boolean(currentKnowledgeItem));
+  const bannerAnalyticsCopy = getBannerAnalyticsCopy(locale);
   const filteredArticlePlans = articlePlans.filter((plan) => {
     if (contentSport !== "all" && plan.sport !== contentSport) {
       return false;
@@ -970,7 +1375,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
   const usersTabHref = buildAdminUsersHref(usersTabFilters);
   const orderExportHref = `/api/admin/orders/export?${orderExportParams.toString()}`;
-  const currentOrderFilterSummary = buildAdminOrderFilterSummary(usersTabFilters, adminPageCopy, locale);
+  const currentOrderFilterSummary = buildAdminOrderFilterSummary(usersTabFilters, adminPageCopy, displayLocale);
 
   const contentNotice = error
     ? adminPageCopy.content.notices.saveFailed
@@ -1012,9 +1417,35 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         ? adminPageCopy.users.refundNotices.blocked
       : error === "order-status"
       ? opsCopy.adminOrders.statusFailed
-        : error === "refund"
+      : error === "refund"
           ? adminPageCopy.users.refundNotices.failed
           : null;
+  const financeNotice =
+    saved === "coin-package-seeded"
+      ? locale === "en"
+        ? "Default coin packages were initialized."
+        : locale === "zh-TW"
+          ? "預設球幣套餐已初始化。"
+          : "默认球币套餐已初始化。"
+      : saved === "coin-recharge-order"
+        ? locale === "en"
+          ? "Coin recharge order was updated."
+          : locale === "zh-TW"
+            ? "球幣充值訂單已更新。"
+            : "球币充值订单已更新。"
+        : error === "coin-recharge-order-balance"
+          ? locale === "en"
+            ? "Refund was blocked because the member coin balance is insufficient."
+            : locale === "zh-TW"
+              ? "退款已攔截，會員球幣餘額不足。"
+              : "退款已拦截，会员球币余额不足。"
+          : error === "coin-package" || error === "coin-recharge-order"
+            ? locale === "en"
+              ? "Finance action failed. Please check the form and try again."
+              : locale === "zh-TW"
+                ? "財務操作失敗，請檢查表單後重試。"
+                : "财务操作失败，请检查表单后重试。"
+            : null;
   const predictionNotice =
     saved === "prediction"
       ? aiImportPanelCopy.notices.saved
@@ -1025,133 +1456,31 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : null;
   const knowledgeNotice =
     saved === "assistant-knowledge"
-        ? locale === "en"
-          ? "Assistant knowledge item saved."
-          : locale === "zh-TW"
-            ? "AI 客服知識條目已保存。"
-            : "AI 客服知识条目已保存。"
+        ? assistantAdminCopy.knowledgeNotice.saved
       : saved === "assistant-knowledge-seeded"
-        ? locale === "en"
-          ? "Default assistant knowledge seeds imported."
-          : locale === "zh-TW"
-            ? "預設 AI 客服知識種子已導入。"
-            : "默认 AI 客服知识种子已导入。"
+        ? assistantAdminCopy.knowledgeNotice.seeded
       : error === "assistant-knowledge"
-          ? locale === "en"
-            ? "Assistant knowledge operation failed."
-            : locale === "zh-TW"
-              ? "AI 客服知識操作失敗。"
-              : "AI 客服知识操作失败。"
+          ? assistantAdminCopy.knowledgeNotice.failed
         : null;
   const assistantHandoffNotice =
     saved === "assistant-handoff"
-      ? locale === "en"
-        ? "Assistant handoff request marked as resolved."
-        : locale === "zh-TW"
-          ? "AI 助手轉接請求已標記為完成。"
-          : "AI 助手转接请求已标记为完成。"
+      ? assistantAdminCopy.handoffNotice.saved
       : error === "assistant-handoff"
-        ? locale === "en"
-          ? "Assistant handoff action failed."
-          : locale === "zh-TW"
-            ? "AI 助手轉接操作失敗。"
-            : "AI 助手转接操作失败。"
+        ? assistantAdminCopy.handoffNotice.failed
         : null;
-  const assistantSupportCopy = {
-    eyebrow: locale === "en" ? "Support Queue" : locale === "zh-TW" ? "客服轉接" : "客服转接",
-    title: locale === "en" ? "AI assistant handoff queue" : locale === "zh-TW" ? "AI 助手人工轉接隊列" : "AI 助手人工转接队列",
-    description:
-      locale === "en"
-        ? "Requests raised from the floating assistant will appear here for follow-up."
-        : locale === "zh-TW"
-          ? "使用者在右下角助手中發起的人工轉接請求，會集中顯示在這裡。"
-          : "用户在右下角助手中发起的人工转接请求，会集中显示在这里。",
-    pending: locale === "en" ? "Pending" : locale === "zh-TW" ? "待處理" : "待处理",
-    resolved: locale === "en" ? "Resolved" : locale === "zh-TW" ? "已完成" : "已完成",
-    empty:
-      locale === "en"
-        ? "No assistant handoff requests yet."
-        : locale === "zh-TW"
-          ? "目前還沒有 AI 助手轉接請求。"
-          : "目前还没有 AI 助手转接请求。",
-    contact: locale === "en" ? "Contact" : locale === "zh-TW" ? "聯絡方式" : "联系方式",
-    requester: locale === "en" ? "Requester" : locale === "zh-TW" ? "發起人" : "发起人",
-    note: locale === "en" ? "Note" : locale === "zh-TW" ? "補充說明" : "补充说明",
-    conversation: locale === "en" ? "Conversation" : locale === "zh-TW" ? "會話" : "会话",
-    markResolved: locale === "en" ? "Mark resolved" : locale === "zh-TW" ? "標記完成" : "标记完成",
-  };
-  const assistantKnowledgeCopy = {
-    eyebrow: locale === "en" ? "Knowledge Base" : locale === "zh-TW" ? "知識庫" : "知识库",
-    title: locale === "en" ? "Assistant FAQ knowledge" : locale === "zh-TW" ? "AI 客服 FAQ 知識庫" : "AI 客服 FAQ 知识库",
-    description:
-      locale === "en"
-        ? "Maintain website-specific Q&A entries used by the floating assistant and fallback answers."
-        : locale === "zh-TW"
-          ? "維護右下角 AI 客服使用的站內問答知識，供真實模型與備援回覆共同使用。"
-          : "维护右下角 AI 客服使用的站内问答知识，供真实模型与备用回复共同使用。",
-    formTitle: currentKnowledgeItem
-      ? locale === "en"
-        ? "Edit knowledge item"
-        : locale === "zh-TW"
-          ? "編輯知識條目"
-          : "编辑知识条目"
-      : locale === "en"
-        ? "Create knowledge item"
-        : locale === "zh-TW"
-          ? "新增知識條目"
-          : "新增知识条目",
-    count: (count: number) =>
-      locale === "en" ? `${count} items` : locale === "zh-TW" ? `${count} 條` : `${count} 条`,
-    active: locale === "en" ? "Active" : locale === "zh-TW" ? "啟用中" : "启用中",
-    inactive: locale === "en" ? "Inactive" : locale === "zh-TW" ? "未啟用" : "未启用",
-    seed: locale === "en" ? "Import defaults" : locale === "zh-TW" ? "導入預設" : "导入默认",
-    save: locale === "en" ? "Save knowledge" : locale === "zh-TW" ? "保存知識" : "保存知识",
-    edit: locale === "en" ? "Edit" : locale === "zh-TW" ? "編輯" : "编辑",
-    moveUp: locale === "en" ? "Move up" : locale === "zh-TW" ? "上移" : "上移",
-    moveDown: locale === "en" ? "Move down" : locale === "zh-TW" ? "下移" : "下移",
-    enable: locale === "en" ? "Enable" : locale === "zh-TW" ? "啟用" : "启用",
-    disable: locale === "en" ? "Disable" : locale === "zh-TW" ? "停用" : "停用",
-    empty:
-      locale === "en"
-        ? "No assistant knowledge items yet. Import defaults first or create a custom FAQ."
-        : locale === "zh-TW"
-          ? "目前還沒有 AI 客服知識條目，可先導入預設問答或建立自定義 FAQ。"
-          : "目前还没有 AI 客服知识条目，可先导入默认问答或创建自定义 FAQ。",
-    fields: {
-      key: locale === "en" ? "Unique key" : locale === "zh-TW" ? "唯一 key" : "唯一 key",
-      category: locale === "en" ? "Category" : locale === "zh-TW" ? "分類" : "分类",
-      href: locale === "en" ? "Related route" : locale === "zh-TW" ? "關聯路由" : "关联路由",
-      tagsText: locale === "en" ? "Tags" : locale === "zh-TW" ? "標籤" : "标签",
-      sortOrder: locale === "en" ? "Sort order" : locale === "zh-TW" ? "排序" : "排序",
-      status: locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态",
-      questionZhCn: locale === "en" ? "Question (zh-CN)" : locale === "zh-TW" ? "問題（简体）" : "问题（简体）",
-      questionZhTw: locale === "en" ? "Question (zh-TW)" : locale === "zh-TW" ? "問題（繁體）" : "问题（繁体）",
-      questionEn: locale === "en" ? "Question (EN)" : locale === "zh-TW" ? "問題（英文）" : "问题（英文）",
-      answerZhCn: locale === "en" ? "Answer (zh-CN)" : locale === "zh-TW" ? "答案（简体）" : "答案（简体）",
-      answerZhTw: locale === "en" ? "Answer (zh-TW)" : locale === "zh-TW" ? "答案（繁體）" : "答案（繁体）",
-      answerEn: locale === "en" ? "Answer (EN)" : locale === "zh-TW" ? "答案（英文）" : "答案（英文）",
-    },
-    tagsHint:
-      locale === "en"
-        ? "Separate tags with commas, line breaks, or pipes."
-        : locale === "zh-TW"
-          ? "標籤可用逗號、換行或豎線分隔。"
-          : "标签可用逗号、换行或竖线分隔。",
-    statusLabels: {
-      active: locale === "en" ? "Active" : locale === "zh-TW" ? "啟用" : "启用",
-      inactive: locale === "en" ? "Inactive" : locale === "zh-TW" ? "停用" : "停用",
-    },
-    localePreview: locale === "en" ? "Locale preview" : locale === "zh-TW" ? "多語預覽" : "多语预览",
-    answerLabel: locale === "en" ? "Answer" : locale === "zh-TW" ? "答案" : "答案",
-    routeLabel: locale === "en" ? "Route" : locale === "zh-TW" ? "路由" : "路由",
-    updatedAt: locale === "en" ? "Updated" : locale === "zh-TW" ? "更新時間" : "更新时间",
-  };
+  const assistantSupportCopy = assistantAdminCopy.support;
+  const assistantKnowledgeCopy = assistantAdminCopy.knowledge;
   const assistantPendingCount = assistantHandoffRequests.filter((item) => item.status === "pending").length;
   const assistantResolvedCount = assistantHandoffRequests.filter((item) => item.status === "resolved").length;
   const assistantKnowledgeActiveCount = supportKnowledgeItems.filter((item) => item.status === "active").length;
   const assistantKnowledgeCategories = Array.from(new Set(supportKnowledgeItems.map((item) => item.category))).sort((left, right) =>
     left.localeCompare(right),
   );
+  const financePackageRows = buildFinancePackageCards(locale, financeDashboard.coinPackages);
+  const financeSettlementRows =
+    financeDashboard.settlementRows.length > 0
+      ? financeDashboard.settlementRows
+      : adminExpansion.finance.settlements.rows;
   const sortedMatches = [...matches].sort((left, right) => new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime());
   const matchLookup = new Map(sortedMatches.map((match) => [match.id, match]));
   const currentFeaturedSlotMatchValue =
@@ -1331,7 +1660,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     </div>
                   ) : null}
                   <p className="mt-4 text-xs text-slate-500">
-                    {formatDateTime(item.createdAt, locale)} / {item.locale}
+                    {formatDateTime(item.createdAt, displayLocale)} / {item.locale}
                   </p>
                 </div>
               ))
@@ -1394,10 +1723,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
               <div className="flex flex-wrap gap-3 text-xs text-slate-300">
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
-                  {opsCopy.sync.currentWindowLabel} {formatDateTime(syncRotationPlan.currentSlotStartedAt, locale)}
+                  {opsCopy.sync.currentWindowLabel} {formatDateTime(syncRotationPlan.currentSlotStartedAt, displayLocale)}
                 </span>
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
-                  {opsCopy.sync.nextWindowLabel} {formatDateTime(syncRotationPlan.nextSlotStartsAt, locale)}
+                  {opsCopy.sync.nextWindowLabel} {formatDateTime(syncRotationPlan.nextSlotStartsAt, displayLocale)}
                 </span>
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
                   {opsCopy.sync.cooldownLabel} {syncRotationPlan.cooldownSeconds}s
@@ -1463,8 +1792,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   </div>
                   <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-300">
                     {run.source ? <span>{opsCopy.sync.sourceLabel} {run.source}</span> : null}
-                    <span>{opsCopy.sync.startedAt} {formatDateTime(run.startedAt, locale)}</span>
-                    {run.finishedAt ? <span>{opsCopy.sync.finishedAt} {formatDateTime(run.finishedAt, locale)}</span> : null}
+                    <span>{opsCopy.sync.startedAt} {formatDateTime(run.startedAt, displayLocale)}</span>
+                    {run.finishedAt ? <span>{opsCopy.sync.finishedAt} {formatDateTime(run.finishedAt, displayLocale)}</span> : null}
                     {run.countsSummary ? <span>{opsCopy.sync.counts} {run.countsSummary}</span> : null}
                   </div>
                   {run.sports && run.sports.length > 0 ? (
@@ -1496,6 +1825,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
               ) : null}
             </div>
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <ExpansionRowsPanel title={adminExpansion.events.dataSources.title} rows={adminExpansion.events.dataSources.rows} />
+            <ExpansionRowsPanel title={adminExpansion.events.manualPatches.title} rows={adminExpansion.events.manualPatches.rows} />
+            <ExpansionRowsPanel title={adminExpansion.events.leagues.title} rows={adminExpansion.events.leagues.rows} />
           </div>
           <div className="mt-6 grid gap-4">
             {matches.map((match) => (
@@ -1671,7 +2005,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
             <div className="mt-5 grid gap-4 xl:grid-cols-2">
               {homepageReadinessItems.map((item) => {
-                const stateMeta = getReadinessStateMeta(item.state, locale);
+                const stateMeta = getReadinessStateMeta(item.state);
 
                 return (
                   <div
@@ -1759,7 +2093,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       </div>
                       <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
                         <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{adminPageCopy.content.featuredMatchesPreview.kickoffLabel}</p>
-                        <p className="mt-2 font-medium text-white">{match.clock ? match.clock : formatDateTime(match.kickoff, locale)}</p>
+                        <p className="mt-2 font-medium text-white">{match.clock ? match.clock : formatDateTime(match.kickoff, displayLocale)}</p>
                       </div>
                       <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
                         <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{adminPageCopy.content.featuredMatchesPreview.matchIdLabel}</p>
@@ -1844,7 +2178,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     <option value="">{adminPageCopy.content.featuredSlotForm.matchPlaceholder}</option>
                     {sortedMatches.map((match) => (
                       <option key={`featured-slot-option-${match.id}`} value={match.id}>
-                        {adminPageCopy.shared.sports[match.sport]} | {match.leagueName ?? match.leagueSlug} | {match.homeTeam} vs {match.awayTeam} | {formatDateTime(match.kickoff, locale)}
+                        {adminPageCopy.shared.sports[match.sport]} | {match.leagueName ?? match.leagueSlug} | {match.homeTeam} vs {match.awayTeam} | {formatDateTime(match.kickoff, displayLocale)}
                       </option>
                     ))}
                   </select>
@@ -2270,7 +2604,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       <div>
                         <p className="font-medium text-white">{plan.title}</p>
                         <p className="mt-1 text-xs text-slate-500">
-                          {plan.leagueLabel} | {formatDateTime(plan.kickoff, locale)}
+                          {plan.leagueLabel} | {formatDateTime(plan.kickoff, displayLocale)}
                         </p>
                         {plan.matchId ? (
                           <p className="mt-1 text-xs text-slate-500">
@@ -2291,7 +2625,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     </div>
                     <p className="mt-3 text-sm text-slate-400">{plan.teaser}</p>
                     <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-300">
-                      <span>{formatPrice(plan.price, locale)}</span>
+                      <span>{formatPrice(plan.price, displayLocale)}</span>
                       <span>{plan.performance}</span>
                       <span>{adminPageCopy.shared.sports[plan.sport as keyof typeof adminPageCopy.shared.sports]}</span>
                     </div>
@@ -2340,11 +2674,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 ))}
                 {filteredArticlePlans.length === 0 ? (
                   <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
-                    {locale === "en"
-                      ? "No plans match the current sport filter."
-                      : locale === "zh-TW"
-                        ? "目前篩選條件下沒有計畫單。"
-                        : "当前筛选条件下没有计划单。"}
+                    {adminPageCopy.content.planList.empty}
                   </div>
                 ) : null}
               </div>
@@ -2353,7 +2683,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
           <div id="homepage-banner-form" className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
             <AdminBannerComposer
-              locale={locale}
+              locale={displayLocale}
               currentBanner={currentBanner}
               homepageBannerCount={homepageBanners.length}
               cancelLabel={adminPageCopy.shared.cancelEdit}
@@ -2374,13 +2704,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     {adminPageCopy.content.bannerList.count(homepageBanners.length)}
                   </span>
                   <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-xs text-lime-100">
-                    {locale === "en" ? `${activeLiveBannerCount} live` : locale === "zh-TW" ? `${activeLiveBannerCount} 條展示中` : `${activeLiveBannerCount} 条展示中`}
+                    {bannerAnalyticsCopy.liveCount(activeLiveBannerCount)}
                   </span>
                   <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">
-                    {locale === "en" ? `${scheduledBannerCount} scheduled` : locale === "zh-TW" ? `${scheduledBannerCount} 條待生效` : `${scheduledBannerCount} 条待生效`}
+                    {bannerAnalyticsCopy.scheduledCount(scheduledBannerCount)}
                   </span>
                   <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
-                    {locale === "en" ? `${inactiveBannerCount} inactive` : locale === "zh-TW" ? `${inactiveBannerCount} 條未啟用` : `${inactiveBannerCount} 条未启用`}
+                    {bannerAnalyticsCopy.inactiveCount(inactiveBannerCount)}
                   </span>
                 </div>
               </div>
@@ -2393,16 +2723,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       const homepageSlotIndex = homepageHeroBannerIds.findIndex((id) => id === banner.id);
                       const homepageSlotLabel =
                         homepageSlotIndex >= 0
-                          ? locale === "en"
-                            ? `Hero slot ${homepageSlotIndex + 1}`
-                            : locale === "zh-TW"
-                              ? `首頁第 ${homepageSlotIndex + 1} 位`
-                              : `首页第 ${homepageSlotIndex + 1} 位`
-                          : locale === "en"
-                            ? "Standby"
-                            : locale === "zh-TW"
-                              ? "候補位"
-                              : "候补位";
+                          ? bannerAnalyticsCopy.heroSlot(homepageSlotIndex + 1)
+                          : bannerAnalyticsCopy.standby;
 
                       return (
                         <>
@@ -2424,7 +2746,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                             {runState.label}
                           </span>
                           <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
-                            {locale === "en" ? `Order ${banner.sortOrder}` : locale === "zh-TW" ? `排序 ${banner.sortOrder}` : `排序 ${banner.sortOrder}`}
+                            {bannerAnalyticsCopy.order(banner.sortOrder)}
                           </span>
                           <span className={`rounded-full border px-3 py-1 text-xs ${
                             homepageSlotIndex >= 0
@@ -2449,18 +2771,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       <div className="grid gap-3 text-sm md:grid-cols-2">
                         <div className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-3 text-slate-300">
                           <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                            {locale === "en" ? "Performance" : locale === "zh-TW" ? "表現數據" : "表现数据"}
+                            {bannerAnalyticsCopy.performance}
                           </p>
                           <div className="mt-3 grid grid-cols-3 gap-2">
                             <div className="rounded-xl border border-white/8 bg-slate-950/50 p-3">
                               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                                {locale === "en" ? "Impressions" : locale === "zh-TW" ? "曝光" : "曝光"}
+                                {bannerAnalyticsCopy.impressions}
                               </p>
                               <p className="mt-2 text-lg font-semibold text-white">{banner.impressionCount}</p>
                             </div>
                             <div className="rounded-xl border border-white/8 bg-slate-950/50 p-3">
                               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                                {locale === "en" ? "Clicks" : locale === "zh-TW" ? "點擊" : "点击"}
+                                {bannerAnalyticsCopy.clicks}
                               </p>
                               <p className="mt-2 text-lg font-semibold text-white">{banner.clickCount}</p>
                             </div>
@@ -2476,13 +2798,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           <div className="mt-3 grid grid-cols-3 gap-2">
                             <div className="rounded-xl border border-white/8 bg-slate-950/50 p-3">
                               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                                {locale === "en" ? "7D impressions" : locale === "zh-TW" ? "7日曝光" : "7日曝光"}
+                                {bannerAnalyticsCopy.recentImpressions}
                               </p>
                               <p className="mt-2 text-lg font-semibold text-white">{banner.recentImpressionCount}</p>
                             </div>
                             <div className="rounded-xl border border-white/8 bg-slate-950/50 p-3">
                               <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-                                {locale === "en" ? "7D clicks" : locale === "zh-TW" ? "7日點擊" : "7日点击"}
+                                {bannerAnalyticsCopy.recentClicks}
                               </p>
                               <p className="mt-2 text-lg font-semibold text-white">{banner.recentClickCount}</p>
                             </div>
@@ -2498,15 +2820,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           <div className="mt-3 grid gap-2 sm:grid-cols-2">
                             <div className="rounded-[1rem] border border-orange-300/15 bg-orange-300/8 p-3">
                               <p className="text-[11px] uppercase tracking-[0.2em] text-orange-100/70">
-                                {locale === "en" ? "Primary slot" : locale === "zh-TW" ? "主位表現" : "主位表现"}
+                                {bannerAnalyticsCopy.primarySlot}
                               </p>
                               <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
                                 <div>
-                                  <p className="text-slate-400">{locale === "en" ? "Imp" : locale === "zh-TW" ? "曝光" : "曝光"}</p>
+                                  <p className="text-slate-400">{bannerAnalyticsCopy.shortImpressions}</p>
                                   <p className="mt-1 font-semibold text-white">{banner.primaryImpressionCount}</p>
                                 </div>
                                 <div>
-                                  <p className="text-slate-400">{locale === "en" ? "Clk" : locale === "zh-TW" ? "點擊" : "点击"}</p>
+                                  <p className="text-slate-400">{bannerAnalyticsCopy.shortClicks}</p>
                                   <p className="mt-1 font-semibold text-white">{banner.primaryClickCount}</p>
                                 </div>
                                 <div>
@@ -2521,15 +2843,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                             </div>
                             <div className="rounded-[1rem] border border-sky-300/15 bg-sky-300/8 p-3">
                               <p className="text-[11px] uppercase tracking-[0.2em] text-sky-100/70">
-                                {locale === "en" ? "Secondary slot" : locale === "zh-TW" ? "次位表現" : "次位表现"}
+                                {bannerAnalyticsCopy.secondarySlot}
                               </p>
                               <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
                                 <div>
-                                  <p className="text-slate-400">{locale === "en" ? "Imp" : locale === "zh-TW" ? "曝光" : "曝光"}</p>
+                                  <p className="text-slate-400">{bannerAnalyticsCopy.shortImpressions}</p>
                                   <p className="mt-1 font-semibold text-white">{banner.secondaryImpressionCount}</p>
                                 </div>
                                 <div>
-                                  <p className="text-slate-400">{locale === "en" ? "Clk" : locale === "zh-TW" ? "點擊" : "点击"}</p>
+                                  <p className="text-slate-400">{bannerAnalyticsCopy.shortClicks}</p>
                                   <p className="mt-1 font-semibold text-white">{banner.secondaryClickCount}</p>
                                 </div>
                                 <div>
@@ -2545,31 +2867,31 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           </div>
                           <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
                             <p>
-                              {locale === "en" ? "Last impression" : locale === "zh-TW" ? "最近曝光" : "最近曝光"}:{" "}
+                              {bannerAnalyticsCopy.lastImpression}:{" "}
                               <span className="text-slate-300">
-                                {banner.lastImpressionAt ? formatDateTime(banner.lastImpressionAt, locale) : "--"}
+                                {banner.lastImpressionAt ? formatDateTime(banner.lastImpressionAt, displayLocale) : "--"}
                               </span>
                             </p>
                             <p>
-                              {locale === "en" ? "Last click" : locale === "zh-TW" ? "最近點擊" : "最近点击"}:{" "}
+                              {bannerAnalyticsCopy.lastClick}:{" "}
                               <span className="text-slate-300">
-                                {banner.lastClickAt ? formatDateTime(banner.lastClickAt, locale) : "--"}
+                                {banner.lastClickAt ? formatDateTime(banner.lastClickAt, displayLocale) : "--"}
                               </span>
                             </p>
                           </div>
                           <div className="mt-4 rounded-[1rem] border border-white/8 bg-slate-950/45 p-3">
                             <div className="flex items-center justify-between gap-3">
                               <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                                {locale === "en" ? "7 day trend" : locale === "zh-TW" ? "7日趨勢" : "7日趋势"}
+                                {bannerAnalyticsCopy.trendTitle}
                               </p>
                               <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
                                 <span className="inline-flex items-center gap-1">
                                   <span className="h-2 w-2 rounded-full bg-sky-300" />
-                                  {locale === "en" ? "Impressions" : locale === "zh-TW" ? "曝光" : "曝光"}
+                                  {bannerAnalyticsCopy.impressions}
                                 </span>
                                 <span className="inline-flex items-center gap-1">
                                   <span className="h-2 w-2 rounded-full bg-orange-300" />
-                                  {locale === "en" ? "Clicks" : locale === "zh-TW" ? "點擊" : "点击"}
+                                  {bannerAnalyticsCopy.clicks}
                                 </span>
                               </div>
                             </div>
@@ -2587,20 +2909,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                                         <div
                                           className="w-3 rounded-full bg-sky-300/80"
                                           style={{ height: `${impressionHeight}%` }}
-                                          title={`${formatShortDateLabel(point.date, locale)} · ${
-                                            locale === "en" ? "Impressions" : locale === "zh-TW" ? "曝光" : "曝光"
-                                          }: ${point.impressionCount}`}
+                                          title={`${formatShortDateLabel(point.date, displayLocale)} · ${bannerAnalyticsCopy.impressions}: ${point.impressionCount}`}
                                         />
                                         <div
                                           className="w-3 rounded-full bg-orange-300/85"
                                           style={{ height: `${clickHeight}%` }}
-                                          title={`${formatShortDateLabel(point.date, locale)} · ${
-                                            locale === "en" ? "Clicks" : locale === "zh-TW" ? "點擊" : "点击"
-                                          }: ${point.clickCount}`}
+                                          title={`${formatShortDateLabel(point.date, displayLocale)} · ${bannerAnalyticsCopy.clicks}: ${point.clickCount}`}
                                         />
                                       </div>
                                       <span className="text-[10px] text-slate-500">
-                                        {formatShortDateLabel(point.date, locale)}
+                                        {formatShortDateLabel(point.date, displayLocale)}
                                       </span>
                                     </div>
                                   );
@@ -2621,7 +2939,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                             {formatAnnouncementWindow(
                               banner.startsAt,
                               banner.endsAt,
-                              locale,
+                              displayLocale,
                               adminPageCopy.content.bannerList.noWindow,
                             )}
                           </p>
@@ -2630,7 +2948,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </div>
                         <div className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-3 text-slate-300 md:col-span-2">
                           <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                            {locale === "en" ? "Target link" : locale === "zh-TW" ? "跳轉連結" : "跳转链接"}
+                            {bannerAnalyticsCopy.targetLink}
                           </p>
                           <p className="mt-2 break-all text-sm text-white">{banner.href}</p>
                           <p className="mt-3 text-xs uppercase tracking-[0.22em] text-slate-500">
@@ -2651,7 +2969,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           <input type="hidden" name="intent" value="duplicate" />
                           <input type="hidden" name="id" value={banner.id} />
                           <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-sky-300/30 hover:text-white">
-                            {locale === "en" ? "Duplicate" : locale === "zh-TW" ? "複製" : "复制"}
+                            {bannerAnalyticsCopy.duplicate}
                           </button>
                         </form>
                         <form action="/api/admin/operations/homepage-banners" method="post">
@@ -2684,11 +3002,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 ))}
                 {homepageBanners.length === 0 ? (
                   <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
-                    {locale === "en"
-                      ? "No homepage banners yet. Create one to let the homepage hero prefer database-managed banners."
-                      : locale === "zh-TW"
-                        ? "目前還沒有首頁 Banner，建立後首頁首屏會優先讀取資料庫設定。"
-                        : "当前还没有首页 Banner，创建后首页首屏会优先读取数据库配置。"}
+                    {bannerAnalyticsCopy.empty}
                   </div>
                 ) : null}
               </div>
@@ -2988,7 +3302,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         {adminPageCopy.content.announcementList.activeWindow}: {formatAnnouncementWindow(
                           announcement.startsAt,
                           announcement.endsAt,
-                          locale,
+                          displayLocale,
                           adminPageCopy.content.announcementList.noWindow,
                         )}
                       </p>
@@ -3035,11 +3349,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 ))}
                 {siteAnnouncements.length === 0 ? (
                   <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
-                    {locale === "en"
-                      ? "No site announcements yet. Create one to expose cross-site operating messages in the header."
-                      : locale === "zh-TW"
-                        ? "目前還沒有站內公告，建立後會顯示在全站頭部。"
-                        : "当前还没有站内公告，创建后会显示在全站头部。"}
+                    {adminPageCopy.content.announcementList.empty}
                   </div>
                 ) : null}
               </div>
@@ -3173,11 +3483,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   type="text"
                   name="knowledgeQuery"
                   defaultValue={knowledgeQuery}
-                  placeholder={locale === "en" ? "Search key / question / tags" : locale === "zh-TW" ? "搜尋 key / 問題 / 標籤" : "搜索 key / 问题 / 标签"}
+                  placeholder={assistantKnowledgeCopy.filters.searchPlaceholder}
                   className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
                 />
                 <select name="knowledgeCategory" defaultValue={knowledgeCategory} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
-                  <option value="">{locale === "en" ? "All categories" : locale === "zh-TW" ? "全部分類" : "全部分类"}</option>
+                  <option value="">{assistantKnowledgeCopy.filters.allCategories}</option>
                   {assistantKnowledgeCategories.map((category) => (
                     <option key={category} value={category}>
                       {category}
@@ -3185,15 +3495,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   ))}
                 </select>
                 <select name="knowledgeStatus" defaultValue={knowledgeStatus} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
-                  <option value="all">{locale === "en" ? "All status" : locale === "zh-TW" ? "全部狀態" : "全部状态"}</option>
+                  <option value="all">{assistantKnowledgeCopy.filters.allStatus}</option>
                   <option value="active">{assistantKnowledgeCopy.statusLabels.active}</option>
                   <option value="inactive">{assistantKnowledgeCopy.statusLabels.inactive}</option>
                 </select>
                 <button type="submit" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300">
-                  {locale === "en" ? "Apply" : locale === "zh-TW" ? "套用" : "应用"}
+                  {assistantKnowledgeCopy.filters.apply}
                 </button>
                 <Link href={buildAdminContentHref({ ...contentKnowledgeRouteState, knowledgeStatus: "all", knowledgeCategory: "", knowledgeQuery: "" })} className="inline-flex items-center justify-center rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
-                  {locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置"}
+                  {assistantKnowledgeCopy.filters.reset}
                 </Link>
               </form>
 
@@ -3217,11 +3527,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                             {item.status === "active" ? assistantKnowledgeCopy.statusLabels.active : assistantKnowledgeCopy.statusLabels.inactive}
                           </span>
                           <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">
-                            {locale === "en" ? `Order ${item.sortOrder}` : locale === "zh-TW" ? `排序 ${item.sortOrder}` : `排序 ${item.sortOrder}`}
+                            {assistantKnowledgeCopy.order(item.sortOrder)}
                           </span>
                         </div>
                         <span className="text-xs text-slate-500">
-                          {assistantKnowledgeCopy.updatedAt}: {formatDateTime(item.updatedAt, locale)}
+                          {assistantKnowledgeCopy.updatedAt}: {formatDateTime(item.updatedAt, displayLocale)}
                         </span>
                       </div>
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -3344,10 +3654,34 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           ) : null}
 
+          <div className="mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-label">{adminPageCopy.users.eyebrow}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">{adminExpansion.users.title}</h3>
+                <p className="mt-2 text-sm text-slate-400">{adminExpansion.users.description}</p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              {adminExpansion.users.detailCards.map((card) => (
+                <div key={card.title} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                  <p className="font-medium text-white">{card.title}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {card.items.map((item) => (
+                      <span key={`${card.title}-${item}`} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="mt-6 rounded-[1.4rem] border border-sky-300/15 bg-sky-400/10 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="section-label">{paymentRuntimeTitle}</p>
+                <p className="section-label">{paymentRuntimeCopy.runtimeTitle}</p>
                 <h3 className="mt-2 text-lg font-semibold text-white">{getPaymentProviderLabel(paymentRuntime.provider, locale)}</h3>
                 <p className="mt-2 max-w-3xl text-sm text-sky-100/85">{opsCopy.adminOrders.actionHint}</p>
               </div>
@@ -3361,43 +3695,43 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 <p className="mt-2 font-medium">{getPaymentProviderLabel(paymentRuntime.provider, locale)}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentCheckoutModeTitle}</p>
-                <p className="mt-2 font-medium">{paymentCheckoutModeLabel}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentRuntimeCopy.checkoutModeTitle}</p>
+                <p className="mt-2 font-medium">{paymentRuntimeCopy.checkoutModeLabel}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
                 <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{opsCopy.checkout.pendingWindowLabel}</p>
-                <p className="mt-2 font-medium">{paymentMinutesLabel}</p>
+                <p className="mt-2 font-medium">{paymentRuntimeCopy.minutesLabel}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
                 <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{opsCopy.checkout.callbackEndpointLabel}</p>
                 <p className="mt-2 break-all font-medium">{paymentRuntime.callbackPath}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentCallbackAddressTitle}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentRuntimeCopy.callbackAddressTitle}</p>
                 <p className="mt-2 break-all font-medium">{paymentRuntime.callbackUrl}</p>
-                {!paymentRuntime.callbackUrlConfigured ? <p className="mt-2 text-xs text-sky-100/70">{paymentSiteUrlHint}</p> : null}
+                {!paymentRuntime.callbackUrlConfigured ? <p className="mt-2 text-xs text-sky-100/70">{paymentRuntimeCopy.siteUrlHint}</p> : null}
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentAuthModeTitle}</p>
-                <p className="mt-2 font-medium">{paymentAuthModeLabel}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentRuntimeCopy.authModeTitle}</p>
+                <p className="mt-2 font-medium">{paymentRuntimeCopy.authModeLabel}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentCollectionTitle}</p>
-                <p className="mt-2 font-medium">{manualCollection.configured ? paymentCollectionReady : paymentCollectionMissing}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentRuntimeCopy.collectionTitle}</p>
+                <p className="mt-2 font-medium">{manualCollection.configured ? paymentRuntimeCopy.collectionReady : paymentRuntimeCopy.collectionMissing}</p>
                 {manualCollection.configured ? (
                   <p className="mt-2 text-xs text-sky-100/70">{getManualCollectionSummary(manualCollection, locale)}</p>
                 ) : (
-                  <p className="mt-2 text-xs text-sky-100/70">{paymentCollectionHint}</p>
+                  <p className="mt-2 text-xs text-sky-100/70">{paymentRuntimeCopy.collectionHint}</p>
                 )}
               </div>
               <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
-                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentHostedTitle}</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">{paymentRuntimeCopy.hostedTitle}</p>
                 <p className="mt-2 font-medium">
-                  {paymentRuntime.hostedGatewayConfigured && paymentRuntime.hostedSignatureConfigured ? paymentHostedReady : paymentHostedMissing}
+                  {paymentRuntime.hostedGatewayConfigured && paymentRuntime.hostedSignatureConfigured ? paymentRuntimeCopy.hostedReady : paymentRuntimeCopy.hostedMissing}
                 </p>
                 <p className="mt-2 text-xs text-sky-100/70">
                   {paymentRuntime.hostedGatewayName ?? "--"}
-                  {paymentRuntime.hostedGatewayConfigured ? "" : ` · ${paymentHostedHint}`}
+                  {paymentRuntime.hostedGatewayConfigured ? "" : ` · ${paymentRuntimeCopy.hostedHint}`}
                 </p>
               </div>
             </div>
@@ -3406,20 +3740,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           <div className="mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="section-label">{paymentCallbacksCopy.title}</p>
-                <h3 className="mt-2 text-lg font-semibold text-white">{paymentCallbacksCopy.subtitle}</h3>
+                <p className="section-label">{paymentRuntimeCopy.callbacks.title}</p>
+                <h3 className="mt-2 text-lg font-semibold text-white">{paymentRuntimeCopy.callbacks.subtitle}</h3>
               </div>
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
-                {paymentCallbacksCopy.latestLabel}:{" "}
-                {paymentCallbackActivity.recent[0] ? formatDateTime(paymentCallbackActivity.recent[0].lastSeenAt, locale) : "--"}
+                {paymentRuntimeCopy.callbacks.latestLabel}:{" "}
+                {paymentCallbackActivity.recent[0] ? formatDateTime(paymentCallbackActivity.recent[0].lastSeenAt, displayLocale) : "--"}
               </span>
             </div>
             <div className="mt-4 grid gap-3 text-sm text-slate-100 sm:grid-cols-4">
               {[
-                [paymentCallbacksCopy.metrics.total, String(paymentCallbackActivity.metrics.eventCount)],
-                [paymentCallbacksCopy.metrics.duplicates, String(paymentCallbackActivity.metrics.duplicateCount)],
-                [paymentCallbacksCopy.metrics.conflicts, String(paymentCallbackActivity.metrics.conflictCount)],
-                [paymentCallbacksCopy.metrics.failed, String(paymentCallbackActivity.metrics.failedCount)],
+                [paymentRuntimeCopy.callbacks.metrics.total, String(paymentCallbackActivity.metrics.eventCount)],
+                [paymentRuntimeCopy.callbacks.metrics.duplicates, String(paymentCallbackActivity.metrics.duplicateCount)],
+                [paymentRuntimeCopy.callbacks.metrics.conflicts, String(paymentCallbackActivity.metrics.conflictCount)],
+                [paymentRuntimeCopy.callbacks.metrics.failed, String(paymentCallbackActivity.metrics.failedCount)],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{label}</p>
@@ -3447,22 +3781,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           {getPaymentProviderLabel(event.provider, locale)}
                         </span>
                       </div>
-                      <span className="text-xs text-slate-500">{formatDateTime(event.lastSeenAt, locale)}</span>
+                      <span className="text-xs text-slate-500">{formatDateTime(event.lastSeenAt, displayLocale)}</span>
                     </div>
                     <div className="mt-3 grid gap-2 text-sm text-slate-300 md:grid-cols-2">
                       <p>
-                        {paymentCallbacksCopy.stateTitle}: {stateMeta.label}
+                        {paymentRuntimeCopy.callbacks.stateTitle}: {stateMeta.label}
                       </p>
                       <p className="md:text-right">
-                        {paymentCallbacksCopy.resultTitle}: {processingMeta.label}
+                        {paymentRuntimeCopy.callbacks.resultTitle}: {processingMeta.label}
                       </p>
                       <p>
-                        {paymentCallbacksCopy.orderIdLabel}: {event.orderId ?? "--"}
+                        {paymentRuntimeCopy.callbacks.orderIdLabel}: {event.orderId ?? "--"}
                       </p>
                       <p className="md:text-right">
                         {event.providerEventId
-                          ? `${paymentCallbacksCopy.eventIdLabel}: ${event.providerEventId}`
-                          : `${paymentCallbacksCopy.eventKeyLabel}: ${event.eventKey.slice(0, 18)}...`}
+                          ? `${paymentRuntimeCopy.callbacks.eventIdLabel}: ${event.providerEventId}`
+                          : `${paymentRuntimeCopy.callbacks.eventKeyLabel}: ${event.eventKey.slice(0, 18)}...`}
                       </p>
                       <p>
                         {adminPageCopy.users.membershipOrders.providerOrderId}: {event.providerOrderId ?? "--"}
@@ -3476,7 +3810,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     ) : null}
                     {event.duplicateCount > 0 ? (
                       <p className="mt-2 text-xs text-amber-100/85">
-                        +{event.duplicateCount} {paymentCallbacksCopy.duplicateSuffix}
+                        +{event.duplicateCount} {paymentRuntimeCopy.callbacks.duplicateSuffix}
                       </p>
                     ) : null}
                   </div>
@@ -3484,7 +3818,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               })}
               {paymentCallbackActivity.recent.length === 0 ? (
                 <div className="rounded-[1.1rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
-                  {paymentCallbacksCopy.empty}
+                  {paymentRuntimeCopy.callbacks.empty}
                 </div>
               ) : null}
             </div>
@@ -3565,7 +3899,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
                     <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-300">
                       <span>
-                        {adminPageCopy.users.userList.registeredAt} {formatDateTime(user.createdAt, locale)}
+                        {adminPageCopy.users.userList.registeredAt} {formatDateTime(user.createdAt, displayLocale)}
                       </span>
                       <span>
                         {adminPageCopy.users.userList.membershipOrders} {user.membershipOrderCount}
@@ -3579,7 +3913,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       {user.membershipPlanId
                         ? adminPageCopy.users.userList.membershipSummary(
                             membershipPlanNames.get(user.membershipPlanId) ?? user.membershipPlanId,
-                            user.membershipExpiresAt ? formatDateTime(user.membershipExpiresAt, locale) : adminPageCopy.users.userList.unknownExpiry,
+                            user.membershipExpiresAt ? formatDateTime(user.membershipExpiresAt, displayLocale) : adminPageCopy.users.userList.unknownExpiry,
                           )
                         : adminPageCopy.users.userList.noMembership}
                     </p>
@@ -3621,11 +3955,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           <p className="mt-2 text-sm text-slate-400">{order.userEmail}</p>
                           <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-300">
                             <span>{membershipPlanNames.get(order.planId) ?? order.planName}</span>
-                            <span>{formatPrice(order.amount, locale)}</span>
-                            <span>{adminPageCopy.users.membershipOrders.createdAt} {formatDateTime(order.createdAt, locale)}</span>
+                            <span>{formatPrice(order.amount, displayLocale)}</span>
+                            <span>{adminPageCopy.users.membershipOrders.createdAt} {formatDateTime(order.createdAt, displayLocale)}</span>
                             <span>{adminPageCopy.users.membershipOrders.paymentProvider} {getPaymentProviderLabel(order.provider, locale)}</span>
-                            {activityMeta.value ? <span>{activityMeta.label} {formatDateTime(activityMeta.value, locale)}</span> : null}
-                            {order.expiresAt ? <span>{adminPageCopy.users.membershipOrders.expiresAt} {formatDateTime(order.expiresAt, locale)}</span> : null}
+                            {activityMeta.value ? <span>{activityMeta.label} {formatDateTime(activityMeta.value, displayLocale)}</span> : null}
+                            {order.expiresAt ? <span>{adminPageCopy.users.membershipOrders.expiresAt} {formatDateTime(order.expiresAt, displayLocale)}</span> : null}
                           </div>
                           {order.providerOrderId ? (
                             <p className="mt-2 text-xs text-slate-500">
@@ -3744,11 +4078,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           <p className="mt-2 text-sm text-slate-400">{order.userEmail}</p>
                           <p className="mt-3 text-sm text-slate-300">{order.contentTitle}</p>
                           <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-300">
-                            <span>{formatPrice(order.amount, locale)}</span>
-                            <span>{adminPageCopy.users.contentOrders.createdAt} {formatDateTime(order.createdAt, locale)}</span>
+                            <span>{formatPrice(order.amount, displayLocale)}</span>
+                            <span>{adminPageCopy.users.contentOrders.createdAt} {formatDateTime(order.createdAt, displayLocale)}</span>
                             <span>{adminPageCopy.users.contentOrders.paymentProvider} {getPaymentProviderLabel(order.provider, locale)}</span>
-                            {activityMeta.value ? <span>{activityMeta.label} {formatDateTime(activityMeta.value, locale)}</span> : null}
-                            {order.expiresAt ? <span>{adminPageCopy.users.contentOrders.expiresAt} {formatDateTime(order.expiresAt, locale)}</span> : null}
+                            {activityMeta.value ? <span>{activityMeta.label} {formatDateTime(activityMeta.value, displayLocale)}</span> : null}
+                            {order.expiresAt ? <span>{adminPageCopy.users.contentOrders.expiresAt} {formatDateTime(order.expiresAt, displayLocale)}</span> : null}
                           </div>
                           {order.providerOrderId ? (
                             <p className="mt-2 text-xs text-slate-500">
@@ -3840,6 +4174,226 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
               ) : null}
             </div>
+          </div>
+        </section>
+      ) : null}
+
+      {tab === "finance" ? (
+        <section className="glass-panel rounded-[2rem] p-6">
+          <SectionHeading
+            eyebrow={adminExpansion.finance.eyebrow}
+            title={adminExpansion.finance.title}
+            description={adminExpansion.finance.description}
+          />
+          {financeNotice ? (
+            <div
+              className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                error === "coin-package" || error === "coin-recharge-order" || error === "coin-recharge-order-balance"
+                  ? "border-rose-300/25 bg-rose-400/10 text-rose-100"
+                  : "border-lime-300/20 bg-lime-300/10 text-lime-100"
+              }`}
+            >
+              {financeNotice}
+            </div>
+          ) : null}
+          <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{adminExpansion.finance.eyebrow}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en"
+                      ? "Package bootstrap"
+                      : locale === "zh-TW"
+                        ? "套餐初始化"
+                        : "套餐初始化"}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "Seed the default coin packages first, then create manual recharge orders for finance testing."
+                      : locale === "zh-TW"
+                        ? "先初始化預設球幣套餐，再建立手動充值訂單，方便財務和運營驗證流程。"
+                        : "先初始化默认球币套餐，再建立手动充值订单，方便财务和运营验证流程。"}
+                  </p>
+                </div>
+                <form action="/api/admin/finance/packages" method="post">
+                  <button
+                    type="submit"
+                    className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15"
+                  >
+                    {locale === "en"
+                      ? "Init packages"
+                      : locale === "zh-TW"
+                        ? "初始化套餐"
+                        : "初始化套餐"}
+                  </button>
+                </form>
+              </div>
+              <form action="/api/admin/finance/recharge-orders" method="post" className="mt-6">
+                <input type="hidden" name="intent" value="create" />
+                <div className="grid gap-4">
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">
+                      {locale === "en" ? "Member" : locale === "zh-TW" ? "會員" : "会员"}
+                    </span>
+                    <select
+                      name="userId"
+                      defaultValue={financeDashboard.userOptions[0]?.id ?? ""}
+                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                    >
+                      {financeDashboard.userOptions.length === 0 ? (
+                        <option value="">
+                          {locale === "en"
+                            ? "No users"
+                            : locale === "zh-TW"
+                              ? "暫無用戶"
+                              : "暂无用户"}
+                        </option>
+                      ) : (
+                        financeDashboard.userOptions.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.label}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">
+                      {locale === "en" ? "Coin package" : locale === "zh-TW" ? "球幣套餐" : "球币套餐"}
+                    </span>
+                    <select
+                      name="packageId"
+                      defaultValue={financeDashboard.packageOptions.find((item) => item.status === "active")?.id ?? financeDashboard.packageOptions[0]?.id ?? ""}
+                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                    >
+                      {financeDashboard.packageOptions.length === 0 ? (
+                        <option value="">
+                          {locale === "en"
+                            ? "No packages"
+                            : locale === "zh-TW"
+                              ? "暫無套餐"
+                              : "暂无套餐"}
+                        </option>
+                      ) : (
+                        financeDashboard.packageOptions.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.label}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">
+                      {locale === "en" ? "Payment reference" : locale === "zh-TW" ? "支付流水號" : "支付流水号"}
+                    </span>
+                    <input
+                      name="paymentReference"
+                      placeholder={locale === "en" ? "Optional manual reference" : locale === "zh-TW" ? "可選，人工對賬用" : "可选，人工对账用"}
+                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="submit"
+                  disabled={financeDashboard.userOptions.length === 0 || financeDashboard.packageOptions.length === 0}
+                  className="mt-5 rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {locale === "en"
+                    ? "Create recharge order"
+                    : locale === "zh-TW"
+                      ? "建立充值訂單"
+                      : "建立充值订单"}
+                </button>
+              </form>
+            </div>
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-xl font-semibold text-white">
+                  {locale === "en"
+                    ? "Finance snapshot"
+                    : locale === "zh-TW"
+                      ? "財務快照"
+                      : "财务快照"}
+                </h3>
+                <span className="text-sm text-slate-500">
+                  {locale === "en"
+                    ? `Users ${financeDashboard.userOptions.length}`
+                    : locale === "zh-TW"
+                      ? `用戶 ${financeDashboard.userOptions.length}`
+                      : `用户 ${financeDashboard.userOptions.length}`}
+                </span>
+              </div>
+              <div className="mt-5 grid gap-3">
+                {financeDashboard.metrics.map((metric) => (
+                  <div key={metric.label} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm text-slate-400">{metric.label}</p>
+                      <p className="text-xl font-semibold text-white">{metric.value}</p>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500">{metric.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <ExpansionRowsPanel title={adminExpansion.finance.coinPackages.title} rows={financePackageRows} />
+            <FinanceRechargeOrdersPanel title={adminExpansion.finance.rechargeOrders.title} locale={locale} orders={financeDashboard.rechargeOrders} />
+            <ExpansionRowsPanel title={adminExpansion.finance.settlements.title} rows={financeSettlementRows} />
+          </div>
+        </section>
+      ) : null}
+
+      {tab === "agents" ? (
+        <section className="glass-panel rounded-[2rem] p-6">
+          <SectionHeading
+            eyebrow={adminExpansion.agents.eyebrow}
+            title={adminExpansion.agents.title}
+            description={adminExpansion.agents.description}
+          />
+          <div className="mt-6">
+            <ExpansionMetricGrid items={adminExpansion.agents.metrics} />
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <ExpansionRowsPanel title={adminExpansion.agents.applications.title} rows={adminExpansion.agents.applications.rows} />
+            <ExpansionRowsPanel title={adminExpansion.agents.roster.title} rows={adminExpansion.agents.roster.rows} />
+            <ExpansionRowsPanel title={adminExpansion.agents.campaigns.title} rows={adminExpansion.agents.campaigns.rows} />
+            <ExpansionRowsPanel title={adminExpansion.agents.withdrawals.title} rows={adminExpansion.agents.withdrawals.rows} />
+          </div>
+        </section>
+      ) : null}
+
+      {tab === "system" ? (
+        <section className="glass-panel rounded-[2rem] p-6">
+          <SectionHeading
+            eyebrow={adminExpansion.system.eyebrow}
+            title={adminExpansion.system.title}
+            description={adminExpansion.system.description}
+          />
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <ExpansionRowsPanel title={adminExpansion.system.roleMatrix.title} rows={adminExpansion.system.roleMatrix.rows} />
+            <ExpansionRowsPanel title={adminExpansion.system.auditLogs.title} rows={adminExpansion.system.auditLogs.rows} />
+            <ExpansionRowsPanel title={adminExpansion.system.alerts.title} rows={adminExpansion.system.alerts.rows} />
+            <ExpansionParametersPanel title={adminExpansion.system.parameters.title} rows={adminExpansion.system.parameters.rows} />
+          </div>
+        </section>
+      ) : null}
+
+      {tab === "reports" ? (
+        <section className="glass-panel rounded-[2rem] p-6">
+          <SectionHeading
+            eyebrow={adminExpansion.reports.eyebrow}
+            title={adminExpansion.reports.title}
+            description={adminExpansion.reports.description}
+          />
+          <div className="mt-6">
+            <ExpansionMetricGrid items={adminExpansion.reports.metrics} />
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <ExpansionRowsPanel title={adminExpansion.reports.boards.title} rows={adminExpansion.reports.boards.rows} />
+            <ExpansionRowsPanel title={adminExpansion.reports.exports.title} rows={adminExpansion.reports.exports.rows} />
           </div>
         </section>
       ) : null}
@@ -4109,7 +4663,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       </div>
                       <div className="mt-4 grid gap-3 text-sm text-slate-400 md:grid-cols-2">
                         <span>{prediction.matchRef || prediction.matchId || "--"}</span>
-                        <span className="md:text-right">{formatDateTime(prediction.updatedAt, locale)}</span>
+                        <span className="md:text-right">{formatDateTime(prediction.updatedAt, displayLocale)}</span>
                       </div>
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
                         <span className="text-orange-200">{prediction.expectedEdge}</span>
@@ -4119,7 +4673,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                               href={`/matches/${match.id}`}
                               className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white"
                             >
-                              {locale === "en" ? "Open match" : locale === "zh-TW" ? "查看比賽" : "查看比赛"}
+                              {aiImportPanelCopy.openMatch}
                             </Link>
                           ) : null}
                           <Link
@@ -4221,14 +4775,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               <input type="hidden" name="aiResult" value={aiResult} />
               <input type="hidden" name="aiScope" value={aiScope} />
               <input type="hidden" name="aiPage" value={resolvedAiPage} />
-              <label className="text-sm text-slate-400">{locale === "en" ? "Queue status" : locale === "zh-TW" ? "隊列狀態" : "队列状态"}</label>
+              <label className="text-sm text-slate-400">{assistantSupportCopy.filters.status}</label>
               <select name="handoffStatus" defaultValue={handoffStatus} className="rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 text-sm text-white outline-none">
-                <option value="all">{locale === "en" ? "All" : locale === "zh-TW" ? "全部" : "全部"}</option>
+                <option value="all">{assistantSupportCopy.filters.all}</option>
                 <option value="pending">{assistantSupportCopy.pending}</option>
                 <option value="resolved">{assistantSupportCopy.resolved}</option>
               </select>
               <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-200 transition hover:border-white/25 hover:text-white">
-                OK
+                {assistantSupportCopy.filters.apply}
               </button>
               <Link
                 href={buildAdminAiHrefWithFilters({
@@ -4237,7 +4791,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 })}
                 className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/25 hover:text-white"
               >
-                {locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置"}
+                {assistantSupportCopy.filters.reset}
               </Link>
             </form>
 
@@ -4304,7 +4858,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       </div>
                     ) : null}
                     <p className="mt-4 text-xs text-slate-500">
-                      {formatDateTime(item.createdAt, locale)} / {item.locale}
+                      {formatDateTime(item.createdAt, displayLocale)} / {item.locale}
                     </p>
                   </div>
                 ))

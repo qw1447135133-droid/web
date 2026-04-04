@@ -1,4 +1,4 @@
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentDisplayLocale } from "@/lib/i18n";
 import { getSiteCopy } from "@/lib/ui-copy";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -16,8 +16,8 @@ export default async function LoginPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { authPageCopy, roleLabels } = getSiteCopy(locale);
+  const displayLocale = await getCurrentDisplayLocale();
+  const { authPageCopy, roleLabels } = getSiteCopy(displayLocale);
   const resolved = await searchParams;
   const next = pickValue(resolved.next);
 

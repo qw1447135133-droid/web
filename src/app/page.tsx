@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { HomepageBannerShowcase } from "@/components/homepage-banner-showcase";
 import { SectionHeading } from "@/components/section-heading";
+import { getArticleCoinPrice, getMembershipCoinPrice } from "@/lib/coin-wallet";
 import { applyHomepageModuleMetrics, getArticlePlans, getAuthorTeams, getHomepageBanners, getHomepageModules, getPredictions } from "@/lib/content-data";
-import { formatDateTime, formatPrice } from "@/lib/format";
-import { getCurrentLocale } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/format";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { localizeMembershipPlan } from "@/lib/localized-content";
 import { membershipPlans } from "@/lib/mock-data";
 import { getStoredMatchesBySport } from "@/lib/repositories/sports-repository";
@@ -11,8 +12,8 @@ import { getFeaturedMatches, getMatchesBySport, getTrackedLeagues } from "@/lib/
 import { getSiteCopy } from "@/lib/ui-copy";
 
 export default async function HomePage() {
-  const locale = await getCurrentLocale();
-  const { homePageCopy, matchStatusLabels } = getSiteCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { homePageCopy, matchStatusLabels } = getSiteCopy(displayLocale);
   const [featuredMatches, homepageBanners, homepageModules, articlePlans, predictions, authorTeams, footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues] = await Promise.all([
     getFeaturedMatches(locale),
     getHomepageBanners(locale),
@@ -48,11 +49,37 @@ export default async function HomePage() {
   const esportsSpotlightMatches = esportsMatches.slice(0, 3);
   const esportsLiveCount = esportsMatches.filter((match) => match.status === "live").length;
 
+  const formatCoinAmount = (amount: number) => {
+    const formatted = new Intl.NumberFormat(displayLocale).format(amount);
+
+    if (displayLocale === "en") {
+      return `${formatted} coins`;
+    }
+
+    if (displayLocale === "zh-TW") {
+      return `${formatted} 球幣`;
+    }
+
+    if (displayLocale === "th") {
+      return `${formatted} เหรียญ`;
+    }
+
+    if (displayLocale === "vi") {
+      return `${formatted} coin`;
+    }
+
+    if (displayLocale === "hi") {
+      return `${formatted} coins`;
+    }
+
+    return `${formatted} 球币`;
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
       <section className="hero-noise glass-panel overflow-hidden rounded-[2.25rem] p-6 sm:p-8 lg:p-10">
         <div className="grid gap-8 lg:grid-cols-[1.55fr_0.9fr]">
-          <HomepageBannerShowcase initialBanners={homepageBanners} locale={locale} />
+          <HomepageBannerShowcase initialBanners={homepageBanners} locale={displayLocale} />
           <div className="glass-panel rounded-[1.9rem] p-5">
             <p className="section-label">{homePageCopy.commandFeed}</p>
             <div className="mt-4 space-y-4">
@@ -76,7 +103,7 @@ export default async function HomePage() {
                   <div className="mt-3 flex items-end justify-between gap-4">
                     <p className="text-2xl font-semibold text-orange-200">{match.score}</p>
                     <p className="text-xs text-slate-500">
-                      {match.clock ? match.clock : formatDateTime(match.kickoff, locale)}
+                      {match.clock ? match.clock : formatDateTime(match.kickoff, displayLocale)}
                     </p>
                   </div>
                   <p className="mt-2 text-xs leading-6 text-slate-400">{match.statLine}</p>
@@ -125,14 +152,26 @@ export default async function HomePage() {
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
-            <p className="section-label">Esports Pulse</p>
+            <p className="section-label">
+              {displayLocale === "th"
+                ? "ภาพรวมอีสปอร์ต"
+                : displayLocale === "vi"
+                  ? "Nhịp esports"
+                  : displayLocale === "hi"
+                    ? "ईस्पोर्ट्स पल्स"
+                    : displayLocale === "zh-TW"
+                      ? "電競脈搏"
+                      : displayLocale === "zh-CN"
+                        ? "电竞脉搏"
+                        : "Esports Pulse"}
+            </p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-sm text-slate-400">{locale === "en" ? "Live series" : locale === "zh-TW" ? "進行中系列賽" : "进行中系列赛"}</p>
+                <p className="text-sm text-slate-400">{displayLocale === "th" ? "ซีรีส์ที่กำลังแข่ง" : displayLocale === "vi" ? "Loạt trận đang diễn ra" : displayLocale === "hi" ? "चल रही सीरीज़" : displayLocale === "en" ? "Live series" : displayLocale === "zh-TW" ? "進行中系列賽" : "进行中系列赛"}</p>
                 <p className="mt-2 text-3xl font-semibold text-orange-200">{esportsLiveCount}</p>
               </div>
               <div>
-                <p className="text-sm text-slate-400">{locale === "en" ? "Games covered" : locale === "zh-TW" ? "已覆蓋項目" : "已覆盖项目"}</p>
+                <p className="text-sm text-slate-400">{displayLocale === "th" ? "รายการที่ครอบคลุม" : displayLocale === "vi" ? "Tựa game đã phủ" : displayLocale === "hi" ? "कवर गेम" : displayLocale === "en" ? "Games covered" : displayLocale === "zh-TW" ? "已覆蓋項目" : "已覆盖项目"}</p>
                 <p className="mt-2 text-3xl font-semibold text-lime-100">{esportsLeagues.length}</p>
               </div>
             </div>
@@ -145,14 +184,20 @@ export default async function HomePage() {
             </div>
           </div>
           <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
-            <p className="section-label">{locale === "en" ? "Esports Entry" : locale === "zh-TW" ? "電競入口" : "电竞入口"}</p>
+            <p className="section-label">{displayLocale === "th" ? "ทางเข้าอีสปอร์ต" : displayLocale === "vi" ? "Lối vào esports" : displayLocale === "hi" ? "ईस्पोर्ट्स एंट्री" : displayLocale === "en" ? "Esports Entry" : displayLocale === "zh-TW" ? "電競入口" : "电竞入口"}</p>
             <h3 className="mt-3 text-xl font-semibold text-white">
-              {locale === "en" ? "LoL, Dota 2, and CS2 live board" : locale === "zh-TW" ? "LoL、Dota 2、CS2 即時面板" : "LoL、Dota 2、CS2 即时面板"}
+              {displayLocale === "th" ? "บอร์ดสด LoL, Dota 2 และ CS2" : displayLocale === "vi" ? "Bảng trực tiếp LoL, Dota 2 và CS2" : displayLocale === "hi" ? "LoL, Dota 2 और CS2 लाइव बोर्ड" : displayLocale === "en" ? "LoL, Dota 2, and CS2 live board" : displayLocale === "zh-TW" ? "LoL、Dota 2、CS2 即時面板" : "LoL、Dota 2、CS2 即时面板"}
             </h3>
             <p className="mt-2 text-sm leading-7 text-slate-400">
-              {locale === "en"
+              {displayLocale === "th"
+                ? "รวมสถานะซีรีส์ แนวโน้มแผนที่/รอบ และทางเข้ารายละเอียดแมตช์ไว้ในช่องอีสปอร์ตเดียว"
+                : displayLocale === "vi"
+                  ? "Gộp trạng thái series, đà map/vòng và lối vào chi tiết trận trong một kênh esports duy nhất."
+                  : displayLocale === "hi"
+                    ? "सीरीज़ स्टेट, मैप/राउंड मोमेंटम और मैच डिटेल एंट्री को एक ही ईस्पोर्ट्स चैनल में रखें।"
+                    : displayLocale === "en"
                 ? "Open one channel for series state, map/round momentum, and a direct path into the match detail flow."
-                : locale === "zh-TW"
+                : displayLocale === "zh-TW"
                   ? "把系列賽狀態、地圖/回合走勢和賽事詳情入口集中到同一個電競頻道。"
                   : "把系列赛状态、地图/回合走势和赛事详情入口集中到同一个电竞频道。"}
             </p>
@@ -162,25 +207,25 @@ export default async function HomePage() {
                   href="/live/esports"
                   className="rounded-full border border-orange-300/24 bg-orange-300/8 px-4 py-2 text-sm text-orange-100 transition hover:border-orange-300/40 hover:bg-orange-300/14"
                 >
-                  {locale === "en" ? "Open esports live" : locale === "zh-TW" ? "進入電競比分" : "进入电竞比分"}
+                  {displayLocale === "th" ? "เปิดอีสปอร์ตสด" : displayLocale === "vi" ? "Mở esports trực tiếp" : displayLocale === "hi" ? "ईस्पोर्ट्स लाइव खोलें" : displayLocale === "en" ? "Open esports live" : displayLocale === "zh-TW" ? "進入電競比分" : "进入电竞比分"}
                 </Link>
                 <Link
                   href="/plans?sport=esports"
                   className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
                 >
-                  {locale === "en" ? "Esports plans" : locale === "zh-TW" ? "電競計畫單" : "电竞计划单"}
+                  {displayLocale === "th" ? "แผนอีสปอร์ต" : displayLocale === "vi" ? "Kế hoạch esports" : displayLocale === "hi" ? "ईस्पोर्ट्स प्लान" : displayLocale === "en" ? "Esports plans" : displayLocale === "zh-TW" ? "電競計畫單" : "电竞计划单"}
                 </Link>
                 <Link
                   href="/ai-predictions?sport=esports"
                   className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
                 >
-                  {locale === "en" ? "Esports AI" : locale === "zh-TW" ? "電競 AI" : "电竞 AI"}
+                  {displayLocale === "th" ? "AI อีสปอร์ต" : displayLocale === "vi" ? "AI esports" : displayLocale === "hi" ? "ईस्पोर्ट्स AI" : displayLocale === "en" ? "Esports AI" : displayLocale === "zh-TW" ? "電競 AI" : "电竞 AI"}
                 </Link>
                 <Link
                   href="/database?sport=esports&league=lpl&view=standings"
                   className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
                 >
-                  {locale === "en" ? "Esports database" : locale === "zh-TW" ? "電競資料庫" : "电竞资料库"}
+                  {displayLocale === "th" ? "ฐานข้อมูลอีสปอร์ต" : displayLocale === "vi" ? "CSDL esports" : displayLocale === "hi" ? "ईस्पोर्ट्स डेटाबेस" : displayLocale === "en" ? "Esports database" : displayLocale === "zh-TW" ? "電競資料庫" : "电竞资料库"}
                 </Link>
               </div>
             </div>
@@ -252,7 +297,7 @@ export default async function HomePage() {
                   </span>
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-400">
-                  <span>{formatDateTime(match.kickoff, locale)}</span>
+                  <span>{formatDateTime(match.kickoff, displayLocale)}</span>
                   <span>{match.score}</span>
                 </div>
                 <p className="mt-3 text-sm leading-7 text-slate-300">{match.statLine}</p>
@@ -293,8 +338,8 @@ export default async function HomePage() {
                 <p className="mt-2 text-sm leading-7 text-slate-400">{plan.teaser}</p>
                 <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{formatDateTime(plan.kickoff, locale)}</p>
-                    <p className="mt-1 text-lg font-semibold text-orange-200">{formatPrice(plan.price, locale)}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{formatDateTime(plan.kickoff, displayLocale)}</p>
+                    <p className="mt-1 text-lg font-semibold text-orange-200">{formatCoinAmount(getArticleCoinPrice(plan.price))}</p>
                   </div>
                   <Link
                     href={`/plans/${plan.slug}`}
@@ -323,7 +368,7 @@ export default async function HomePage() {
                       <p className="text-lg font-semibold text-white">{plan.name}</p>
                       <p className="mt-1 text-sm text-slate-300">{plan.description}</p>
                     </div>
-                    <p className="text-xl font-semibold text-orange-100">{formatPrice(plan.price, locale)}</p>
+                    <p className="text-xl font-semibold text-orange-100">{formatCoinAmount(getMembershipCoinPrice(plan.price))}</p>
                   </div>
                 </div>
               ))}

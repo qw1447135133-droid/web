@@ -143,6 +143,7 @@ export interface MembershipOrder {
   id: string;
   planId: MembershipPlanId;
   amount: number;
+  coinAmount?: number;
   provider?: "mock" | "manual" | "hosted";
   providerOrderId?: string;
   expiresAt?: string;
@@ -162,6 +163,7 @@ export interface ContentOrder {
   id: string;
   contentId: string;
   amount: number;
+  coinAmount?: number;
   provider?: "mock" | "manual" | "hosted";
   providerOrderId?: string;
   expiresAt?: string;
@@ -173,6 +175,44 @@ export interface ContentOrder {
   closedAt?: string;
   refundedAt?: string;
   refundReason?: string;
+  paymentReference?: string;
+  status: OrderStatus;
+}
+
+export interface CoinPackage {
+  id: string;
+  key: string;
+  title: string;
+  description?: string;
+  coinAmount: number;
+  bonusAmount: number;
+  price: number;
+  validityDays?: number;
+  badge?: string;
+  status: "active" | "inactive";
+  sortOrder: number;
+}
+
+export interface CoinRechargeOrder {
+  id: string;
+  orderNo: string;
+  packageId: string;
+  userId: string;
+  coinAmount: number;
+  bonusAmount: number;
+  amount: number;
+  provider?: "mock" | "manual" | "hosted";
+  providerOrderId?: string;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt?: string;
+  paidAt?: string;
+  failedAt?: string;
+  failureReason?: string;
+  closedAt?: string;
+  refundedAt?: string;
+  refundReason?: string;
+  creditedAt?: string;
   paymentReference?: string;
   status: OrderStatus;
 }
@@ -222,6 +262,7 @@ export interface SessionUser {
   role: UserRole;
   membershipPlanId?: MembershipPlanId;
   membershipExpiresAt?: string;
+  coinBalance?: number;
   purchasedContentIds: string[];
   membershipOrders: MembershipOrder[];
   contentOrders: ContentOrder[];

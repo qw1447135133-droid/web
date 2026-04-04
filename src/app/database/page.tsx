@@ -3,7 +3,8 @@ import { SectionHeading } from "@/components/section-heading";
 import { getArticlePlans } from "@/lib/content-data";
 import { getCricketLeagueDepth, type CricketNarrative, type CricketTeamIntel } from "@/lib/cricket-depth";
 import { getEsportsLeagueDepth } from "@/lib/esports-depth";
-import { getCurrentLocale } from "@/lib/i18n";
+import type { DisplayLocale } from "@/lib/i18n-config";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getDatabaseSnapshot } from "@/lib/sports-data";
 import type { HeadToHeadRow, ScheduleRow, StandingRow, Team } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
@@ -35,7 +36,7 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function getSpecialDatabaseCopy(locale: string, sport: "cricket" | "esports") {
+function getSpecialDatabaseCopy(locale: DisplayLocale, sport: "cricket" | "esports") {
   if (sport === "esports") {
     if (locale === "en") {
       return {
@@ -54,6 +55,36 @@ function getSpecialDatabaseCopy(locale: string, sport: "cricket" | "esports") {
         scheduleDescription: "查看電競賽程、完場比分與戰術重點標籤。",
         teamsDescription: "集中查看電競戰隊排名、近期狀態與主客場分佈。",
         h2hDescription: "回看目前電競聯賽的近期系列賽樣本與關鍵標籤。",
+      };
+    }
+
+    if (locale === "th") {
+      return {
+        sportLabel: "อีสปอร์ต",
+        standingsDescription: "ดูสถิติ ผลงาน และโมเมนตัมรายแผนที่ของลีกอีสปอร์ตที่เลือก",
+        scheduleDescription: "ดูตารางแข่ง ซีรีส์ที่จบแล้ว และแท็กโน้ตเชิงแท็กติก",
+        teamsDescription: "ดูอันดับ ฟอร์ม และการแยกเหย้าเยือนของทีมอีสปอร์ตในหน้าเดียว",
+        h2hDescription: "ดูตัวอย่างซีรีส์ล่าสุดและแท็กสำคัญของลีกอีสปอร์ตปัจจุบัน",
+      };
+    }
+
+    if (locale === "vi") {
+      return {
+        sportLabel: "Esports",
+        standingsDescription: "Xem thanh tich, phong do va xung luc theo map cua giai esports dang chon.",
+        scheduleDescription: "Xem lich dau esports, series da ket thuc va cac ghi chu chien thuat.",
+        teamsDescription: "Tong hop xep hang, phong do va thong tin san nha/san khach cua doi esports.",
+        h2hDescription: "Xem mau series gan day va cac tag quan trong cua giai esports hien tai.",
+      };
+    }
+
+    if (locale === "hi") {
+      return {
+        sportLabel: "Esports",
+        standingsDescription: "Active esports league ke record, form, aur map-level momentum dekhiye.",
+        scheduleDescription: "Esports fixtures, completed series, aur tactical note tags scan kijiye.",
+        teamsDescription: "Esports team rank, form, aur home-away split ek jagah dekhiye.",
+        h2hDescription: "Active esports league ke recent series samples aur key tags dekhiye.",
       };
     }
 
@@ -86,6 +117,36 @@ function getSpecialDatabaseCopy(locale: string, sport: "cricket" | "esports") {
     };
   }
 
+  if (locale === "th") {
+    return {
+      sportLabel: "คริกเก็ต",
+      standingsDescription: "ดูอันดับ อัตราชนะ ฟอร์ม และผลงานเหย้าเยือนของลีกคริกเก็ตปัจจุบัน",
+      scheduleDescription: "ดูตารางแข่ง ผลจบ และโน้ตสำคัญตามช่วงโอเวอร์",
+      teamsDescription: "ดูอันดับทีมคริกเก็ต ฟอร์มล่าสุด และสถิติเหย้าเยือนในหน้าเดียว",
+      h2hDescription: "ดูตัวอย่างการเจอกันล่าสุดและแท็กสำคัญของลีกคริกเก็ตปัจจุบัน",
+    };
+  }
+
+  if (locale === "vi") {
+    return {
+      sportLabel: "Cricket",
+      standingsDescription: "Xem xep hang, ty le thang, phong do va thanh tich san nha/san khach cua giai cricket hien tai.",
+      scheduleDescription: "Xem lich dau cricket, ti so ket thuc va ghi chu theo giai doan over.",
+      teamsDescription: "Tong hop xep hang doi cricket, phong do va thong tin san nha/san khach.",
+      h2hDescription: "Xem cac mau doi dau gan day va tag quan trong cua giai cricket hien tai.",
+    };
+  }
+
+  if (locale === "hi") {
+    return {
+      sportLabel: "Cricket",
+      standingsDescription: "Active cricket league ki rank, win rate, form, aur home-away split dekhiye.",
+      scheduleDescription: "Cricket fixtures, final scores, aur over-phase notes scan kijiye.",
+      teamsDescription: "Cricket team rank, form, aur home-away split ek jagah dekhiye.",
+      h2hDescription: "Current cricket league ke recent matchup samples aur key tags dekhiye.",
+    };
+  }
+
   return {
     sportLabel: "板球",
     standingsDescription: "查看当前板球联赛的排名、胜率、近期状态与主客场分布。",
@@ -95,13 +156,25 @@ function getSpecialDatabaseCopy(locale: string, sport: "cricket" | "esports") {
   };
 }
 
-function getPlanActionLabel(locale: string) {
+function getPlanActionLabel(locale: DisplayLocale) {
   if (locale === "en") {
     return "View plan";
   }
 
   if (locale === "zh-TW") {
     return "查看計畫單";
+  }
+
+  if (locale === "th") {
+    return "ดูแผน";
+  }
+
+  if (locale === "vi") {
+    return "Xem plan";
+  }
+
+  if (locale === "hi") {
+    return "Plan dekhein";
   }
 
   return "查看计划单";
@@ -433,8 +506,8 @@ export default async function DatabasePage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { databasePageCopy, livePageCopy, siteNavItems, uiCopy } = getSiteCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { databasePageCopy, livePageCopy, siteNavItems, uiCopy } = getSiteCopy(displayLocale);
   const resolved = await searchParams;
   const sport = pickValue(resolved.sport, "football");
   const normalizedSport =
@@ -459,7 +532,8 @@ export default async function DatabasePage({
   const isBasketball = normalizedSport === "basketball";
   const isCricket = normalizedSport === "cricket";
   const isEsports = normalizedSport === "esports";
-  const specialDatabaseCopy = isCricket || isEsports ? getSpecialDatabaseCopy(locale, isCricket ? "cricket" : "esports") : null;
+  const specialDatabaseCopy =
+    isCricket || isEsports ? getSpecialDatabaseCopy(displayLocale, isCricket ? "cricket" : "esports") : null;
   const [snapshot, articlePlans] = await Promise.all([
     getDatabaseSnapshot(normalizedSport, leagueSlug, locale),
     view === "schedule" || isCricket || isEsports ? getArticlePlans(normalizedSport, locale) : Promise.resolve([]),
@@ -493,20 +567,52 @@ export default async function DatabasePage({
       : databasePageCopy.footballStandingsDescription;
   const viewEyebrow =
     view === "schedule"
-      ? locale === "en"
-        ? "Schedule"
-        : "Schedule"
+      ? displayLocale === "zh-TW"
+        ? "賽程"
+        : displayLocale === "th"
+          ? "ตารางแข่ง"
+          : displayLocale === "vi"
+            ? "Lich dau"
+            : displayLocale === "hi"
+              ? "Schedule"
+              : displayLocale === "en"
+                ? "Schedule"
+                : "赛程"
       : view === "teams"
-        ? locale === "en"
-          ? "Teams"
-          : "Teams"
+        ? displayLocale === "zh-TW"
+          ? "球隊"
+          : displayLocale === "th"
+            ? "ทีม"
+            : displayLocale === "vi"
+              ? "Doi bong"
+              : displayLocale === "hi"
+                ? "Teams"
+                : displayLocale === "en"
+                  ? "Teams"
+                  : "球队"
         : view === "h2h"
-          ? locale === "en"
-            ? "Head To Head"
-            : "Head To Head"
-          : locale === "en"
-            ? "Standings"
-            : "Standings";
+          ? displayLocale === "zh-TW"
+            ? "歷史交鋒"
+            : displayLocale === "th"
+              ? "เฮดทูเฮด"
+              : displayLocale === "vi"
+                ? "Doi dau"
+                : displayLocale === "hi"
+                  ? "Head To Head"
+                  : displayLocale === "en"
+                    ? "Head To Head"
+                    : "历史交锋"
+          : displayLocale === "zh-TW"
+            ? "積分榜"
+            : displayLocale === "th"
+              ? "ตารางคะแนน"
+              : displayLocale === "vi"
+                ? "Bang xep hang"
+                : displayLocale === "hi"
+                  ? "Standings"
+                  : displayLocale === "en"
+                    ? "Standings"
+                    : "积分榜";
   const viewTitle =
     view === "schedule"
       ? uiCopy.scheduleResults
@@ -516,18 +622,29 @@ export default async function DatabasePage({
           ? uiCopy.historicalH2H
           : databasePageCopy.defaultViewTitle;
   const cricketQuickLinks = [
-    { href: "/live/cricket", label: siteNavItems.find((item) => item.href === "/live/cricket")?.label ?? "板球比分" },
-    { href: "/plans", label: siteNavItems.find((item) => item.href === "/plans")?.label ?? "计划单" },
-    { href: "/ai-predictions", label: siteNavItems.find((item) => item.href === "/ai-predictions")?.label ?? "AI 预测" },
+    { href: "/live/cricket", label: siteNavItems.find((item) => item.href === "/live/cricket")?.label ?? getSpecialDatabaseCopy(displayLocale, "cricket").sportLabel },
+    { href: "/plans", label: siteNavItems.find((item) => item.href === "/plans")?.label ?? "Plans" },
+    { href: "/ai-predictions", label: siteNavItems.find((item) => item.href === "/ai-predictions")?.label ?? "AI" },
   ];
   const esportsQuickLinks = [
-    { href: "/live/esports", label: siteNavItems.find((item) => item.href === "/live/esports")?.label ?? "电竞比分" },
+    { href: "/live/esports", label: siteNavItems.find((item) => item.href === "/live/esports")?.label ?? getSpecialDatabaseCopy(displayLocale, "esports").sportLabel },
     { href: `/database?sport=esports&league=${leagueSlug}&view=standings`, label: databasePageCopy.defaultViewTitle },
-    { href: "/plans?sport=esports", label: siteNavItems.find((item) => item.href === "/plans")?.label ?? "计划单" },
-    { href: "/ai-predictions?sport=esports", label: siteNavItems.find((item) => item.href === "/ai-predictions")?.label ?? "AI 预测" },
+    { href: "/plans?sport=esports", label: siteNavItems.find((item) => item.href === "/plans")?.label ?? "Plans" },
+    { href: "/ai-predictions?sport=esports", label: siteNavItems.find((item) => item.href === "/ai-predictions")?.label ?? "AI" },
   ];
-  const openNextMatchLabel = locale === "en" ? "Open match" : locale === "zh-TW" ? "查看比賽" : "查看比赛";
-  const planActionLabel = getPlanActionLabel(locale);
+  const openNextMatchLabel =
+    displayLocale === "en"
+      ? "Open match"
+      : displayLocale === "zh-TW"
+        ? "查看比賽"
+        : displayLocale === "th"
+          ? "ดูแมตช์"
+          : displayLocale === "vi"
+            ? "Mo tran"
+            : displayLocale === "hi"
+              ? "Match kholen"
+              : "查看比赛";
+  const planActionLabel = getPlanActionLabel(displayLocale);
   const firstLeaguePlanHref = leagueMatchIds.map((matchId) => planHrefByMatchId[matchId]).find(Boolean);
   const h2hActionLinks = isCricket
     ? [
@@ -567,8 +684,8 @@ export default async function DatabasePage({
             >
               <option value="football">{databasePageCopy.football}</option>
               <option value="basketball">{databasePageCopy.basketball}</option>
-              <option value="cricket">{getSpecialDatabaseCopy(locale, "cricket").sportLabel}</option>
-              <option value="esports">{getSpecialDatabaseCopy(locale, "esports").sportLabel}</option>
+              <option value="cricket">{getSpecialDatabaseCopy(displayLocale, "cricket").sportLabel}</option>
+              <option value="esports">{getSpecialDatabaseCopy(displayLocale, "esports").sportLabel}</option>
             </select>
           </label>
 

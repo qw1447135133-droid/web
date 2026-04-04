@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LocaleSwitcher } from "@/components/locale-switcher";
-import type { Locale } from "@/lib/i18n-config";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 import type { SessionEntitlements, SessionUser, SiteAnnouncement } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -13,11 +13,13 @@ const announcementCloseAnimationMs = 320;
 
 export function SiteHeader({
   announcements,
+  displayLocale,
   locale,
   session,
   entitlements,
 }: {
   announcements: SiteAnnouncement[];
+  displayLocale: DisplayLocale;
   locale: Locale;
   session: SessionUser;
   entitlements: SessionEntitlements;
@@ -30,7 +32,7 @@ export function SiteHeader({
   const [activeAnnouncementIndex, setActiveAnnouncementIndex] = useState(0);
   const searchKey = searchParams.toString();
   const searchQuery = searchParams.get("q") ?? "";
-  const { brandCopy, roleLabels, searchCopy, sessionUiCopy, siteNavItems } = getSiteCopy(locale);
+  const { brandCopy, roleLabels, searchCopy, sessionUiCopy, siteNavItems } = getSiteCopy(displayLocale);
   const visibleNavItems = siteNavItems.filter(
     (item) => item.href !== "/admin" || entitlements.canAccessAdminConsole,
   );
@@ -237,13 +239,13 @@ export function SiteHeader({
             </Link>
 
             <div className="lg:hidden">
-              <LocaleSwitcher locale={locale} />
+              <LocaleSwitcher displayLocale={displayLocale} />
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="hidden lg:block">
-              <LocaleSwitcher locale={locale} />
+              <LocaleSwitcher displayLocale={displayLocale} />
             </div>
             <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300">
               {session.role === "visitor"

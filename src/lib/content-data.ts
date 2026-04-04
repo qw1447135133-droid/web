@@ -24,7 +24,7 @@ import {
   getStoredPredictions,
   getStoredSiteAnnouncements,
 } from "@/lib/repositories/content-repository";
-import { defaultLocale, type Locale } from "@/lib/i18n-config";
+import { defaultLocale, resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 import type {
   ArticlePlan,
   AuthorTeam,
@@ -35,6 +35,12 @@ import type {
   SiteAnnouncement,
   Sport,
 } from "@/lib/types";
+
+type ContentLocale = Locale | DisplayLocale;
+
+function resolveContentLocale(locale: ContentLocale): Locale {
+  return resolveRenderLocale(locale as DisplayLocale);
+}
 
 function mergeDefined<T extends object>(fallback: T, primary: T) {
   const resolvedPrimary = Object.fromEntries(
@@ -93,13 +99,19 @@ function localizeSiteAnnouncement(
     ctaLabelZhTw?: string;
     ctaLabelEn?: string;
   },
-  locale: Locale,
+  locale: ContentLocale,
 ): SiteAnnouncement {
-  const title = locale === "zh-TW" ? item.titleZhTw : locale === "en" ? item.titleEn : item.titleZhCn;
+  const renderLocale = resolveContentLocale(locale);
+  const title =
+    renderLocale === "zh-TW" ? item.titleZhTw : renderLocale === "en" ? item.titleEn : item.titleZhCn;
   const message =
-    locale === "zh-TW" ? item.messageZhTw : locale === "en" ? item.messageEn : item.messageZhCn;
+    renderLocale === "zh-TW" ? item.messageZhTw : renderLocale === "en" ? item.messageEn : item.messageZhCn;
   const ctaLabel =
-    locale === "zh-TW" ? item.ctaLabelZhTw : locale === "en" ? item.ctaLabelEn : item.ctaLabelZhCn;
+    renderLocale === "zh-TW"
+      ? item.ctaLabelZhTw
+      : renderLocale === "en"
+        ? item.ctaLabelEn
+        : item.ctaLabelZhCn;
 
   return {
     id: item.id,
@@ -130,22 +142,27 @@ function localizeHomepageBanner(
     ctaLabelZhTw: string;
     ctaLabelEn: string;
   },
-  locale: Locale,
+  locale: ContentLocale,
 ): HomepageBanner {
+  const renderLocale = resolveContentLocale(locale);
   return {
     id: item.id,
-    title: locale === "zh-TW" ? item.titleZhTw : locale === "en" ? item.titleEn : item.titleZhCn,
+    title: renderLocale === "zh-TW" ? item.titleZhTw : renderLocale === "en" ? item.titleEn : item.titleZhCn,
     subtitle:
-      locale === "zh-TW" ? item.subtitleZhTw : locale === "en" ? item.subtitleEn : item.subtitleZhCn,
+      renderLocale === "zh-TW" ? item.subtitleZhTw : renderLocale === "en" ? item.subtitleEn : item.subtitleZhCn,
     description:
-      locale === "zh-TW"
+      renderLocale === "zh-TW"
         ? item.descriptionZhTw
-        : locale === "en"
+        : renderLocale === "en"
           ? item.descriptionEn
           : item.descriptionZhCn,
     href: item.href,
     ctaLabel:
-      locale === "zh-TW" ? item.ctaLabelZhTw : locale === "en" ? item.ctaLabelEn : item.ctaLabelZhCn,
+      renderLocale === "zh-TW"
+        ? item.ctaLabelZhTw
+        : renderLocale === "en"
+          ? item.ctaLabelEn
+          : item.ctaLabelZhCn,
     imageUrl: item.imageUrl,
     theme: item.theme,
   };
@@ -190,8 +207,9 @@ function formatHitRate(value: number) {
 export function applyHomepageModuleMetrics(
   modules: HomepageModule[],
   input: HomepageModuleMetricInput,
-  locale: Locale = defaultLocale,
+  locale: ContentLocale = defaultLocale,
 ): HomepageModule[] {
+  const renderLocale = resolveContentLocale(locale);
   const allMatches = [
     ...input.footballMatches,
     ...input.basketballMatches,
@@ -213,9 +231,9 @@ export function applyHomepageModuleMetrics(
       return {
         ...module,
         metric:
-          locale === "en"
+          renderLocale === "en"
             ? `${liveMatches} live / ${sportsCovered} sports`
-            : locale === "zh-TW"
+            : renderLocale === "zh-TW"
               ? `${liveMatches} 場進行中 / ${sportsCovered} 個項目`
               : `${liveMatches} 场进行中 / ${sportsCovered} 个项目`,
       };
@@ -225,9 +243,9 @@ export function applyHomepageModuleMetrics(
       return {
         ...module,
         metric:
-          locale === "en"
+          renderLocale === "en"
             ? `${input.authorCount} authors / ${input.articlePlanCount} plans`
-            : locale === "zh-TW"
+            : renderLocale === "zh-TW"
               ? `${input.authorCount} 位作者 / ${input.articlePlanCount} 條計畫單`
               : `${input.authorCount} 位作者 / ${input.articlePlanCount} 条计划单`,
       };
@@ -238,14 +256,14 @@ export function applyHomepageModuleMetrics(
         ...module,
         metric:
           hitRate == null
-            ? locale === "en"
+            ? renderLocale === "en"
               ? `${input.predictions.length} predictions online`
-              : locale === "zh-TW"
+              : renderLocale === "zh-TW"
                 ? `${input.predictions.length} 條預測在線`
                 : `${input.predictions.length} 条预测在线`
-            : locale === "en"
+            : renderLocale === "en"
               ? `${formatHitRate(hitRate)}% hit rate / ${settledPredictions.length} settled`
-              : locale === "zh-TW"
+              : renderLocale === "zh-TW"
                 ? `${formatHitRate(hitRate)}% 命中 / ${settledPredictions.length} 條已結算`
                 : `${formatHitRate(hitRate)}% 命中 / ${settledPredictions.length} 条已结算`,
       };
@@ -255,9 +273,9 @@ export function applyHomepageModuleMetrics(
       return {
         ...module,
         metric:
-          locale === "en"
+          renderLocale === "en"
             ? `${input.cricketMatches.length} fixtures / ${input.cricketLeagueCount} leagues`
-            : locale === "zh-TW"
+            : renderLocale === "zh-TW"
               ? `${input.cricketMatches.length} 場賽事 / ${input.cricketLeagueCount} 個聯賽`
               : `${input.cricketMatches.length} 场赛事 / ${input.cricketLeagueCount} 个联赛`,
       };
@@ -267,9 +285,9 @@ export function applyHomepageModuleMetrics(
       return {
         ...module,
         metric:
-          locale === "en"
+          renderLocale === "en"
             ? `${esportsLiveCount} live / ${Math.max(esportsCircuitCount, input.esportsLeagueCount)} circuits`
-            : locale === "zh-TW"
+            : renderLocale === "zh-TW"
               ? `${esportsLiveCount} 場進行中 / ${Math.max(esportsCircuitCount, input.esportsLeagueCount)} 條賽道`
               : `${esportsLiveCount} 场进行中 / ${Math.max(esportsCircuitCount, input.esportsLeagueCount)} 条赛道`,
       };
@@ -279,7 +297,7 @@ export function applyHomepageModuleMetrics(
   });
 }
 
-export async function getHomepageBanners(locale: Locale = defaultLocale): Promise<HomepageBanner[]> {
+export async function getHomepageBanners(locale: ContentLocale = defaultLocale): Promise<HomepageBanner[]> {
   const storedBanners = await getStoredHomepageBanners();
   const fallbackBanners = homepageBannerSeeds.map((item) => ({
     id: item.id,
@@ -304,13 +322,14 @@ export async function getHomepageBanners(locale: Locale = defaultLocale): Promis
   return source.map((item) => localizeHomepageBanner(item, locale));
 }
 
-export async function getHomepageModules(locale: Locale = defaultLocale): Promise<HomepageModule[]> {
+export async function getHomepageModules(locale: ContentLocale = defaultLocale): Promise<HomepageModule[]> {
+  const renderLocale = resolveContentLocale(locale);
   const modules = await getStoredHomepageModules();
   const source = mergeByKey(modules, mockHomepageModules, (item) => item.key ?? item.id);
-  return source.map((item) => localizeHomepageModule(item, locale));
+  return source.map((item) => localizeHomepageModule(item, renderLocale));
 }
 
-export async function getSiteAnnouncements(locale: Locale = defaultLocale): Promise<SiteAnnouncement[]> {
+export async function getSiteAnnouncements(locale: ContentLocale = defaultLocale): Promise<SiteAnnouncement[]> {
   const storedAnnouncements = await getStoredSiteAnnouncements();
   const fallbackAnnouncements = siteAnnouncementSeeds.map((item) => ({
     id: item.id,

@@ -12,6 +12,7 @@ const defaultSession: SessionUser = {
   displayName: "Guest",
   email: "",
   role: "visitor",
+  coinBalance: 0,
   purchasedContentIds: [],
   membershipOrders: [],
   contentOrders: [],
@@ -23,6 +24,9 @@ function toSessionUser(user: {
   role: string;
   membershipPlanId: string | null;
   membershipExpiresAt: Date | null;
+  coinAccount: {
+    balance: number;
+  } | null;
   membershipOrders: {
     id: string;
     planId: string;
@@ -40,6 +44,7 @@ function toSessionUser(user: {
     refundedAt: Date | null;
     refundReason: string | null;
     paymentReference: string | null;
+    callbackPayload: string | null;
   }[];
   contentOrders: {
     id: string;
@@ -58,14 +63,31 @@ function toSessionUser(user: {
     refundedAt: Date | null;
     refundReason: string | null;
     paymentReference: string | null;
+    callbackPayload: string | null;
   }[];
 }): SessionUser {
+  const readCoinAmount = (value: string | null) => {
+    if (!value) {
+      return undefined;
+    }
+
+    try {
+      const payload = JSON.parse(value) as { coinAmount?: number };
+      return typeof payload.coinAmount === "number" && Number.isFinite(payload.coinAmount)
+        ? payload.coinAmount
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
   return {
     displayName: user.displayName,
     email: user.email,
     role: (user.role as UserRole) ?? "member",
     membershipPlanId: (user.membershipPlanId as MembershipPlanId | undefined) ?? undefined,
     membershipExpiresAt: user.membershipExpiresAt?.toISOString(),
+    coinBalance: user.coinAccount?.balance ?? 0,
     purchasedContentIds: user.contentOrders
       .filter((order) => order.status === "paid")
       .map((order) => order.contentId),
@@ -86,6 +108,7 @@ function toSessionUser(user: {
       refundedAt: order.refundedAt?.toISOString(),
       refundReason: order.refundReason ?? undefined,
       paymentReference: order.paymentReference ?? undefined,
+      coinAmount: readCoinAmount(order.callbackPayload),
     })),
     contentOrders: user.contentOrders.map((order) => ({
       id: order.id,
@@ -104,6 +127,7 @@ function toSessionUser(user: {
       refundedAt: order.refundedAt?.toISOString(),
       refundReason: order.refundReason ?? undefined,
       paymentReference: order.paymentReference ?? undefined,
+      coinAmount: readCoinAmount(order.callbackPayload),
     })),
   };
 }
@@ -125,13 +149,56 @@ export async function getSessionUser() {
     include: {
       user: {
         include: {
+          coinAccount: {
+            select: {
+              balance: true,
+            },
+          },
           membershipOrders: {
             orderBy: { updatedAt: "desc" },
             take: 8,
+            select: {
+              id: true,
+              planId: true,
+              amount: true,
+              status: true,
+              provider: true,
+              providerOrderId: true,
+              expiresAt: true,
+              createdAt: true,
+              updatedAt: true,
+              paidAt: true,
+              failedAt: true,
+              failureReason: true,
+              closedAt: true,
+              refundedAt: true,
+              refundReason: true,
+              paymentReference: true,
+              callbackPayload: true,
+            },
           },
           contentOrders: {
             orderBy: { updatedAt: "desc" },
             take: 12,
+            select: {
+              id: true,
+              contentId: true,
+              amount: true,
+              status: true,
+              provider: true,
+              providerOrderId: true,
+              expiresAt: true,
+              createdAt: true,
+              updatedAt: true,
+              paidAt: true,
+              failedAt: true,
+              failureReason: true,
+              closedAt: true,
+              refundedAt: true,
+              refundReason: true,
+              paymentReference: true,
+              callbackPayload: true,
+            },
           },
         },
       },

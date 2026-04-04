@@ -1,4 +1,4 @@
-import type { Locale } from "@/lib/i18n";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 
 type OpsCopy = {
   checkout: {
@@ -220,12 +220,16 @@ const enCopy: OpsCopy = {
   },
 };
 
-export function getOpsCopy(locale: Locale): OpsCopy {
+export function getOpsCopy(locale: Locale | DisplayLocale): OpsCopy {
   if (locale === "zh-TW") {
     return zhTwCopy;
   }
 
   if (locale === "en") {
+    return enCopy;
+  }
+
+  if (locale === "th" || locale === "vi" || locale === "hi") {
     return enCopy;
   }
 

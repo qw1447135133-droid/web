@@ -1,4 +1,4 @@
-import { defaultLocale, type Locale } from "@/lib/i18n-config";
+import { defaultLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 import type { OrderStatus } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -20,7 +20,7 @@ const paymentResultTones: Record<PaymentResultState, string> = {
   error: "border-rose-300/20 bg-rose-400/10 text-rose-100",
 };
 
-export function getOrderStatusMeta(status: OrderStatus, locale: Locale = defaultLocale) {
+export function getOrderStatusMeta(status: OrderStatus, locale: Locale | DisplayLocale = defaultLocale) {
   const { orderStatusLabels } = getSiteCopy(locale);
 
   return {
@@ -38,7 +38,7 @@ export function getOrderActivityMeta(
     closedAt?: string;
     refundedAt?: string;
   },
-  locale: Locale = defaultLocale,
+  locale: Locale | DisplayLocale = defaultLocale,
 ) {
   const { paymentUiCopy } = getSiteCopy(locale);
 
@@ -67,7 +67,7 @@ export function getOrderFailureMeta(
     failureReason?: string;
     refundReason?: string;
   },
-  locale: Locale = defaultLocale,
+  locale: Locale | DisplayLocale = defaultLocale,
 ) {
   const { paymentUiCopy } = getSiteCopy(locale);
 
@@ -90,7 +90,7 @@ export function getOrderFailureMeta(
   return null;
 }
 
-export function getPaymentResultMeta(scope: PaymentResultScope, value: string, locale: Locale = defaultLocale) {
+export function getPaymentResultMeta(scope: PaymentResultScope, value: string, locale: Locale | DisplayLocale = defaultLocale) {
   if (value !== "success" && value !== "closed" && value !== "failed" && value !== "error") {
     return null;
   }

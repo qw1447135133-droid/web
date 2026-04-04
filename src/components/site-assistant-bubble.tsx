@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Locale } from "@/lib/i18n-config";
+import { getIntlLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 import { answerSiteAssistantQuestion, getSiteAssistantCopy, type SiteAssistantReply } from "@/lib/site-assistant";
 
 type Message = {
@@ -26,7 +26,7 @@ const assistantLastSeenMessageStorageKey = "signal-nine-assistant-last-seen-mess
 const assistantDockAutoHideMs = 5000;
 const assistantDockCloseAnimationMs = 280;
 
-export function SiteAssistantBubble({ locale }: { locale: Locale }) {
+export function SiteAssistantBubble({ locale }: { locale: Locale | DisplayLocale }) {
   const copy = useMemo(() => getSiteAssistantCopy(locale), [locale]);
   const runtimeCopy = useMemo(
     () =>
@@ -100,7 +100,109 @@ export function SiteAssistantBubble({ locale }: { locale: Locale }) {
               handoffCancel: "取消",
               handoffSuccess: "人工轉接請求已提交，營運可在後台隊列中跟進。",
             }
-          : {
+          : locale === "th"
+            ? {
+                teaserBadge: "AI ผู้ช่วย",
+                teaserTitle: "ต้องการคำตอบแบบเร็วไหม?",
+                teaserDescription: "ถามเรื่องหน้าแมตช์ สมาชิก แผนที่ซื้อแล้ว อีสปอร์ต คริกเก็ต และการนำทางในเว็บได้",
+                teaserOpen: "ถามเลย",
+                teaserClose: "ปิด",
+                dockBadge: "คำตอบล่าสุด",
+                dockTitle: "คำตอบล่าสุดจากผู้ช่วย",
+                dockOpen: "ต่อเลย",
+                dockDismiss: "ซ่อน",
+                composerHint: "กด Enter เพื่อส่ง, Shift+Enter เพื่อขึ้นบรรทัดใหม่",
+                handoffQueued: "ส่งคำขอให้ทีมงานแล้ว",
+                handoffFailed: "ส่งคำขอไม่สำเร็จ กรุณาลองใหม่",
+                sessionListTitle: "แชตล่าสุด",
+                newConversation: "แชตใหม่",
+                loadingConversation: "กำลังโหลดบทสนทนา...",
+                openStatus: "เปิดอยู่",
+                handoffStatusLabel: "รอทีมงาน",
+                resolvedStatus: "ดำเนินการแล้ว",
+                modelReady: "เชื่อมต่อโมเดลจริงแล้ว",
+                modelFallback: "โหมดสำรอง",
+                loading: "กำลังคิด...",
+                sendFailed: "ผู้ช่วยไม่พร้อมชั่วคราว ด้านล่างคือคำตอบสำรอง",
+                handoffButton: "ติดต่อเจ้าหน้าที่",
+                handoffTitle: "ขอให้เจ้าหน้าที่ติดตามต่อ",
+                handoffDescription: "ฝากช่องทางติดต่อและหมายเหตุ คำขอจะเข้าสู่คิวหลังบ้าน",
+                handoffName: "ชื่อ",
+                handoffContact: "ช่องทางติดต่อ",
+                handoffNote: "หมายเหตุ",
+                handoffSubmit: "ส่งคำขอ",
+                handoffCancel: "ยกเลิก",
+                handoffSuccess: "ส่งคำขอถึงทีมงานแล้ว ทีมปฏิบัติการจะติดตามต่อจากหลังบ้าน",
+              }
+            : locale === "vi"
+              ? {
+                  teaserBadge: "AI hỗ trợ",
+                  teaserTitle: "Cần câu trả lời nhanh?",
+                  teaserDescription: "Hỏi về trang trận đấu, hội viên, nội dung đã mua, esports, cricket và điều hướng trong site.",
+                  teaserOpen: "Hỏi ngay",
+                  teaserClose: "Ẩn",
+                  dockBadge: "Phản hồi gần đây",
+                  dockTitle: "Phản hồi AI mới nhất",
+                  dockOpen: "Tiếp tục",
+                  dockDismiss: "Ẩn",
+                  composerHint: "Nhấn Enter để gửi, Shift+Enter để xuống dòng",
+                  handoffQueued: "Yêu cầu chuyển người thật đã được gửi",
+                  handoffFailed: "Gửi yêu cầu thất bại, vui lòng thử lại",
+                  sessionListTitle: "Cuộc chat gần đây",
+                  newConversation: "Chat mới",
+                  loadingConversation: "Đang tải hội thoại...",
+                  openStatus: "Đang mở",
+                  handoffStatusLabel: "Chờ người thật",
+                  resolvedStatus: "Đã xử lý",
+                  modelReady: "Đã kết nối model thật",
+                  modelFallback: "Chế độ dự phòng",
+                  loading: "Đang suy nghĩ...",
+                  sendFailed: "Trợ lý tạm thời không khả dụng. Câu trả lời dự phòng hiển thị bên dưới.",
+                  handoffButton: "Chuyển người thật",
+                  handoffTitle: "Yêu cầu nhân viên theo dõi",
+                  handoffDescription: "Để lại liên hệ và ghi chú, yêu cầu sẽ vào hàng chờ quản trị.",
+                  handoffName: "Tên",
+                  handoffContact: "Liên hệ",
+                  handoffNote: "Ghi chú",
+                  handoffSubmit: "Gửi yêu cầu",
+                  handoffCancel: "Hủy",
+                  handoffSuccess: "Đã gửi yêu cầu chuyển người thật. Đội vận hành sẽ tiếp nhận trong trang quản trị.",
+                }
+              : locale === "hi"
+                ? {
+                    teaserBadge: "AI सहायक",
+                    teaserTitle: "क्या आपको जल्दी जवाब चाहिए?",
+                    teaserDescription: "मैच पेज, सदस्यता, खरीदे गए प्लान, ईस्पोर्ट्स, क्रिकेट और साइट नेविगेशन के बारे में पूछें।",
+                    teaserOpen: "अभी पूछें",
+                    teaserClose: "छिपाएँ",
+                    dockBadge: "हाल की प्रतिक्रिया",
+                    dockTitle: "सहायक का नवीनतम जवाब",
+                    dockOpen: "जारी रखें",
+                    dockDismiss: "छिपाएँ",
+                    composerHint: "भेजने के लिए Enter दबाएँ, नई पंक्ति के लिए Shift+Enter",
+                    handoffQueued: "मानव हैंडऑफ अनुरोध भेज दिया गया है",
+                    handoffFailed: "हैंडऑफ अनुरोध विफल रहा, कृपया बाद में फिर कोशिश करें",
+                    sessionListTitle: "हाल की चैट",
+                    newConversation: "नई चैट",
+                    loadingConversation: "वार्तालाप लोड हो रहा है...",
+                    openStatus: "खुला",
+                    handoffStatusLabel: "मानव प्रतीक्षा",
+                    resolvedStatus: "सुलझाया गया",
+                    modelReady: "लाइव मॉडल जुड़ चुका है",
+                    modelFallback: "फॉलबैक मोड",
+                    loading: "सोच रहा है...",
+                    sendFailed: "सहायक फिलहाल उपलब्ध नहीं है। नीचे फॉलबैक उत्तर दिखाया गया है।",
+                    handoffButton: "मानव सहायता",
+                    handoffTitle: "मानव फॉलो-अप माँगें",
+                    handoffDescription: "अपना संपर्क और नोट छोड़ें। अनुरोध एडमिन कतार में जाएगा।",
+                    handoffName: "नाम",
+                    handoffContact: "संपर्क",
+                    handoffNote: "नोट",
+                    handoffSubmit: "अनुरोध भेजें",
+                    handoffCancel: "रद्द करें",
+                    handoffSuccess: "मानव हैंडऑफ अनुरोध भेज दिया गया है। ऑपरेशंस टीम एडमिन कतार से आगे बढ़ेगी।",
+                  }
+                : {
               teaserBadge: "AI 客服",
               teaserTitle: "需要快速帮你定位内容吗？",
               teaserDescription: "可询问比赛页、会员方案、已购内容、电竞、板球与站内导航。",
@@ -696,7 +798,7 @@ export function SiteAssistantBubble({ locale }: { locale: Locale }) {
     }
 
     return new Intl.DateTimeFormat(
-      locale === "en" ? "en-US" : locale === "zh-TW" ? "zh-Hant-TW" : "zh-CN",
+      getIntlLocale(locale),
       {
         hour: "2-digit",
         minute: "2-digit",
@@ -814,7 +916,17 @@ export function SiteAssistantBubble({ locale }: { locale: Locale }) {
               </button>
               <div className="mt-3 flex items-center justify-between gap-2">
                 <span className="text-[11px] text-slate-500">
-                  {locale === "en" ? "Auto hides in 5s" : locale === "zh-TW" ? "5 秒後自動收起" : "5 秒后自动收起"}
+                  {locale === "th"
+                    ? "ปิดอัตโนมัติใน 5 วินาที"
+                    : locale === "vi"
+                      ? "Tự ẩn sau 5 giây"
+                      : locale === "hi"
+                        ? "5 सेकंड में स्वतः छिपेगा"
+                        : locale === "en"
+                          ? "Auto hides in 5s"
+                          : locale === "zh-TW"
+                            ? "5 秒後自動收起"
+                            : "5 秒后自动收起"}
                 </span>
                 <button
                   type="button"
@@ -1113,10 +1225,30 @@ export function SiteAssistantBubble({ locale }: { locale: Locale }) {
         </span>
         <span className="relative hidden min-w-0 text-left sm:block">
           <span className="block text-sm font-semibold text-white">
-            {locale === "en" ? "AI support" : locale === "zh-TW" ? "AI 客服" : "AI 客服"}
+            {locale === "th"
+              ? "AI ผู้ช่วย"
+              : locale === "vi"
+                ? "AI hỗ trợ"
+                : locale === "hi"
+                  ? "AI सहायक"
+                  : locale === "en"
+                    ? "AI support"
+                    : locale === "zh-TW"
+                      ? "AI 客服"
+                      : "AI 客服"}
           </span>
           <span className="block text-[11px] tracking-[0.16em] text-slate-400 uppercase">
-            {locale === "en" ? "scores / plans / member" : locale === "zh-TW" ? "比分 / 方案 / 會員" : "比分 / 方案 / 会员"}
+            {locale === "th"
+              ? "สกอร์ / แผน / สมาชิก"
+              : locale === "vi"
+                ? "tỷ số / kế hoạch / hội viên"
+                : locale === "hi"
+                  ? "स्कोर / प्लान / सदस्य"
+                  : locale === "en"
+                    ? "scores / plans / member"
+                    : locale === "zh-TW"
+                      ? "比分 / 方案 / 會員"
+                      : "比分 / 方案 / 会员"}
           </span>
         </span>
         {!open && unreadAssistantCount > 0 ? (

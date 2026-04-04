@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ScoreboardTable } from "@/components/scoreboard-table";
 import { SectionHeading } from "@/components/section-heading";
 import { formatDateTime } from "@/lib/format";
-import { getCurrentLocale } from "@/lib/i18n";
+import type { DisplayLocale } from "@/lib/i18n-config";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -29,7 +30,7 @@ function resolveEsportsGame(leagueSlug: string): Exclude<EsportsGame, "all"> {
   return "cs2";
 }
 
-function getEsportsPageCopy(locale: "zh-CN" | "zh-TW" | "en") {
+function getEsportsPageCopy(locale: DisplayLocale) {
   if (locale === "en") {
     return {
       gameFilter: "Game",
@@ -72,6 +73,69 @@ function getEsportsPageCopy(locale: "zh-CN" | "zh-TW" | "en") {
     };
   }
 
+  if (locale === "th") {
+    return {
+      gameFilter: "เกม",
+      gameOptions: {
+        all: "ทุกสาย",
+        lol: "LoL",
+        dota2: "Dota 2",
+        cs2: "CS2",
+      },
+      liveSeries: "ซีรีส์กำลังแข่ง",
+      coveredLeagues: "ลีกที่รองรับ",
+      featuredTitle: "แมตช์สำคัญ",
+      featuredDescription: "ดันซีรีส์ที่ต้องดูไว้ด้านบน เพื่อให้ผู้ใช้เข้าจากบอร์ดไปยังหน้ารายละเอียดได้เร็วขึ้น",
+      noPriority: "ตอนนี้ยังไม่มีแมตช์อีสปอร์ตสำหรับ priority display",
+      circuitTitle: "ภาพรวมแต่ละเกม",
+      circuitDescription: "แยก LoL, Dota 2 และ CS2 ออกจากกัน เพื่อให้ทางเข้าอีสปอร์ตเป็นพื้นผิวหลายเกมจริง",
+      mapsLabel: "สถานะแผนที่ / ซีรีส์",
+      viewMatch: "ดูแมตช์",
+    };
+  }
+
+  if (locale === "vi") {
+    return {
+      gameFilter: "Game",
+      gameOptions: {
+        all: "Tat ca nhanh",
+        lol: "LoL",
+        dota2: "Dota 2",
+        cs2: "CS2",
+      },
+      liveSeries: "Series dang live",
+      coveredLeagues: "Giai da phu",
+      featuredTitle: "Tran uu tien",
+      featuredDescription: "Giu cac series duoc chu y nhieu nhat o dau trang de nguoi dung vao detail nhanh hon.",
+      noPriority: "Hien chua co tran esports nao duoc uu tien hien thi.",
+      circuitTitle: "Phan lop game",
+      circuitDescription: "Tach LoL, Dota 2 va CS2 de kenh esports thuc su giong mot be mat da tua game.",
+      mapsLabel: "Trang thai map / series",
+      viewMatch: "Mo tran",
+    };
+  }
+
+  if (locale === "hi") {
+    return {
+      gameFilter: "Game",
+      gameOptions: {
+        all: "Sabhi circuits",
+        lol: "LoL",
+        dota2: "Dota 2",
+        cs2: "CS2",
+      },
+      liveSeries: "Live series",
+      coveredLeagues: "Covered leagues",
+      featuredTitle: "Priority matches",
+      featuredDescription: "High-attention series ko top ke paas rakhein taaki users board se match detail tak jaldi pahunch sakein.",
+      noPriority: "Abhi priority display ke liye koi esports match nahin hai.",
+      circuitTitle: "Circuit split",
+      circuitDescription: "LoL, Dota 2, aur CS2 ko alag dikhaiye taaki esports entry ek real multi-title command surface lage.",
+      mapsLabel: "Map / series state",
+      viewMatch: "Open match",
+    };
+  }
+
   return {
     gameFilter: "项目",
     gameOptions: {
@@ -97,9 +161,9 @@ export default async function EsportsLivePage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { livePageCopy, matchStatusLabels, uiCopy } = getSiteCopy(locale);
-  const esportsPageCopy = getEsportsPageCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { livePageCopy, matchStatusLabels, uiCopy } = getSiteCopy(displayLocale);
+  const esportsPageCopy = getEsportsPageCopy(displayLocale);
   const resolved = await searchParams;
   const league = pickValue(resolved.league, "all");
   const status = pickValue(resolved.status, "all");
@@ -127,7 +191,7 @@ export default async function EsportsLivePage({
 
   items = [...items].sort((left, right) => {
     if (sort === "league") {
-      return left.leagueSlug.localeCompare(right.leagueSlug, locale);
+      return left.leagueSlug.localeCompare(right.leagueSlug, displayLocale);
     }
 
     return new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime();
@@ -147,6 +211,42 @@ export default async function EsportsLivePage({
       leadLeague: allLeagues.find((item) => resolveEsportsGame(item.slug) === key)?.name ?? esportsPageCopy.gameOptions[key],
     };
   });
+  const featuredEyebrow =
+    displayLocale === "zh-TW"
+      ? "重點隊列"
+      : displayLocale === "th"
+        ? "คิวสำคัญ"
+        : displayLocale === "vi"
+          ? "Hang doi uu tien"
+          : displayLocale === "hi"
+            ? "प्राथमिक कतार"
+            : displayLocale === "en"
+              ? "Priority Queue"
+              : "重点队列";
+  const circuitEyebrow =
+    displayLocale === "zh-TW"
+      ? "賽道層"
+      : displayLocale === "th"
+        ? "เลเยอร์เกม"
+        : displayLocale === "vi"
+          ? "Lop game"
+          : displayLocale === "hi"
+            ? "गेम लेयर"
+            : displayLocale === "en"
+              ? "Circuit Layer"
+              : "赛道层";
+  const circuitCardDescription =
+    displayLocale === "zh-TW"
+      ? "目前已作為此頁的獨立賽道，承接即時系列賽、賽程狀態與詳情入口。"
+      : displayLocale === "th"
+        ? "กำลังป้อนเส้นทางนี้ด้วยซีรีส์สด สถานะตารางแข่ง และทางเข้าหน้ารายละเอียดแมตช์"
+        : displayLocale === "vi"
+          ? "dang cap du lieu cho route nay voi series live, trang thai lich thi dau va loi vao match detail."
+          : displayLocale === "hi"
+            ? "यह रूट अभी लाइव सीरीज़, शेड्यूल स्थिति और मैच डिटेल एंट्री को फीड कर रहा है।"
+            : displayLocale === "en"
+              ? "currently feeds this route with live series, schedule state, and match detail entry points."
+              : "目前已作为此页的独立赛道，承接即时系列赛、赛程状态与详情入口。";
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8">
@@ -246,12 +346,12 @@ export default async function EsportsLivePage({
         </div>
       </section>
 
-      <ScoreboardTable matches={items} sportLabel={livePageCopy.esports.sportLabel} locale={locale} />
+      <ScoreboardTable matches={items} sportLabel={livePageCopy.esports.sportLabel} locale={displayLocale} />
 
       <section className="grid gap-6 lg:grid-cols-[1fr_0.95fr]">
         <div className="glass-panel rounded-[2rem] p-6">
           <SectionHeading
-            eyebrow="Priority Queue"
+            eyebrow={featuredEyebrow}
             title={esportsPageCopy.featuredTitle}
             description={esportsPageCopy.featuredDescription}
           />
@@ -276,7 +376,7 @@ export default async function EsportsLivePage({
                     </span>
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-400">
-                    <span>{formatDateTime(match.kickoff, locale)}</span>
+                    <span>{formatDateTime(match.kickoff, displayLocale)}</span>
                     <span>{esportsPageCopy.mapsLabel}</span>
                     <span>{match.score}</span>
                   </div>
@@ -297,7 +397,7 @@ export default async function EsportsLivePage({
 
         <div className="glass-panel rounded-[2rem] p-6">
           <SectionHeading
-            eyebrow="Circuit Layer"
+            eyebrow={circuitEyebrow}
             title={esportsPageCopy.circuitTitle}
             description={esportsPageCopy.circuitDescription}
           />
@@ -314,7 +414,7 @@ export default async function EsportsLivePage({
                   </span>
                 </div>
                 <p className="mt-4 text-sm text-slate-400">
-                  {card.label} {locale === "en" ? "currently feeds this route with live series, schedule state, and match detail entry points." : locale === "zh-TW" ? "目前已作為此頁的獨立賽道，承接即時系列賽、賽程狀態與詳情入口。" : "目前已作为此页的独立赛道，承接即时系列赛、赛程状态与详情入口。"}
+                  {card.label} {circuitCardDescription}
                 </p>
               </div>
             ))}

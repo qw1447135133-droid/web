@@ -1,4 +1,4 @@
-import type { Locale } from "@/lib/i18n-config";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 
 export type SiteAssistantLink = {
   href: string;
@@ -39,6 +39,8 @@ type AssistantKnowledgeBase = {
   }>;
 };
 
+type AssistantDisplayOverlay = Pick<AssistantKnowledgeBase, "ui" | "presets" | "greeting" | "fallback">;
+
 const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
   "zh-CN": {
     ui: {
@@ -59,7 +61,7 @@ const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
       { id: "ai", question: "AI 预测页在哪里？" },
       { id: "orders", question: "如何查看已购计划单？" },
       { id: "esports", question: "电竞模块支持哪些内容？" },
-      { id: "language", question: "怎么切换简体、繁体和英文？" },
+      { id: "language", question: "怎么切换站点语言？" },
     ],
     greeting: {
       text: "你好，我是站内助手。你可以直接问我如何看比分、查资料库、开会员、找电竞/板球内容，或者点下面的常见问题。",
@@ -153,7 +155,7 @@ const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
       {
         keywords: ["语言", "英文", "繁体", "简体", "locale", "english", "traditional", "simplified"],
         reply: {
-          text: "站点右上角有语言切换器，可以在简体中文、繁體中文和 English 之间切换。首页 Banner、前台页面和这个助手都会跟随当前语言一起变化。",
+          text: "站点右上角有语言切换器，可以切换简体中文、繁體中文、English，并提供泰语、越南语、印地语入口。当前泰语、越语、印地语会先显示英文界面。",
           links: [
             { href: "/", label: "返回首页" },
           ],
@@ -189,7 +191,7 @@ const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
       { id: "ai", question: "AI 預測頁在哪裡？" },
       { id: "orders", question: "如何查看已購計劃單？" },
       { id: "esports", question: "電競模組支援哪些內容？" },
-      { id: "language", question: "怎麼切換簡體、繁體和英文？" },
+      { id: "language", question: "怎麼切換站點語言？" },
     ],
     greeting: {
       text: "你好，我是站內助手。你可以直接問我如何看比分、查資料庫、開會員、找電競或板球內容，或者點下面的常見問題。",
@@ -283,7 +285,7 @@ const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
       {
         keywords: ["語言", "英文", "繁體", "簡體", "locale", "english", "traditional", "simplified"],
         reply: {
-          text: "站點右上角有語言切換器，可以在簡體中文、繁體中文和 English 之間切換。首頁 Banner、前台頁面和這個助手都會跟隨當前語言一起變化。",
+          text: "站點右上角有語言切換器，可以切換簡體中文、繁體中文、English，並提供泰語、越南語、印地語入口。當前泰語、越語、印地語會先顯示英文介面。",
           links: [
             { href: "/", label: "返回首頁" },
           ],
@@ -319,7 +321,7 @@ const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
       { id: "ai", question: "Where is the AI predictions page?" },
       { id: "orders", question: "How do I view purchased plans?" },
       { id: "esports", question: "What does the esports module include?" },
-      { id: "language", question: "How do I switch between Simplified, Traditional, and English?" },
+      { id: "language", question: "How do I switch the site language?" },
     ],
     greeting: {
       text: "Hi, I am the site assistant. Ask me how to follow scores, open the database, unlock plans, or find esports and cricket coverage. You can also start from the suggested questions below.",
@@ -413,7 +415,7 @@ const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
       {
         keywords: ["language", "english", "traditional", "simplified", "locale"],
         reply: {
-          text: "Use the locale switcher in the site header to move between Simplified Chinese, Traditional Chinese, and English. Homepage banners, site pages, and this assistant follow the active locale.",
+          text: "Use the locale switcher in the site header to switch between Simplified Chinese, Traditional Chinese, and English, with Thai, Vietnamese, and Hindi also available in the selector. Thai, Vietnamese, and Hindi currently fall back to the English interface.",
           links: [
             { href: "/", label: "Homepage" },
           ],
@@ -432,15 +434,154 @@ const assistantKnowledgeBase: Record<Locale, AssistantKnowledgeBase> = {
   },
 };
 
+const assistantDisplayOverlays: Partial<Record<DisplayLocale, AssistantDisplayOverlay>> = {
+  th: {
+    ui: {
+      triggerLabel: "เปิดผู้ช่วย AI",
+      title: "ผู้ช่วย Signal Nine",
+      subtitle: "นำทางในเว็บและตอบคำถามฟังก์ชัน",
+      close: "ปิดผู้ช่วย",
+      intro: "ฉันช่วยตอบเรื่องสกอร์สด ฐานข้อมูล สมาชิก แผน AI picks และการใช้งานในเว็บได้",
+      placeholder: "พิมพ์คำถามเกี่ยวกับเว็บไซต์นี้",
+      send: "ส่ง",
+      presetsTitle: "คำถามแนะนำ",
+      clear: "ล้างบทสนทนา",
+      emptyQuestion: "ถามคำถามเกี่ยวกับเว็บไซต์ แล้วฉันจะพาไปหน้าที่เหมาะสมให้",
+    },
+    presets: [
+      { id: "live", question: "ดูสกอร์บอลสดฟุตบอลได้ที่ไหน?" },
+      { id: "member", question: "สมาชิกกับการซื้อ plan เดี่ยวต่างกันอย่างไร?" },
+      { id: "ai", question: "หน้า AI predictions อยู่ที่ไหน?" },
+      { id: "orders", question: "ดู plan ที่ซื้อแล้วได้อย่างไร?" },
+      { id: "esports", question: "โมดูลอีสปอร์ตมีอะไรบ้าง?" },
+      { id: "language", question: "เปลี่ยนภาษาของเว็บไซต์อย่างไร?" },
+    ],
+    greeting: {
+      text: "สวัสดี ฉันคือผู้ช่วยประจำเว็บไซต์ ถามฉันได้เลยว่าจะดูสกอร์ เปิดฐานข้อมูล ปลดล็อก plan หรือหาเนื้อหา esports และ cricket อย่างไร",
+      links: [
+        { href: "/live/football", label: "บอลสดฟุตบอล" },
+        { href: "/database", label: "ฐานข้อมูล" },
+        { href: "/plans", label: "แผน" },
+      ],
+    },
+    fallback: {
+      text: "ตอนนี้ฉันยังไม่มีคำตอบที่ละเอียดกว่านี้สำหรับคำถามนี้ ลองถามใหม่ หรือเริ่มจากสกอร์สด ฐานข้อมูล AI predictions ศูนย์สมาชิก plans หรือศูนย์ esports ได้",
+      links: [
+        { href: "/search", label: "ค้นหาในเว็บ" },
+        { href: "/member", label: "ศูนย์สมาชิก" },
+        { href: "/ai-predictions", label: "AI predictions" },
+      ],
+    },
+  },
+  vi: {
+    ui: {
+      triggerLabel: "Mở trợ lý AI",
+      title: "Trợ lý Signal Nine",
+      subtitle: "Điều hướng site và hỏi đáp tính năng",
+      close: "Đóng trợ lý",
+      intro: "Tôi có thể hỗ trợ về live score, database, membership, plans, AI picks và cách dùng website.",
+      placeholder: "Đặt câu hỏi về website này",
+      send: "Gửi",
+      presetsTitle: "Câu hỏi gợi ý",
+      clear: "Xóa hội thoại",
+      emptyQuestion: "Hãy hỏi một câu liên quan đến website và tôi sẽ chỉ bạn đúng trang.",
+    },
+    presets: [
+      { id: "live", question: "Xem tỷ số trực tiếp bóng đá ở đâu?" },
+      { id: "member", question: "Membership khác gì với mua plan lẻ?" },
+      { id: "ai", question: "Trang AI predictions ở đâu?" },
+      { id: "orders", question: "Xem các plan đã mua như thế nào?" },
+      { id: "esports", question: "Mục esports hiện có gì?" },
+      { id: "language", question: "Làm sao đổi ngôn ngữ website?" },
+    ],
+    greeting: {
+      text: "Xin chào, tôi là trợ lý của website. Bạn có thể hỏi cách xem tỷ số, mở database, mở khóa plan hoặc tìm nội dung esports và cricket.",
+      links: [
+        { href: "/live/football", label: "Live bóng đá" },
+        { href: "/database", label: "Database" },
+        { href: "/plans", label: "Plans" },
+      ],
+    },
+    fallback: {
+      text: "Hiện tôi chưa có câu trả lời chi tiết hơn cho câu hỏi này. Hãy thử diễn đạt khác hoặc bắt đầu từ live scores, database, AI predictions, member center, plans hoặc esports hub.",
+      links: [
+        { href: "/search", label: "Tìm kiếm" },
+        { href: "/member", label: "Member center" },
+        { href: "/ai-predictions", label: "AI predictions" },
+      ],
+    },
+  },
+  hi: {
+    ui: {
+      triggerLabel: "AI सहायक खोलें",
+      title: "Signal Nine सहायक",
+      subtitle: "साइट नेविगेशन और फीचर प्रश्नोत्तर",
+      close: "सहायक बंद करें",
+      intro: "मैं live score, database, membership, plans, AI picks और साइट उपयोग से जुड़े सवालों में मदद कर सकता हूँ।",
+      placeholder: "इस वेबसाइट से जुड़ा सवाल पूछें",
+      send: "भेजें",
+      presetsTitle: "सुझाए गए सवाल",
+      clear: "चैट साफ करें",
+      emptyQuestion: "वेबसाइट से जुड़ा सवाल पूछिए, मैं आपको सही पेज तक ले जाऊँगा।",
+    },
+    presets: [
+      { id: "live", question: "फुटबॉल live score कहाँ देखें?" },
+      { id: "member", question: "Membership और single plan purchase में क्या अंतर है?" },
+      { id: "ai", question: "AI predictions पेज कहाँ है?" },
+      { id: "orders", question: "खरीदे हुए plan कैसे देखें?" },
+      { id: "esports", question: "Esports मॉड्यूल में क्या शामिल है?" },
+      { id: "language", question: "साइट की भाषा कैसे बदलें?" },
+    ],
+    greeting: {
+      text: "नमस्ते, मैं साइट सहायक हूँ। आप मुझसे score follow करने, database खोलने, plan unlock करने या esports और cricket coverage ढूँढने के बारे में पूछ सकते हैं।",
+      links: [
+        { href: "/live/football", label: "फुटबॉल लाइव" },
+        { href: "/database", label: "डेटाबेस" },
+        { href: "/plans", label: "प्लान" },
+      ],
+    },
+    fallback: {
+      text: "इस सवाल के लिए मेरे पास अभी अधिक सटीक साइट-आधारित उत्तर नहीं है। आप दूसरा तरीका आज़माएँ या live scores, database, AI predictions, member center, plans या esports hub से शुरू करें।",
+      links: [
+        { href: "/search", label: "साइट खोज" },
+        { href: "/member", label: "मेंबर सेंटर" },
+        { href: "/ai-predictions", label: "AI predictions" },
+      ],
+    },
+  },
+};
+
 function normalizeQuestion(question: string) {
   return question.trim().toLowerCase();
 }
 
-export function getSiteAssistantCopy(locale: Locale) {
-  return assistantKnowledgeBase[locale] ?? assistantKnowledgeBase["zh-CN"];
+function resolveAssistantLocale(locale: Locale | DisplayLocale): Locale {
+  if (locale === "th" || locale === "vi" || locale === "hi") {
+    return "en";
+  }
+
+  return locale;
 }
 
-export function answerSiteAssistantQuestion(question: string, locale: Locale): SiteAssistantReply {
+export function getSiteAssistantCopy(locale: Locale | DisplayLocale) {
+  const resolvedLocale = resolveAssistantLocale(locale);
+  const baseCopy = assistantKnowledgeBase[resolvedLocale] ?? assistantKnowledgeBase["zh-CN"];
+  const overlay = assistantDisplayOverlays[locale];
+
+  if (!overlay) {
+    return baseCopy;
+  }
+
+  return {
+    ...baseCopy,
+    ui: overlay.ui,
+    presets: overlay.presets,
+    greeting: overlay.greeting,
+    fallback: overlay.fallback,
+  };
+}
+
+export function answerSiteAssistantQuestion(question: string, locale: Locale | DisplayLocale): SiteAssistantReply {
   const copy = getSiteAssistantCopy(locale);
   const normalized = normalizeQuestion(question);
 

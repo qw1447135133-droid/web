@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { answerSiteAssistantQuestion, type SiteAssistantLink } from "@/lib/site-assistant";
-import type { Locale } from "@/lib/i18n-config";
+import { resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 
 export const assistantCookieName = "signal-nine-assistant";
 const assistantCookieMaxAge = 60 * 60 * 24 * 30;
@@ -58,13 +58,25 @@ export type AssistantHandoffRecord = {
   updatedAt: string;
 };
 
-function getDefaultConversationTitle(locale: Locale) {
+function getDefaultConversationTitle(locale: Locale | DisplayLocale) {
   if (locale === "en") {
     return "New conversation";
   }
 
   if (locale === "zh-TW") {
     return "新對話";
+  }
+
+  if (locale === "th") {
+    return "บทสนทนาใหม่";
+  }
+
+  if (locale === "vi") {
+    return "Cuộc trò chuyện mới";
+  }
+
+  if (locale === "hi") {
+    return "नई बातचीत";
   }
 
   return "新对话";
@@ -224,19 +236,19 @@ const supportKnowledgeSeeds: SupportKnowledgeSeed[] = [
     tags: ["语言", "locale", "english", "traditional", "simplified"],
     translations: {
       "zh-CN": {
-        question: "如何切换简体、繁体和英文？",
+        question: "如何切换站点语言？",
         answer:
-          "站点头部右上角提供语言切换器，可以在简体中文、繁體中文和 English 之间切换。首页 Banner、页面文案和助手都会跟随当前语言变化。",
+          "站点头部右上角提供语言切换器，可以切换简体中文、繁體中文、English，并提供泰语、越南语、印地语入口。当前泰语、越语、印地语会先显示英文界面。",
       },
       "zh-TW": {
-        question: "如何切換簡體、繁體和英文？",
+        question: "如何切換站點語言？",
         answer:
-          "站點頭部右上角提供語言切換器，可以在簡體中文、繁體中文和 English 之間切換。首頁 Banner、頁面文案和助手都會跟隨當前語言變化。",
+          "站點頭部右上角提供語言切換器，可以切換簡體中文、繁體中文、English，並提供泰語、越南語、印地語入口。當前泰語、越語、印地語會先顯示英文介面。",
       },
       en: {
-        question: "How do I switch between Simplified Chinese, Traditional Chinese, and English?",
+        question: "How do I switch the site language?",
         answer:
-          "Use the locale switcher in the top-right area of the header. Homepage banners, page copy, and the assistant all follow the active locale.",
+          "Use the locale switcher in the top-right area of the header to switch between Simplified Chinese, Traditional Chinese, and English, with Thai, Vietnamese, and Hindi also available in the selector. Thai, Vietnamese, and Hindi currently fall back to the English interface.",
       },
     },
   },
@@ -305,15 +317,17 @@ function getLocalizedKnowledge(record: {
   answerZhCn: string;
   answerZhTw: string;
   answerEn: string;
-}, locale: Locale) {
-  if (locale === "zh-TW") {
+}, locale: Locale | DisplayLocale) {
+  const renderLocale = getAssistantRenderLocale(locale);
+
+  if (renderLocale === "zh-TW") {
     return {
       question: record.questionZhTw,
       answer: record.answerZhTw,
     };
   }
 
-  if (locale === "en") {
+  if (renderLocale === "en") {
     return {
       question: record.questionEn,
       answer: record.answerEn,
@@ -324,6 +338,10 @@ function getLocalizedKnowledge(record: {
     question: record.questionZhCn,
     answer: record.answerZhCn,
   };
+}
+
+function getAssistantRenderLocale(locale: Locale | DisplayLocale): Locale {
+  return resolveRenderLocale(locale);
 }
 
 function scoreKnowledgeRecord(
@@ -337,7 +355,7 @@ function scoreKnowledgeRecord(
     tagsText: string | null;
   },
   question: string,
-  locale: Locale,
+  locale: Locale | DisplayLocale,
 ) {
   const lowered = question.toLowerCase();
   const localized = getLocalizedKnowledge(record, locale);
@@ -409,8 +427,19 @@ function extractResponseText(payload: unknown) {
   return parts.join("\n\n").trim();
 }
 
-function buildAssistantSystemPrompt(locale: Locale) {
-  const languageLabel = locale === "en" ? "English" : locale === "zh-TW" ? "Traditional Chinese" : "Simplified Chinese";
+function buildAssistantSystemPrompt(locale: Locale | DisplayLocale) {
+  const languageLabel =
+    locale === "en"
+      ? "English"
+      : locale === "zh-TW"
+        ? "Traditional Chinese"
+        : locale === "th"
+          ? "Thai"
+          : locale === "vi"
+            ? "Vietnamese"
+            : locale === "hi"
+              ? "Hindi"
+              : "Simplified Chinese";
 
   return [
     `You are the customer assistant for Signal Nine Sports.`,
@@ -431,7 +460,7 @@ async function callOpenAiAssistant({
   knowledgeItems,
   userContext,
 }: {
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   question: string;
   conversationMessages: Array<{ role: string; content: string }>;
   knowledgeItems: Array<{ question: string; answer: string; href?: string }>;
@@ -524,7 +553,7 @@ function toConversationListItem(
   status: string;
   lastMessageAt: Date;
 },
-  locale: Locale,
+  locale: Locale | DisplayLocale,
 ) {
   return {
     id: record.id,
@@ -537,7 +566,7 @@ function toConversationListItem(
 
 function getAssistantFallbackLinks(
   knowledgeItems: Array<{ href?: string; question: string }>,
-  locale: Locale,
+  locale: Locale | DisplayLocale,
 ) {
   const preferred = knowledgeItems
     .filter((item): item is { href: string; question: string } => Boolean(item.href))
@@ -549,7 +578,13 @@ function getAssistantFallbackLinks(
           ? "Open related page"
           : locale === "zh-TW"
             ? "打開相關頁面"
-            : "打开相关页面",
+            : locale === "th"
+              ? "เปิดหน้าที่เกี่ยวข้อง"
+              : locale === "vi"
+                ? "Mở trang liên quan"
+                : locale === "hi"
+                  ? "संबंधित पेज खोलें"
+                  : "打开相关页面",
     }));
 
   return preferred.length > 0 ? preferred : undefined;
@@ -625,27 +660,33 @@ async function ensureSupportKnowledgeBase() {
   await bootstrapSupportKnowledgeBase();
 }
 
-async function getRelevantKnowledgeItems(question: string, locale: Locale) {
+async function getRelevantKnowledgeItems(question: string, locale: Locale | DisplayLocale) {
   await ensureSupportKnowledgeBase();
+  const renderLocale = getAssistantRenderLocale(locale);
 
   const items = await prisma.supportKnowledgeItem.findMany({
     where: { status: "active" },
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
+  type KnowledgeItem = (typeof items)[number];
+  type ScoredKnowledgeItem = KnowledgeItem & {
+    localized: ReturnType<typeof getLocalizedKnowledge>;
+    score: number;
+  };
 
   return items
-    .map((item) => ({
+    .map((item: KnowledgeItem): ScoredKnowledgeItem => ({
       ...item,
-      localized: getLocalizedKnowledge(item, locale),
-      score: scoreKnowledgeRecord(item, question, locale),
+      localized: getLocalizedKnowledge(item, renderLocale),
+      score: scoreKnowledgeRecord(item, question, renderLocale),
     }))
-    .sort((left, right) => right.score - left.score || left.sortOrder - right.sortOrder)
+    .sort((left: ScoredKnowledgeItem, right: ScoredKnowledgeItem) => right.score - left.score || left.sortOrder - right.sortOrder)
     .slice(0, 4);
 }
 
 async function listAssistantConversations(params: {
   sessionKey: string;
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   userId?: string;
 }) {
   const conversations = await prisma.assistantConversation.findMany({
@@ -663,12 +704,12 @@ async function listAssistantConversations(params: {
     },
   });
 
-  return conversations.map((item) => toConversationListItem(item, params.locale));
+  return conversations.map((item: (typeof conversations)[number]) => toConversationListItem(item, params.locale));
 }
 
 async function getOrCreateConversation(params: {
   sessionKey: string;
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   userId?: string;
   conversationId?: string;
   forceNew?: boolean;
@@ -742,7 +783,7 @@ async function getOrCreateConversation(params: {
 
 export async function getAssistantConversationSnapshot(params: {
   sessionKey: string;
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   userId?: string;
   conversationId?: string;
 }): Promise<AssistantConversationSnapshot> {
@@ -788,7 +829,7 @@ export async function getAssistantConversationSnapshot(params: {
 
 export async function sendAssistantMessage(params: {
   sessionKey: string;
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   message: string;
   conversationId?: string;
   user?: {
@@ -826,6 +867,8 @@ export async function sendAssistantMessage(params: {
     orderBy: { createdAt: "asc" },
     take: 12,
   });
+  type RecentMessage = (typeof recentMessages)[number];
+  type KnowledgeItem = Awaited<ReturnType<typeof getRelevantKnowledgeItems>>[number];
 
   const knowledgeItems = await getRelevantKnowledgeItems(question, params.locale);
   const userContext = params.user
@@ -848,11 +891,11 @@ export async function sendAssistantMessage(params: {
     const modelResponse = await callOpenAiAssistant({
       locale: params.locale,
       question,
-      conversationMessages: recentMessages.slice(0, -1).slice(-8).map((item) => ({
+      conversationMessages: recentMessages.slice(0, -1).slice(-8).map((item: RecentMessage) => ({
         role: item.role,
         content: item.content,
       })),
-      knowledgeItems: knowledgeItems.map((item) => ({
+      knowledgeItems: knowledgeItems.map((item: KnowledgeItem) => ({
         question: item.localized.question,
         answer: item.localized.answer,
         href: item.href ?? undefined,
@@ -865,13 +908,17 @@ export async function sendAssistantMessage(params: {
       const fallback = answerSiteAssistantQuestion(question, params.locale);
       assistantText = fallback.text;
       assistantLinks =
-        fallback.links ?? getAssistantFallbackLinks(knowledgeItems.map((item) => ({ href: item.href ?? undefined, question: item.localized.question })), params.locale);
+        fallback.links ??
+        getAssistantFallbackLinks(
+          knowledgeItems.map((item: KnowledgeItem) => ({ href: item.href ?? undefined, question: item.localized.question })),
+          params.locale,
+        );
     } else {
       assistantText = modelResponse.text;
       assistantLinks = knowledgeItems
-        .filter((item): item is typeof item & { href: string } => Boolean(item.href))
+        .filter((item: KnowledgeItem): item is KnowledgeItem & { href: string } => Boolean(item.href))
         .slice(0, 3)
-        .map((item) => ({
+        .map((item: KnowledgeItem & { href: string }) => ({
           href: item.href,
           label: item.localized.question,
         }));
@@ -883,7 +930,11 @@ export async function sendAssistantMessage(params: {
     const fallback = answerSiteAssistantQuestion(question, params.locale);
     assistantText = fallback.text;
     assistantLinks =
-      fallback.links ?? getAssistantFallbackLinks(knowledgeItems.map((item) => ({ href: item.href ?? undefined, question: item.localized.question })), params.locale);
+      fallback.links ??
+      getAssistantFallbackLinks(
+        knowledgeItems.map((item: KnowledgeItem) => ({ href: item.href ?? undefined, question: item.localized.question })),
+        params.locale,
+      );
   }
 
   const assistantMessage = await prisma.assistantMessage.create({
@@ -930,7 +981,7 @@ export async function sendAssistantMessage(params: {
 
 export async function requestAssistantHandoff(params: {
   sessionKey: string;
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   conversationId?: string;
   user?: {
     id: string;
@@ -963,6 +1014,12 @@ export async function requestAssistantHandoff(params: {
       ? "A human handoff request has been submitted. The operations team can now follow up from the admin queue."
       : params.locale === "zh-TW"
         ? "人工轉接請求已提交，營運可在後台隊列中跟進。"
+        : params.locale === "th"
+          ? "ส่งคำขอโอนไปยังเจ้าหน้าที่แล้ว ทีมปฏิบัติการจะติดตามต่อจากคิวหลังบ้าน"
+          : params.locale === "vi"
+            ? "Yêu cầu chuyển cho nhân viên đã được gửi. Bộ phận vận hành sẽ tiếp nhận từ hàng chờ quản trị."
+            : params.locale === "hi"
+              ? "मानव सहायता अनुरोध जमा कर दिया गया है। ऑपरेशंस टीम अब एडमिन कतार से आगे देख सकती है।"
         : "人工转接请求已提交，运营可在后台队列中跟进。";
 
   const assistantMessage = await prisma.assistantMessage.create({
@@ -1004,7 +1061,7 @@ export async function requestAssistantHandoff(params: {
 
 export async function createAssistantConversation(params: {
   sessionKey: string;
-  locale: Locale;
+  locale: Locale | DisplayLocale;
   userId?: string;
 }) {
   const conversation = await getOrCreateConversation({
@@ -1045,7 +1102,7 @@ export async function getAdminAssistantHandoffRequests(limit = 12): Promise<Assi
     },
   });
 
-  return requests.map((item) => ({
+  return requests.map((item: (typeof requests)[number]) => ({
     id: item.id,
     status: item.status,
     locale: item.locale,

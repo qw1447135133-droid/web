@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import type { Locale } from "@/lib/i18n-config";
+import { useEffect, useRef, useState } from "react";
+import { resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 import type { HomepageBanner } from "@/lib/types";
 
 const themeStyles: Record<HomepageBanner["theme"], { glow: string; chip: string; card: string }> = {
@@ -49,35 +49,26 @@ export function HomepageBannerShowcase({
   locale,
 }: {
   initialBanners: HomepageBanner[];
-  locale: Locale;
+  locale: Locale | DisplayLocale;
 }) {
+  const renderLocale = resolveRenderLocale(locale as DisplayLocale);
   const [banners, setBanners] = useState(initialBanners);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const trackedImpressions = useRef<Set<string>>(new Set());
   const showcaseRef = useRef<HTMLDivElement | null>(null);
-  const copy = localeCopy[locale];
+  const copy = localeCopy[renderLocale];
   const primaryBanner = banners[activeIndex] ?? banners[0];
   const secondaryBanners = banners
     .map((banner, index) => ({ banner, index }))
     .filter((item) => item.index !== activeIndex)
     .slice(0, 2);
 
-  const rotateBanner = useEffectEvent(() => {
-    setActiveIndex((current) => {
-      if (banners.length <= 1) {
-        return 0;
-      }
-
-      return (current + 1) % banners.length;
-    });
-  });
-
-  const trackBannerEvent = useEffectEvent((
+  function trackBannerEvent(
     bannerId: string,
     type: "impression" | "click",
     placement: "primary" | "secondary",
-  ) => {
+  ) {
     void fetch("/api/site/banners/track", {
       method: "POST",
       headers: {
@@ -93,7 +84,7 @@ export function HomepageBannerShowcase({
     }).catch(() => {
       // Analytics failures should never block browsing.
     });
-  });
+  }
 
   useEffect(() => {
     let disposed = false;
@@ -128,8 +119,6 @@ export function HomepageBannerShowcase({
   }, [locale]);
 
   useEffect(() => {
-    setBanners(initialBanners);
-    setActiveIndex(0);
     trackedImpressions.current.clear();
   }, [initialBanners]);
 
@@ -139,13 +128,19 @@ export function HomepageBannerShowcase({
     }
 
     const timer = window.setInterval(() => {
-      rotateBanner();
+      setActiveIndex((current) => {
+        if (banners.length <= 1) {
+          return 0;
+        }
+
+        return (current + 1) % banners.length;
+      });
     }, 7000);
 
     return () => {
       window.clearInterval(timer);
     };
-  }, [banners.length, isPaused, rotateBanner]);
+  }, [banners.length, isPaused]);
 
   useEffect(() => {
     const root = showcaseRef.current;
@@ -210,7 +205,7 @@ export function HomepageBannerShowcase({
     return () => {
       observer.disconnect();
     };
-  }, [primaryBanner?.id, secondaryBanners, trackBannerEvent]);
+  }, [primaryBanner?.id, secondaryBanners]);
 
   if (!primaryBanner) {
     return null;

@@ -1,7 +1,7 @@
-import type { Locale } from "@/lib/i18n-config";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 import { getSiteCopy } from "@/lib/ui-copy";
 
-export function SiteFooter({ locale }: { locale: Locale }) {
+export function SiteFooter({ locale }: { locale: Locale | DisplayLocale }) {
   const { brandCopy, footerCopy } = getSiteCopy(locale);
 
   return (

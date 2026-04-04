@@ -34,6 +34,7 @@ export type AdminUserRecord = {
   role: UserRole;
   membershipPlanId?: string;
   membershipExpiresAt?: string;
+  coinBalance: number;
   membershipStatus: "active" | "inactive";
   membershipOrderCount: number;
   contentOrderCount: number;
@@ -527,6 +528,11 @@ export async function getAdminUsersDashboard(input: AdminUsersDashboardFilters =
         role: true,
         membershipPlanId: true,
         membershipExpiresAt: true,
+        coinAccount: {
+          select: {
+            balance: true,
+          },
+        },
         createdAt: true,
         _count: {
           select: {
@@ -648,6 +654,7 @@ export async function getAdminUsersDashboard(input: AdminUsersDashboardFilters =
       role: user.role as UserRole,
       membershipPlanId: user.membershipPlanId ?? undefined,
       membershipExpiresAt: user.membershipExpiresAt?.toISOString(),
+      coinBalance: user.coinAccount?.balance ?? 0,
       membershipStatus: user.membershipExpiresAt && user.membershipExpiresAt > now ? "active" : "inactive",
       membershipOrderCount: user._count.membershipOrders,
       contentOrderCount: user._count.contentOrders,

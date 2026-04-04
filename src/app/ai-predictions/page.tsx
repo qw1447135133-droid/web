@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SectionHeading } from "@/components/section-heading";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
+import type { DisplayLocale } from "@/lib/i18n-config";
 import { getPredictions } from "@/lib/content-data";
 import { getMatchById } from "@/lib/sports-data";
 import type { Sport } from "@/lib/types";
@@ -17,7 +18,7 @@ function readValue(value: string | string[] | undefined, fallback = "") {
   return value ?? fallback;
 }
 
-function getPredictionFilterCopy(locale: "zh-CN" | "zh-TW" | "en") {
+function getPredictionFilterCopy(locale: DisplayLocale) {
   if (locale === "en") {
     return {
       filterLabel: "Sport lane",
@@ -46,6 +47,48 @@ function getPredictionFilterCopy(locale: "zh-CN" | "zh-TW" | "en") {
     };
   }
 
+  if (locale === "th") {
+    return {
+      filterLabel: "ประเภทกีฬา",
+      all: "ทั้งหมด",
+      football: "ฟุตบอล",
+      basketball: "บาสเกตบอล",
+      cricket: "คริกเก็ต",
+      esports: "อีสปอร์ต",
+      totalCards: "จำนวนการคาดการณ์",
+      channelHint: "เลือกกีฬาเพื่อโฟกัสกระดาน AI ในหมวดเดียว",
+      empty: "ยังไม่มี AI prediction ในหมวดนี้",
+    };
+  }
+
+  if (locale === "vi") {
+    return {
+      filterLabel: "Nhanh mon",
+      all: "Tat ca",
+      football: "Bong da",
+      basketball: "Bong ro",
+      cricket: "Cricket",
+      esports: "Esports",
+      totalCards: "So du doan",
+      channelHint: "Dung bo loc mon de tap trung bang AI vao mot nhanh noi dung.",
+      empty: "Chua co du doan AI nao trong kenh nay.",
+    };
+  }
+
+  if (locale === "hi") {
+    return {
+      filterLabel: "Sport lane",
+      all: "Sabhi",
+      football: "Football",
+      basketball: "Basketball",
+      cricket: "Cricket",
+      esports: "Esports",
+      totalCards: "Loaded predictions",
+      channelHint: "AI board ko ek content lane par focus karne ke liye sport filter use karein.",
+      empty: "Is channel mein abhi koi AI prediction nahin hai.",
+    };
+  }
+
   return {
     filterLabel: "赛道",
     all: "全部",
@@ -68,9 +111,9 @@ export default async function AiPredictionsPage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { aiPredictionsPageCopy } = getSiteCopy(locale);
-  const filterCopy = getPredictionFilterCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { aiPredictionsPageCopy } = getSiteCopy(displayLocale);
+  const filterCopy = getPredictionFilterCopy(displayLocale);
   const resolved = await searchParams;
   const selectedSport = readValue(resolved.sport, "all") as PredictionSportFilter;
   const sport = selectedSport === "all" ? undefined : selectedSport;

@@ -4,14 +4,15 @@ import { SectionHeading } from "@/components/section-heading";
 import { formatDateTime, formatOdd } from "@/lib/format";
 import { getArticlePlans, getAuthorTeams } from "@/lib/content-data";
 import { getCricketMatchDepth } from "@/lib/cricket-depth";
-import { getCurrentLocale } from "@/lib/i18n";
+import type { DisplayLocale } from "@/lib/i18n-config";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getDatabaseSnapshot, getMatchById, getPredictionByMatchId } from "@/lib/sports-data";
 import type { Match } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
 
 type Params = Promise<{ id: string }>;
 
-function getCricketMatchCopy(locale: string) {
+function getCricketMatchCopy(locale: DisplayLocale) {
   if (locale === "en") {
     return {
       pulseEyebrow: "Cricket Pulse",
@@ -114,6 +115,82 @@ function getCricketMatchCopy(locale: string) {
     };
   }
 
+  if (locale === "th" || locale === "vi" || locale === "hi") {
+    return {
+      pulseEyebrow: "Cricket Pulse",
+      pulseTitle: locale === "th" ? "ชีพจรโอเวอร์สด" : locale === "vi" ? "Nhip over truc tiep" : "Live over pulse",
+      pulseDescription:
+        locale === "th"
+          ? "แสดงความคืบหน้าโอเวอร์ ฝั่งต่อ เส้นรวม และทิศทางราคา เพื่อให้หน้ารายละเอียด cricket มีชั้นข้อมูลจริง"
+          : locale === "vi"
+            ? "Hien tien do over, cua tren, tong line va huong di chuyen de trang detail cricket co lop giao dich thuc su."
+            : "Expose the current over progress, favorite side, total line, and movement so the cricket detail page has an actual trading layer.",
+      progressLabel: locale === "th" ? "ความคืบหน้า" : locale === "vi" ? "Tien do hien tai" : "Current progress",
+      favoriteLabel: locale === "th" ? "ฝั่งต่อ" : locale === "vi" ? "Cua tren" : "Favorite side",
+      totalLabel: locale === "th" ? "เส้นรวม" : locale === "vi" ? "Tong line" : "Total line",
+      movementLabel: locale === "th" ? "การขยับราคา" : locale === "vi" ? "Di chuyen line" : "Line move",
+      phaseTitle: locale === "th" ? "แผนที่ช่วงเกม" : locale === "vi" ? "Ban do giai doan" : "Phase map",
+      phaseDescription:
+        locale === "th"
+          ? "แยกแมตช์เป็น powerplay ช่วงกลาง และ death overs เพื่อให้หน้ารายละเอียดมีโครงสร้างอินนิ่งที่ชัดเจน"
+          : locale === "vi"
+            ? "Tach tran thanh powerplay, giai doan giua va death overs de detail co cau truc innings ro rang."
+            : "Break the match into powerplay, middle, and death-over pressure so the detail view carries a real innings structure.",
+      phaseLinks: {
+        schedule: locale === "th" ? "เปิดตารางแข่ง" : locale === "vi" ? "Mo lich dau" : "Open schedule",
+        h2h: locale === "th" ? "เปิด H2H" : locale === "vi" ? "Mo H2H" : "Open head to head",
+      },
+      venueTitle: locale === "th" ? "สนามและผู้เล่นน่าจับตา" : locale === "vi" ? "San dau va nguoi choi can theo doi" : "Venue and player watch",
+      venueDescription:
+        locale === "th"
+          ? "เพิ่มแนวโน้มสนามและผู้เล่นสำคัญที่มีผลต่อราคา live มากที่สุด"
+          : locale === "vi"
+            ? "Them xu huong san dau va cac trigger cau thu co kha nang tac dong len line live."
+            : "Add ground bias and the key player triggers most likely to move the live line.",
+      watchTitle: locale === "th" ? "ผู้เล่นสำคัญ" : locale === "vi" ? "Theo doi cau thu" : "Key player watch",
+      watchLinks: {
+        teams: locale === "th" ? "เปิดโปรไฟล์ทีม" : locale === "vi" ? "Mo ho so doi" : "Open team profiles",
+        ai: locale === "th" ? "เปิด AI" : locale === "vi" ? "Mo AI predictions" : "Open AI predictions",
+        plan: locale === "th" ? "เปิดแผนที่เชื่อม" : locale === "vi" ? "Mo plan lien ket" : "Open linked plan",
+      },
+      contentEyebrow: "Cricket Content",
+      contentTitle: locale === "th" ? "คอนเทนต์ที่เกี่ยวข้อง" : locale === "vi" ? "Noi dung lien quan" : "Related coverage",
+      contentDescription:
+        locale === "th"
+          ? "ดึงแผน cricket ที่ใกล้ที่สุดเข้ามาในหน้าแมตช์"
+          : locale === "vi"
+            ? "Dua cac cricket plan gan nhat vao trang tran dau."
+            : "Bring the closest cricket plans onto the match page so the detail flow leads into paid content instead of ending at raw data.",
+      noRelatedPlans: locale === "th" ? "ยังไม่มีแผน cricket ที่เกี่ยวข้อง" : locale === "vi" ? "Chua co cricket plan lien quan." : "No related cricket plans are available right now.",
+      openPlan: locale === "th" ? "ดูแผน" : locale === "vi" ? "Mo plan" : "Open plan",
+      archiveTitle: locale === "th" ? "บริบทคลังข้อมูล" : locale === "vi" ? "Boi canh luu tru" : "Archive context",
+      archiveDescription:
+        locale === "th"
+          ? "นำฟอร์มทีม ตัวอย่างการเจอกัน และทางเข้าฐานข้อมูล cricket มาไว้ใน flow รายละเอียดแมตช์"
+          : locale === "vi"
+            ? "Dua phong do doi, mau doi dau va loi vao cricket database vao flow detail."
+            : "Bring team form, matchup samples, and the cricket database entry into the match detail flow.",
+      archiveLinks: {
+        schedule: locale === "th" ? "เปิดตารางแข่ง" : locale === "vi" ? "Mo lich dau" : "Open schedule",
+        teams: locale === "th" ? "เปิดโปรไฟล์ทีม" : locale === "vi" ? "Mo ho so doi" : "Open team profiles",
+        h2h: locale === "th" ? "เปิด H2H" : locale === "vi" ? "Mo H2H" : "Open head to head",
+        plan: locale === "th" ? "เปิดแผนที่เชื่อม" : locale === "vi" ? "Mo plan lien ket" : "Open linked plan",
+      },
+      teamPulseTitle: locale === "th" ? "ฟอร์มทีม" : locale === "vi" ? "Phong do doi" : "Team form",
+      h2hTitle: locale === "th" ? "ตัวอย่างการเจอกัน" : locale === "vi" ? "Mau doi dau" : "Matchup samples",
+      homeLabel: locale === "th" ? "เหย้า" : locale === "vi" ? "San nha" : "Home",
+      awayLabel: locale === "th" ? "เยือน" : locale === "vi" ? "San khach" : "Away",
+      formLabel: locale === "th" ? "ฟอร์ม" : locale === "vi" ? "Phong do" : "Form",
+      openDatabase: locale === "th" ? "เปิดฐานข้อมูล cricket" : locale === "vi" ? "Mo cricket database" : "Open cricket database",
+      noArchive: locale === "th" ? "ยังไม่มีข้อมูลคลัง cricket" : locale === "vi" ? "Chua co du lieu luu tru cricket." : "No cricket archive data is available right now.",
+      movement: {
+        up: locale === "th" ? "ขึ้น" : locale === "vi" ? "Tang" : "Up",
+        flat: locale === "th" ? "ทรงตัว" : locale === "vi" ? "Di ngang" : "Flat",
+        down: locale === "th" ? "ลง" : locale === "vi" ? "Giam" : "Down",
+      },
+    };
+  }
+
   return {
     pulseEyebrow: "Cricket Pulse",
     pulseTitle: "回合脉搏",
@@ -164,7 +241,7 @@ function getCricketMatchCopy(locale: string) {
   };
 }
 
-function getEsportsMatchCopy(locale: string) {
+function getEsportsMatchCopy(locale: DisplayLocale) {
   if (locale === "en") {
     return {
       pulseEyebrow: "Esports Pulse",
@@ -223,6 +300,55 @@ function getEsportsMatchCopy(locale: string) {
     };
   }
 
+  if (locale === "th" || locale === "vi" || locale === "hi") {
+    return {
+      pulseEyebrow: "Esports Pulse",
+      pulseTitle: locale === "th" ? "ชีพจรซีรีส์" : locale === "vi" ? "Nhip series" : "Series pulse",
+      pulseDescription:
+        locale === "th"
+          ? "แสดงสถานะซีรีส์ มุมมองตลาด เส้นรวม และการขยับราคา เพื่อให้หน้ารายละเอียดอีสปอร์ตทำงานเหมือน channel layer จริง"
+          : locale === "vi"
+            ? "Hien trang thai series, xu huong thi truong, tong line va bien dong de trang detail esports giong mot lop kenh thuc su."
+            : "Expose current series state, market lean, total line, and movement so the esports detail page behaves like a real channel layer instead of a plain score view.",
+      progressLabel: locale === "th" ? "สถานะปัจจุบัน" : locale === "vi" ? "Trang thai hien tai" : "Current state",
+      favoriteLabel: locale === "th" ? "มุมมองตลาด" : locale === "vi" ? "Xu huong thi truong" : "Market lean",
+      totalLabel: locale === "th" ? "รวมแผนที่ / รอบ" : locale === "vi" ? "Tong map / round" : "Map / round total",
+      movementLabel: locale === "th" ? "การขยับราคา" : locale === "vi" ? "Di chuyen line" : "Line move",
+      featureTitle: locale === "th" ? "คีย์ของเกม" : locale === "vi" ? "Chi so theo game" : "Game keys",
+      featureDescription:
+        locale === "th"
+          ? "ใช้โครงรายละเอียดเดียว แล้วสลับการ์ดตัวชี้วัดตามแต่ละเกม"
+          : locale === "vi"
+            ? "Giu mot khung detail thong nhat va doi the chi so theo tua game."
+            : "Switch the metric cards by title while keeping one unified esports detail route.",
+      contentTitle: locale === "th" ? "คอนเทนต์ที่เกี่ยวข้อง" : locale === "vi" ? "Noi dung lien quan" : "Related coverage",
+      contentDescription:
+        locale === "th"
+          ? "นำแผนและ AI angle ที่เชื่อมโยงมาแสดงบนหน้าแมตช์โดยตรง"
+          : locale === "vi"
+            ? "Dua plan esports va AI angle lien ket len ngay trang match."
+            : "Bring the linked esports plans and AI angle directly onto the match page.",
+      openPlan: locale === "th" ? "ดูแผน" : locale === "vi" ? "Mo plan" : "Open plan",
+      noRelatedPlans: locale === "th" ? "ยังไม่มีแผนอีสปอร์ตที่เกี่ยวข้อง" : locale === "vi" ? "Chua co esports plan lien quan." : "No related esports plans are available right now.",
+      archiveTitle: locale === "th" ? "บริบทคลังข้อมูล" : locale === "vi" ? "Boi canh luu tru" : "Archive context",
+      archiveDescription:
+        locale === "th"
+          ? "นำตัวอย่างลีก ฟอร์มทีม และลิงก์ฐานข้อมูลเข้ามาใน flow รายละเอียดแมตช์"
+          : locale === "vi"
+            ? "Dua mau giai dau, phong do doi va lien ket database vao flow detail."
+            : "Bring league samples, team form, and database links into the match detail flow.",
+      archivePulseTitle: locale === "th" ? "ฟอร์มทีม" : locale === "vi" ? "Phong do doi" : "Team form",
+      archiveSamplesTitle: locale === "th" ? "ตัวอย่างซีรีส์" : locale === "vi" ? "Mau series" : "Series samples",
+      openDatabase: locale === "th" ? "เปิดฐานข้อมูลอีสปอร์ต" : locale === "vi" ? "Mo esports database" : "Open esports database",
+      openAi: locale === "th" ? "เปิด AI อีสปอร์ต" : locale === "vi" ? "Mo esports AI" : "Open esports AI",
+      movement: {
+        up: locale === "th" ? "ขึ้น" : locale === "vi" ? "Tang" : "Up",
+        flat: locale === "th" ? "ทรงตัว" : locale === "vi" ? "Di ngang" : "Flat",
+        down: locale === "th" ? "ลง" : locale === "vi" ? "Giam" : "Down",
+      },
+    };
+  }
+
   return {
     pulseEyebrow: "Esports Pulse",
     pulseTitle: "系列赛脉搏",
@@ -251,9 +377,11 @@ function getEsportsMatchCopy(locale: string) {
   };
 }
 
-function getEsportsMetricCards(match: Match, locale: string) {
+function getEsportsMetricCards(match: Match, locale: DisplayLocale) {
+  const normalizedLocale = locale === "th" || locale === "vi" || locale === "hi" ? "en" : locale;
+
   if (match.leagueSlug === "lpl") {
-    if (locale === "en") {
+    if (normalizedLocale === "en") {
       return [
         { label: "Gold delta", value: "2.1k @ 20m", detail: "T1's Herald setups keep creating a cleaner mid-game economy lead." },
         { label: "Resource control", value: "Herald 2 | Drake 3", detail: "The first two neutral cycles are usually deciding the lane swap tempo." },
@@ -261,7 +389,7 @@ function getEsportsMetricCards(match: Match, locale: string) {
       ];
     }
 
-    if (locale === "zh-TW") {
+    if (normalizedLocale === "zh-TW") {
       return [
         { label: "經濟差", value: "20 分鐘 2.1k", detail: "T1 的先鋒落點讓中期經濟優勢更容易滾大。" },
         { label: "資源控制", value: "先鋒 2 | 小龍 3", detail: "前兩波中立資源幾乎決定這組對局的轉線節奏。" },
@@ -277,7 +405,7 @@ function getEsportsMetricCards(match: Match, locale: string) {
   }
 
   if (match.leagueSlug === "dreamleague") {
-    if (locale === "en") {
+    if (normalizedLocale === "en") {
       return [
         { label: "Kill pace", value: "1.08 KPM", detail: "The series is drifting toward long teamfight chains rather than early snowball drafts." },
         { label: "Objective control", value: "Roshan 2 | Towers 16", detail: "Roshan windows are the cleanest read on which side owns the map." },
@@ -285,7 +413,7 @@ function getEsportsMetricCards(match: Match, locale: string) {
       ];
     }
 
-    if (locale === "zh-TW") {
+    if (normalizedLocale === "zh-TW") {
       return [
         { label: "擊殺節奏", value: "1.08 KPM", detail: "這組系列賽更偏向長團與拉扯，而不是前期雪球陣容。" },
         { label: "目標控制", value: "Roshan 2 | 塔 16", detail: "Roshan 視窗通常是判斷哪一方掌控地圖的最佳指標。" },
@@ -300,7 +428,7 @@ function getEsportsMetricCards(match: Match, locale: string) {
     ];
   }
 
-  if (locale === "en") {
+  if (normalizedLocale === "en") {
     return [
       { label: "Pistol rounds", value: "2-0", detail: "Early round control is shaping the whole economy tree in this series." },
       { label: "Side split", value: "CT 71%", detail: "Vitality's stronger defensive halves are still the most repeatable edge." },
@@ -308,7 +436,7 @@ function getEsportsMetricCards(match: Match, locale: string) {
     ];
   }
 
-  if (locale === "zh-TW") {
+  if (normalizedLocale === "zh-TW") {
     return [
       { label: "手槍局", value: "2-0", detail: "開局回合控制正在決定整組系列賽的經濟樹。" },
       { label: "攻防側分佈", value: "CT 71%", detail: "Vitality 更穩的防守半場仍是最容易重複兌現的優勢。" },
@@ -337,10 +465,10 @@ function getFavorite(match: Match) {
 }
 
 export default async function MatchDetailPage({ params }: { params: Params }) {
-  const locale = await getCurrentLocale();
-  const { matchDetailCopy, matchStatusLabels } = getSiteCopy(locale);
-  const cricketMatchCopy = getCricketMatchCopy(locale);
-  const esportsMatchCopy = getEsportsMatchCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { matchDetailCopy, matchStatusLabels } = getSiteCopy(displayLocale);
+  const cricketMatchCopy = getCricketMatchCopy(displayLocale);
+  const esportsMatchCopy = getEsportsMatchCopy(displayLocale);
   const { id } = await params;
   const match = await getMatchById(id, locale);
 
@@ -356,9 +484,31 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
   const cricketSnapshot = match.sport === "cricket" ? await getDatabaseSnapshot("cricket", match.leagueSlug, locale) : null;
   const esportsSnapshot = match.sport === "esports" ? await getDatabaseSnapshot("esports", match.leagueSlug, locale) : null;
   const cricketDepth = match.sport === "cricket" ? getCricketMatchDepth(match.id, locale) : null;
-  const esportsMetricCards = match.sport === "esports" ? getEsportsMetricCards(match, locale) : [];
-  const spreadLabel = locale === "en" ? "Spread" : locale === "zh-TW" ? "讓分" : "让分";
-  const totalLabel = locale === "en" ? "Total" : locale === "zh-TW" ? "總分" : "总分";
+  const esportsMetricCards = match.sport === "esports" ? getEsportsMetricCards(match, displayLocale) : [];
+  const spreadLabel =
+    displayLocale === "en"
+      ? "Spread"
+      : displayLocale === "zh-TW"
+        ? "讓分"
+        : displayLocale === "th"
+          ? "แต้มต่อ"
+          : displayLocale === "vi"
+            ? "Keo chap"
+            : displayLocale === "hi"
+              ? "Spread"
+              : "让分";
+  const totalLabel =
+    displayLocale === "en"
+      ? "Total"
+      : displayLocale === "zh-TW"
+        ? "總分"
+        : displayLocale === "th"
+          ? "รวม"
+          : displayLocale === "vi"
+            ? "Tong"
+            : displayLocale === "hi"
+              ? "Total"
+              : "总分";
   const favorite = match.sport === "cricket" || match.sport === "esports" ? getFavorite(match) : null;
   const relatedPlans =
     match.sport === "cricket" || match.sport === "esports"
@@ -406,20 +556,60 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
     match.sport === "esports"
       ? [
           { href: `/database?sport=esports&league=${match.leagueSlug}&view=standings`, label: esportsMatchCopy.openDatabase },
-          { href: `/database?sport=esports&league=${match.leagueSlug}&view=teams`, label: locale === "en" ? "Team profiles" : locale === "zh-TW" ? "戰隊資料" : "战队资料" },
-          { href: `/database?sport=esports&league=${match.leagueSlug}&view=h2h`, label: locale === "en" ? "Series samples" : locale === "zh-TW" ? "系列賽樣本" : "系列赛样本" },
+          {
+            href: `/database?sport=esports&league=${match.leagueSlug}&view=teams`,
+            label:
+              displayLocale === "en"
+                ? "Team profiles"
+                : displayLocale === "zh-TW"
+                  ? "戰隊資料"
+                  : displayLocale === "th"
+                    ? "โปรไฟล์ทีม"
+                    : displayLocale === "vi"
+                      ? "Ho so doi"
+                      : displayLocale === "hi"
+                        ? "Team profiles"
+                        : "战队资料",
+          },
+          {
+            href: `/database?sport=esports&league=${match.leagueSlug}&view=h2h`,
+            label:
+              displayLocale === "en"
+                ? "Series samples"
+                : displayLocale === "zh-TW"
+                  ? "系列賽樣本"
+                  : displayLocale === "th"
+                    ? "ตัวอย่างซีรีส์"
+                    : displayLocale === "vi"
+                      ? "Mau series"
+                      : displayLocale === "hi"
+                        ? "Series samples"
+                        : "系列赛样本",
+          },
         ]
       : [];
+  const matchHubEyebrow =
+    displayLocale === "zh-TW"
+      ? "賽事中樞"
+      : displayLocale === "th"
+        ? "ศูนย์กลางแมตช์"
+        : displayLocale === "vi"
+          ? "Trung tam tran dau"
+          : displayLocale === "hi"
+            ? "मैच हब"
+            : displayLocale === "en"
+              ? "Match Hub"
+              : "赛事中枢";
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8">
       <section className="glass-panel rounded-[2rem] p-6 sm:p-8">
-        <SectionHeading eyebrow="Match Hub" title={`${match.homeTeam} vs ${match.awayTeam}`} description={match.insight} />
+        <SectionHeading eyebrow={matchHubEyebrow} title={`${match.homeTeam} vs ${match.awayTeam}`} description={match.insight} />
 
         <div className="mt-6 grid gap-4 md:grid-cols-4">
           <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-sm text-slate-500">{matchDetailCopy.kickoff}</p>
-            <p className="mt-2 text-lg font-semibold text-white">{formatDateTime(match.kickoff, locale)}</p>
+            <p className="mt-2 text-lg font-semibold text-white">{formatDateTime(match.kickoff, displayLocale)}</p>
           </div>
           <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-sm text-slate-500">{matchDetailCopy.matchStatus}</p>

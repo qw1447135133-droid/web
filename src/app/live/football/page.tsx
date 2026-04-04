@@ -1,6 +1,6 @@
 import { ScoreboardTable } from "@/components/scoreboard-table";
 import { SectionHeading } from "@/components/section-heading";
-import { getCurrentLocale } from "@/lib/i18n";
+import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -19,8 +19,8 @@ export default async function FootballLivePage({
 }: {
   searchParams: SearchParams;
 }) {
-  const locale = await getCurrentLocale();
-  const { livePageCopy, matchStatusLabels, uiCopy } = getSiteCopy(locale);
+  const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
+  const { livePageCopy, matchStatusLabels, uiCopy } = getSiteCopy(displayLocale);
   const resolved = await searchParams;
   const league = pickValue(resolved.league, "all");
   const status = pickValue(resolved.status, "all");
@@ -42,7 +42,7 @@ export default async function FootballLivePage({
 
   items = [...items].sort((left, right) => {
     if (sort === "league") {
-      return left.leagueSlug.localeCompare(right.leagueSlug, locale);
+      return left.leagueSlug.localeCompare(right.leagueSlug, displayLocale);
     }
 
     return new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime();
@@ -110,7 +110,7 @@ export default async function FootballLivePage({
         </form>
       </section>
 
-      <ScoreboardTable matches={items} sportLabel={livePageCopy.football.sportLabel} locale={locale} />
+      <ScoreboardTable matches={items} sportLabel={livePageCopy.football.sportLabel} locale={displayLocale} />
     </div>
   );
 }
