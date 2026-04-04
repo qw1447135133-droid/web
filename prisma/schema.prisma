@@ -22,12 +22,14 @@ model User {
   coinAccount         CoinAccount?
   coinRechargeOrders  CoinRechargeOrder[]
   agentApplications   AgentApplication[]
-  agentProfile        AgentProfile?
+  agentProfile        AgentProfile?     @relation("AgentAccount")
   adminAuditLogs      AdminAuditLog[]
   referredByAgent     AgentProfile?     @relation("AgentReferralUsers", fields: [referredByAgentId], references: [id], onDelete: SetNull)
   agentCommissionLedgers AgentCommissionLedger[]
   assistantConversations AssistantConversation[]
   assistantHandoffRequests AssistantHandoffRequest[]
+  adminExportTasks    AdminExportTask[]
+  financeReconciliationIssues FinanceReconciliationIssue[] @relation("FinanceIssueCreatedByUser")
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
@@ -176,7 +178,8 @@ model CoinRechargeOrder {
   userId           String
   package          CoinPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
   user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentCommissionLedger AgentCommissionLedger?
+  agentCommissionLedgers AgentCommissionLedger[]
+  financeReconciliationIssues FinanceReconciliationIssue[]
 
   @@unique([provider, providerOrderId])
   @@index([status, updatedAt])
@@ -251,7 +254,7 @@ model AgentProfile {
   updatedAt           DateTime           @updatedAt
   userId              String?            @unique
   parentAgentId       String?
-  user                User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user                User?              @relation("AgentAccount", fields: [userId], references: [id], onDelete: SetNull)
   parentAgent         AgentProfile?      @relation("AgentHierarchy", fields: [parentAgentId], references: [id], onDelete: SetNull)
   childAgents         AgentProfile[]     @relation("AgentHierarchy")
   referredUsers       User[]             @relation("AgentReferralUsers")
@@ -266,9 +269,12 @@ model AgentProfile {
 
 model AgentCommissionLedger {
   id               String            @id @default(cuid())
+  kind             String            @default("direct")
   rechargeAmount   Int
   commissionRate   Float             @default(0)
   commissionAmount Int
+  settledAmount    Int               @default(0)
+  reversedAmount   Int               @default(0)
   status           String            @default("pending")
   note             String?
   createdAt        DateTime          @default(now())
@@ -276,13 +282,18 @@ model AgentCommissionLedger {
   settledAt        DateTime?
   reversedAt       DateTime?
   agentId          String
+  sourceAgentId    String?
+  sourceAgentName  String?
   userId           String
-  rechargeOrderId  String            @unique
+  rechargeOrderId  String
   agent            AgentProfile      @relation(fields: [agentId], references: [id], onDelete: Cascade)
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   rechargeOrder    CoinRechargeOrder @relation(fields: [rechargeOrderId], references: [id], onDelete: Cascade)
+  allocations      AgentWithdrawalAllocation[]
 
+  @@unique([rechargeOrderId, agentId, kind])
   @@index([agentId, status, createdAt])
+  @@index([rechargeOrderId, kind, createdAt])
   @@index([userId, createdAt])
   @@index([status, createdAt])
 }
@@ -330,6 +341,14 @@ model AgentWithdrawal {
   amount         Int
   status         String       @default("pending")
   payoutAccount  String?
+  payoutChannel  String?
+  payoutBatchNo  String?
+  payoutReference String?
+  payoutOperator String?
+  payoutRequestedAt DateTime?
+  callbackStatus String?
+  callbackPayload String?
+  callbackReceivedAt DateTime?
   note           String?
   proofUrl       String?
   requestedAt    DateTime     @default(now())
@@ -340,9 +359,24 @@ model AgentWithdrawal {
   updatedAt      DateTime     @updatedAt
   agentId        String
   agent          AgentProfile @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  allocations    AgentWithdrawalAllocation[]
 
   @@index([status, updatedAt])
   @@index([agentId, updatedAt])
+  @@index([payoutBatchNo, updatedAt])
+}
+
+model AgentWithdrawalAllocation {
+  id                 String                @id @default(cuid())
+  amount             Int
+  createdAt          DateTime              @default(now())
+  withdrawalId       String
+  commissionLedgerId String
+  withdrawal         AgentWithdrawal       @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
+  commissionLedger   AgentCommissionLedger @relation(fields: [commissionLedgerId], references: [id], onDelete: Cascade)
+
+  @@index([withdrawalId, createdAt])
+  @@index([commissionLedgerId, createdAt])
 }
 
 model AdminRolePolicy {
@@ -423,6 +457,63 @@ model SystemParameter {
   updatedAt   DateTime @updatedAt
 
   @@index([category, updatedAt])
+}
+
+model AdminExportTask {
+  id                     String   @id @default(cuid())
+  scope                  String
+  status                 String   @default("queued")
+  requestedByDisplayName String
+  filtersJson            String?
+  filename               String?
+  storageType            String   @default("local")
+  storageKey             String?
+  mimeType               String   @default("text/csv")
+  rowCount               Int      @default(0)
+  sizeBytes              Int?
+  errorText              String?
+  downloadCount          Int      @default(0)
+  startedAt              DateTime?
+  finishedAt             DateTime?
+  expiresAt              DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  requestedByUserId      String?
+  requestedByUser        User?    @relation(fields: [requestedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([requestedByUserId, createdAt])
+  @@index([scope, createdAt])
+}
+
+model FinanceReconciliationIssue {
+  id                    String             @id @default(cuid())
+  scope                 String             @default("coin-recharge")
+  issueType             String             @default("manual_review")
+  status                String             @default("open")
+  severity              String             @default("medium")
+  summary               String
+  detail                String?
+  reasonCode            String?
+  paymentReference      String?
+  amount                Int?
+  sourceStatus          String?
+  resolutionNote        String?
+  assignedToDisplayName String?
+  createdByDisplayName  String
+  resolvedAt            DateTime?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  rechargeOrderId       String?
+  createdByUserId       String?
+  rechargeOrder         CoinRechargeOrder? @relation(fields: [rechargeOrderId], references: [id], onDelete: SetNull)
+  createdByUser         User?              @relation("FinanceIssueCreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, updatedAt])
+  @@index([severity, updatedAt])
+  @@index([scope, updatedAt])
+  @@index([rechargeOrderId, updatedAt])
+  @@index([createdByUserId, updatedAt])
 }
 
 model League {

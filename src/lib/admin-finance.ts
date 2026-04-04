@@ -14,6 +14,8 @@ type CoinOrderProvider = "mock" | "manual" | "hosted";
 type CoinPackageStatus = "active" | "inactive";
 type CoinLedgerDirection = "credit" | "debit";
 type FinanceTone = "good" | "warn" | "neutral";
+export type FinanceReconciliationIssueStatus = "open" | "reviewing" | "resolved" | "ignored";
+export type FinanceReconciliationIssueSeverity = "low" | "medium" | "high";
 
 export type AdminFinanceMetric = {
   label: string;
@@ -95,6 +97,41 @@ export type AdminFinanceRowCard = {
   meta?: string[];
 };
 
+export type AdminFinanceReconciliationIssueRecord = {
+  id: string;
+  scope: string;
+  issueType: string;
+  status: FinanceReconciliationIssueStatus;
+  severity: FinanceReconciliationIssueSeverity;
+  summary: string;
+  detail?: string;
+  reasonCode?: string;
+  paymentReference?: string;
+  amount?: number;
+  sourceStatus?: string;
+  resolutionNote?: string;
+  assignedToDisplayName?: string;
+  createdByDisplayName: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  rechargeOrderId?: string;
+  rechargeOrderNo?: string;
+  ageHours: number;
+  isOverdue: boolean;
+  isUnassigned: boolean;
+};
+
+export type AdminFinanceReconciliationSummary = {
+  openCount: number;
+  reviewingCount: number;
+  resolvedCount: number;
+  ignoredCount: number;
+  highSeverityOpenCount: number;
+  overdueCount: number;
+  unassignedActiveCount: number;
+};
+
 export type AdminFinanceUserOption = {
   id: string;
   label: string;
@@ -113,6 +150,8 @@ export type AdminFinanceDashboard = {
   coinAccounts: AdminCoinAccountRecord[];
   recentLedgers: AdminCoinLedgerRecord[];
   reconciliationRows: AdminFinanceRowCard[];
+  reconciliationIssues: AdminFinanceReconciliationIssueRecord[];
+  reconciliationSummary: AdminFinanceReconciliationSummary;
   settlementRows: AdminFinanceRowCard[];
   userOptions: AdminFinanceUserOption[];
   packageOptions: AdminFinancePackageOption[];
@@ -365,6 +404,100 @@ function getCoinLedgerReasonLabel(locale: Locale, reason: string) {
   );
 }
 
+function normalizeFinanceReconciliationIssueStatus(value?: string | null): FinanceReconciliationIssueStatus {
+  if (value === "reviewing" || value === "resolved" || value === "ignored") {
+    return value;
+  }
+
+  return "open";
+}
+
+function normalizeFinanceReconciliationIssueSeverity(value?: string | null): FinanceReconciliationIssueSeverity {
+  if (value === "low" || value === "high") {
+    return value;
+  }
+
+  return "medium";
+}
+
+function getFinanceReconciliationIssueSlaThresholdHours(severity: FinanceReconciliationIssueSeverity) {
+  if (severity === "high") {
+    return 4;
+  }
+
+  if (severity === "low") {
+    return 72;
+  }
+
+  return 24;
+}
+
+export function getFinanceReconciliationIssueTypeLabel(locale: Locale, issueType: string) {
+  if (issueType === "payment_failed") {
+    return localizeText(
+      {
+        zhCn: "支付失败复核",
+        zhTw: "支付失敗複核",
+        en: "Failed payment review",
+      },
+      locale,
+    );
+  }
+
+  if (issueType === "missing_payment") {
+    return localizeText(
+      {
+        zhCn: "到账核验",
+        zhTw: "到帳核驗",
+        en: "Payment verification",
+      },
+      locale,
+    );
+  }
+
+  if (issueType === "refund_review") {
+    return localizeText(
+      {
+        zhCn: "退款复核",
+        zhTw: "退款複核",
+        en: "Refund review",
+      },
+      locale,
+    );
+  }
+
+  if (issueType === "stale_pending") {
+    return localizeText(
+      {
+        zhCn: "超时待核",
+        zhTw: "超時待核",
+        en: "Stale pending",
+      },
+      locale,
+    );
+  }
+
+  if (issueType === "credit_missing") {
+    return localizeText(
+      {
+        zhCn: "到账未入账",
+        zhTw: "到帳未入帳",
+        en: "Credit missing",
+      },
+      locale,
+    );
+  }
+
+  return localizeText(
+    {
+      zhCn: "人工复核",
+      zhTw: "人工複核",
+      en: "Manual review",
+    },
+    locale,
+  );
+}
+
 export function getCoinRechargeOrderStatusMeta(
   status: CoinOrderStatus,
   locale: Locale,
@@ -435,6 +568,155 @@ export function getCoinRechargeOrderStatusMeta(
       locale,
     ),
     tone: "warn" as const,
+  };
+}
+
+export function getFinanceReconciliationIssueStatusMeta(
+  status: FinanceReconciliationIssueStatus,
+  locale: Locale,
+) {
+  if (status === "resolved") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "已解决",
+          zhTw: "已解決",
+          en: "Resolved",
+        },
+        locale,
+      ),
+      tone: "good" as const,
+    };
+  }
+
+  if (status === "ignored") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "已忽略",
+          zhTw: "已忽略",
+          en: "Ignored",
+        },
+        locale,
+      ),
+      tone: "neutral" as const,
+    };
+  }
+
+  if (status === "reviewing") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "处理中",
+          zhTw: "處理中",
+          en: "Reviewing",
+        },
+        locale,
+      ),
+      tone: "warn" as const,
+    };
+  }
+
+  return {
+    label: localizeText(
+      {
+        zhCn: "待处理",
+        zhTw: "待處理",
+        en: "Open",
+      },
+      locale,
+    ),
+    tone: "warn" as const,
+  };
+}
+
+export function getFinanceReconciliationIssueSeverityMeta(
+  severity: FinanceReconciliationIssueSeverity,
+  locale: Locale,
+) {
+  if (severity === "high") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "高优先级",
+          zhTw: "高優先級",
+          en: "High",
+        },
+        locale,
+      ),
+      tone: "warn" as const,
+    };
+  }
+
+  if (severity === "low") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "低优先级",
+          zhTw: "低優先級",
+          en: "Low",
+        },
+        locale,
+      ),
+      tone: "neutral" as const,
+    };
+  }
+
+  return {
+    label: localizeText(
+      {
+        zhCn: "中优先级",
+        zhTw: "中優先級",
+        en: "Medium",
+      },
+      locale,
+    ),
+    tone: "good" as const,
+  };
+}
+
+export function getFinanceReconciliationIssueSlaMeta(
+  issue: Pick<AdminFinanceReconciliationIssueRecord, "status" | "severity" | "ageHours" | "isOverdue">,
+  locale: Locale,
+) {
+  if (issue.status === "resolved" || issue.status === "ignored") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "已收口",
+          zhTw: "已收口",
+          en: "Closed loop",
+        },
+        locale,
+      ),
+      tone: "good" as const,
+    };
+  }
+
+  if (issue.isOverdue) {
+    return {
+      label: localizeText(
+        {
+          zhCn: `已逾时 ${formatCompactNumber(issue.ageHours)}h`,
+          zhTw: `已逾時 ${formatCompactNumber(issue.ageHours)}h`,
+          en: `Overdue ${formatCompactNumber(issue.ageHours)}h`,
+        },
+        locale,
+      ),
+      tone: "warn" as const,
+    };
+  }
+
+  return {
+    label: localizeText(
+      {
+        zhCn: `SLA ${formatCompactNumber(getFinanceReconciliationIssueSlaThresholdHours(issue.severity))}h 内`,
+        zhTw: `SLA ${formatCompactNumber(getFinanceReconciliationIssueSlaThresholdHours(issue.severity))}h 內`,
+        en: `Within ${formatCompactNumber(getFinanceReconciliationIssueSlaThresholdHours(issue.severity))}h SLA`,
+      },
+      locale,
+    ),
+    tone: "neutral" as const,
   };
 }
 
@@ -638,6 +920,8 @@ export async function markCoinRechargeOrderPaidByAdmin(input: {
   orderId: string;
   paymentReference?: string;
   allowRecoverFromTerminal?: boolean;
+  operatorUserId?: string | null;
+  operatorDisplayName?: string;
 }) {
   const order = await prisma.coinRechargeOrder.findUnique({
     where: { id: input.orderId },
@@ -715,6 +999,11 @@ export async function markCoinRechargeOrderPaidByAdmin(input: {
     });
   });
 
+  await syncRechargeOrderReconciliationIssues({
+    orderId: order.id,
+    createdByUserId: input.operatorUserId ?? null,
+    createdByDisplayName: input.operatorDisplayName,
+  });
   safeRevalidate(siteSurfacePaths);
 }
 
@@ -722,6 +1011,8 @@ export async function markCoinRechargeOrderFailedByAdmin(input: {
   orderId: string;
   reason?: string;
   paymentReference?: string;
+  operatorUserId?: string | null;
+  operatorDisplayName?: string;
 }) {
   const order = await prisma.coinRechargeOrder.findUnique({
     where: { id: input.orderId },
@@ -759,11 +1050,18 @@ export async function markCoinRechargeOrderFailedByAdmin(input: {
     },
   });
 
+  await syncRechargeOrderReconciliationIssues({
+    orderId: order.id,
+    createdByUserId: input.operatorUserId ?? null,
+    createdByDisplayName: input.operatorDisplayName,
+  });
   safeRevalidate(siteSurfacePaths);
 }
 
 export async function closePendingCoinRechargeOrder(input: {
   orderId: string;
+  operatorUserId?: string | null;
+  operatorDisplayName?: string;
 }) {
   const order = await prisma.coinRechargeOrder.findUnique({
     where: { id: input.orderId },
@@ -793,12 +1091,19 @@ export async function closePendingCoinRechargeOrder(input: {
     },
   });
 
+  await syncRechargeOrderReconciliationIssues({
+    orderId: order.id,
+    createdByUserId: input.operatorUserId ?? null,
+    createdByDisplayName: input.operatorDisplayName,
+  });
   safeRevalidate(siteSurfacePaths);
 }
 
 export async function refundCoinRechargeOrderByAdmin(input: {
   orderId: string;
   reason?: string;
+  operatorUserId?: string | null;
+  operatorDisplayName?: string;
 }) {
   const order = await prisma.coinRechargeOrder.findUnique({
     where: { id: input.orderId },
@@ -854,6 +1159,11 @@ export async function refundCoinRechargeOrderByAdmin(input: {
     });
   });
 
+  await syncRechargeOrderReconciliationIssues({
+    orderId: order.id,
+    createdByUserId: input.operatorUserId ?? null,
+    createdByDisplayName: input.operatorDisplayName,
+  });
   safeRevalidate(siteSurfacePaths);
 }
 
@@ -886,6 +1196,823 @@ export async function adjustCoinAccountByAdmin(input: {
   });
 
   safeRevalidate(siteSurfacePaths);
+}
+
+type BatchCoinRechargeAction = "mark-paid" | "mark-failed" | "close" | "refund";
+
+function normalizeUniqueValues(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+export async function batchUpdateCoinRechargeOrdersByAdmin(input: {
+  orderRefs: string[];
+  action: BatchCoinRechargeAction;
+  reason?: string;
+  paymentReference?: string;
+  operatorUserId?: string | null;
+  operatorDisplayName?: string;
+}) {
+  const orderRefs = normalizeUniqueValues(input.orderRefs);
+
+  if (orderRefs.length === 0) {
+    throw new Error("COIN_RECHARGE_BATCH_EMPTY");
+  }
+
+  const orders = await prisma.coinRechargeOrder.findMany({
+    where: {
+      OR: orderRefs.flatMap((value) => [{ id: value }, { orderNo: value }]),
+    },
+    select: {
+      id: true,
+      orderNo: true,
+      status: true,
+    },
+  });
+
+  const orderMap = new Map<string, { id: string; orderNo: string; status: string }>();
+
+  for (const order of orders) {
+    orderMap.set(order.id, order);
+    orderMap.set(order.orderNo, order);
+  }
+
+  const processedOrderIds = new Set<string>();
+  let processedCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
+  for (const ref of orderRefs) {
+    const order = orderMap.get(ref);
+
+    if (!order || processedOrderIds.has(order.id)) {
+      failedCount += 1;
+      continue;
+    }
+
+    const status = order.status as CoinOrderStatus;
+
+    if (input.action === "mark-paid" && status !== "pending" && status !== "failed" && status !== "closed") {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (input.action === "mark-failed" && status !== "pending") {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (input.action === "refund" && status !== "paid") {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (input.action === "close" && status !== "pending") {
+      skippedCount += 1;
+      continue;
+    }
+
+    try {
+      if (input.action === "mark-paid") {
+        await markCoinRechargeOrderPaidByAdmin({
+          orderId: order.id,
+          paymentReference: input.paymentReference,
+          allowRecoverFromTerminal: true,
+          operatorUserId: input.operatorUserId ?? null,
+          operatorDisplayName: input.operatorDisplayName,
+        });
+      } else if (input.action === "mark-failed") {
+        await markCoinRechargeOrderFailedByAdmin({
+          orderId: order.id,
+          paymentReference: input.paymentReference,
+          reason: input.reason,
+          operatorUserId: input.operatorUserId ?? null,
+          operatorDisplayName: input.operatorDisplayName,
+        });
+      } else if (input.action === "refund") {
+        await refundCoinRechargeOrderByAdmin({
+          orderId: order.id,
+          reason: input.reason,
+          operatorUserId: input.operatorUserId ?? null,
+          operatorDisplayName: input.operatorDisplayName,
+        });
+      } else {
+        await closePendingCoinRechargeOrder({
+          orderId: order.id,
+          operatorUserId: input.operatorUserId ?? null,
+          operatorDisplayName: input.operatorDisplayName,
+        });
+      }
+
+      processedOrderIds.add(order.id);
+      processedCount += 1;
+    } catch {
+      failedCount += 1;
+    }
+  }
+
+  return {
+    totalCount: orderRefs.length,
+    processedCount,
+    skippedCount,
+    failedCount,
+  };
+}
+
+export async function batchAdjustCoinAccountsByAdmin(input: {
+  userRefs: string[];
+  direction: CoinLedgerDirection;
+  amount: number;
+  note?: string;
+}) {
+  const userRefs = normalizeUniqueValues(input.userRefs);
+
+  if (userRefs.length === 0) {
+    throw new Error("COIN_ADJUSTMENT_BATCH_EMPTY");
+  }
+
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    throw new Error("COIN_AMOUNT_INVALID");
+  }
+
+  const users = await prisma.user.findMany({
+    where: {
+      OR: userRefs.flatMap((value) => [{ id: value }, { email: value }]),
+    },
+    select: {
+      id: true,
+      email: true,
+    },
+  });
+
+  const userMap = new Map<string, { id: string; email: string }>();
+
+  for (const user of users) {
+    userMap.set(user.id, user);
+    userMap.set(user.email, user);
+  }
+
+  const resolvedUsers = userRefs
+    .map((value) => userMap.get(value))
+    .filter((item): item is { id: string; email: string } => Boolean(item));
+  const userIds = [...new Set(resolvedUsers.map((item) => item.id))];
+  const accounts = input.direction === "debit"
+    ? await prisma.coinAccount.findMany({
+        where: {
+          userId: {
+            in: userIds,
+          },
+        },
+        select: {
+          userId: true,
+          balance: true,
+        },
+      })
+    : [];
+  const balanceMap = new Map(accounts.map((account) => [account.userId, account.balance]));
+  const processedUserIds = new Set<string>();
+  let processedCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
+  for (const ref of userRefs) {
+    const user = userMap.get(ref);
+
+    if (!user || processedUserIds.has(user.id)) {
+      failedCount += 1;
+      continue;
+    }
+
+    if (input.direction === "debit" && (balanceMap.get(user.id) ?? 0) < input.amount) {
+      skippedCount += 1;
+      continue;
+    }
+
+    try {
+      await adjustCoinAccountByAdmin({
+        userId: user.id,
+        direction: input.direction,
+        amount: input.amount,
+        note: input.note,
+      });
+
+      processedUserIds.add(user.id);
+      processedCount += 1;
+    } catch {
+      failedCount += 1;
+    }
+  }
+
+  return {
+    totalCount: userRefs.length,
+    processedCount,
+    skippedCount,
+    failedCount,
+  };
+}
+
+function toAdminFinanceReconciliationIssueRecord(issue: {
+  id: string;
+  scope: string;
+  issueType: string;
+  status: string;
+  severity: string;
+  summary: string;
+  detail: string | null;
+  reasonCode: string | null;
+  paymentReference: string | null;
+  amount: number | null;
+  sourceStatus: string | null;
+  resolutionNote: string | null;
+  assignedToDisplayName: string | null;
+  createdByDisplayName: string;
+  resolvedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  rechargeOrderId: string | null;
+  rechargeOrder?: {
+    orderNo: string;
+  } | null;
+}): AdminFinanceReconciliationIssueRecord {
+  const status = normalizeFinanceReconciliationIssueStatus(issue.status);
+  const severity = normalizeFinanceReconciliationIssueSeverity(issue.severity);
+  const ageHours = Math.max(0, Math.floor((Date.now() - issue.updatedAt.getTime()) / (60 * 60 * 1000)));
+  const isActive = status === "open" || status === "reviewing";
+  const isOverdue = isActive && ageHours >= getFinanceReconciliationIssueSlaThresholdHours(severity);
+  const isUnassigned = isActive && !(issue.assignedToDisplayName ?? "").trim();
+
+  return {
+    id: issue.id,
+    scope: issue.scope,
+    issueType: issue.issueType,
+    status,
+    severity,
+    summary: issue.summary,
+    detail: issue.detail ?? undefined,
+    reasonCode: issue.reasonCode ?? undefined,
+    paymentReference: issue.paymentReference ?? undefined,
+    amount: issue.amount ?? undefined,
+    sourceStatus: issue.sourceStatus ?? undefined,
+    resolutionNote: issue.resolutionNote ?? undefined,
+    assignedToDisplayName: issue.assignedToDisplayName ?? undefined,
+    createdByDisplayName: issue.createdByDisplayName,
+    resolvedAt: issue.resolvedAt?.toISOString(),
+    createdAt: issue.createdAt.toISOString(),
+    updatedAt: issue.updatedAt.toISOString(),
+    rechargeOrderId: issue.rechargeOrderId ?? undefined,
+    rechargeOrderNo: issue.rechargeOrder?.orderNo ?? undefined,
+    ageHours,
+    isOverdue,
+    isUnassigned,
+  };
+}
+
+async function findCoinRechargeOrderByRef(orderRef?: string) {
+  const normalizedRef = orderRef?.trim();
+
+  if (!normalizedRef) {
+    return null;
+  }
+
+  return prisma.coinRechargeOrder.findFirst({
+    where: {
+      OR: [{ id: normalizedRef }, { orderNo: normalizedRef }],
+    },
+    select: {
+      id: true,
+      orderNo: true,
+      amount: true,
+      status: true,
+      paymentReference: true,
+    },
+  });
+}
+
+type ManagedFinanceIssueType = "stale_pending" | "payment_failed" | "refund_review" | "credit_missing";
+
+type RechargeOrderSignalSnapshot = {
+  id: string;
+  orderNo: string;
+  amount: number;
+  status: string;
+  paymentReference: string | null;
+  failureReason?: string | null;
+  refundReason?: string | null;
+  creditedAt?: Date | null;
+  createdAt?: Date;
+  paidAt?: Date | null;
+};
+
+type RechargeOrderIssueSignal = {
+  issueType: ManagedFinanceIssueType;
+  severity: FinanceReconciliationIssueSeverity;
+  summary: string;
+  detail: string;
+  reasonCode: string;
+};
+
+const managedRechargeIssueTypes: ManagedFinanceIssueType[] = [
+  "stale_pending",
+  "payment_failed",
+  "refund_review",
+  "credit_missing",
+];
+
+function buildRechargeOrderIssueSignals(
+  order: RechargeOrderSignalSnapshot,
+  stalePendingHours = 24,
+) {
+  const signals: RechargeOrderIssueSignal[] = [];
+  const now = Date.now();
+
+  if (
+    order.status === "pending" &&
+    order.createdAt &&
+    order.createdAt.getTime() < now - stalePendingHours * 60 * 60 * 1000
+  ) {
+    signals.push({
+      issueType: "stale_pending",
+      severity: "high",
+      summary: `充值单 ${order.orderNo} 超过 ${stalePendingHours} 小时未完成支付`,
+      detail: `订单创建于 ${order.createdAt.toISOString()}，仍处于待支付状态，请核对支付通道与补单情况。`,
+      reasonCode: "stale_pending",
+    });
+  }
+
+  if (order.status === "failed") {
+    signals.push({
+      issueType: "payment_failed",
+      severity: "high",
+      summary: `充值单 ${order.orderNo} 已标记支付失败`,
+      detail: order.failureReason ?? "支付失败订单需要财务确认是否补单、重建订单或通知用户。",
+      reasonCode: "payment_failed",
+    });
+  }
+
+  if (order.status === "refunded") {
+    signals.push({
+      issueType: "refund_review",
+      severity: "medium",
+      summary: `充值单 ${order.orderNo} 已退款，待复核回退链路`,
+      detail: order.refundReason ?? "请确认球币回退、佣金冲回和财务记录是否一致。",
+      reasonCode: "refund_review",
+    });
+  }
+
+  if (order.status === "paid" && !order.creditedAt) {
+    signals.push({
+      issueType: "credit_missing",
+      severity: "high",
+      summary: `充值单 ${order.orderNo} 已支付但未完成入账`,
+      detail: `支付时间 ${order.paidAt?.toISOString() ?? "--"}，请检查球币账户与回调处理链路。`,
+      reasonCode: "credit_missing",
+    });
+  }
+
+  return signals;
+}
+
+async function syncRechargeOrderReconciliationIssues(input: {
+  orderId: string;
+  createdByUserId?: string | null;
+  createdByDisplayName?: string;
+  stalePendingHours?: number;
+}) {
+  const order = await prisma.coinRechargeOrder.findUnique({
+    where: { id: input.orderId },
+    select: {
+      id: true,
+      orderNo: true,
+      amount: true,
+      status: true,
+      paymentReference: true,
+      failureReason: true,
+      refundReason: true,
+      creditedAt: true,
+      createdAt: true,
+      paidAt: true,
+    },
+  });
+
+  if (!order) {
+    return {
+      createdCount: 0,
+      resolvedCount: 0,
+    };
+  }
+
+  const actorDisplayName = input.createdByDisplayName?.trim() || "System";
+  const activeSignals = buildRechargeOrderIssueSignals(order, input.stalePendingHours ?? 24);
+  const activeIssueTypeSet = new Set(activeSignals.map((signal) => signal.issueType));
+  const existingIssues = await prisma.financeReconciliationIssue.findMany({
+    where: {
+      rechargeOrderId: order.id,
+      issueType: {
+        in: managedRechargeIssueTypes,
+      },
+      status: {
+        in: ["open", "reviewing"],
+      },
+    },
+    select: {
+      id: true,
+      issueType: true,
+      status: true,
+    },
+  });
+
+  let createdCount = 0;
+
+  for (const signal of activeSignals) {
+    const result = await createFinanceReconciliationIssue({
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: signal.issueType,
+      severity: signal.severity,
+      summary: signal.summary,
+      detail: signal.detail,
+      reasonCode: signal.reasonCode,
+      createdByUserId: input.createdByUserId ?? null,
+      createdByDisplayName: actorDisplayName,
+      assignedToDisplayName: actorDisplayName,
+      dedupeMode: "active",
+    });
+
+    if (result.created) {
+      createdCount += 1;
+    }
+  }
+
+  const issueIdsToResolve = existingIssues
+    .filter((issue) => !activeIssueTypeSet.has(issue.issueType as ManagedFinanceIssueType))
+    .map((issue) => issue.id);
+
+  let resolvedCount = 0;
+
+  if (issueIdsToResolve.length > 0) {
+    const result = await prisma.financeReconciliationIssue.updateMany({
+      where: {
+        id: {
+          in: issueIdsToResolve,
+        },
+      },
+      data: {
+        status: "resolved",
+        resolutionNote: `订单状态已更新，系统自动关闭当前对账问题。`,
+        assignedToDisplayName: actorDisplayName,
+        resolvedAt: new Date(),
+      },
+    });
+    resolvedCount = result.count;
+  }
+
+  if (createdCount > 0 || resolvedCount > 0) {
+    safeRevalidate(siteSurfacePaths);
+  }
+
+  return {
+    createdCount,
+    resolvedCount,
+  };
+}
+
+export async function createFinanceReconciliationIssue(input: {
+  orderRef?: string;
+  paymentReference?: string;
+  issueType?: string;
+  severity?: string;
+  summary?: string;
+  detail?: string;
+  reasonCode?: string;
+  createdByUserId?: string | null;
+  createdByDisplayName: string;
+  assignedToDisplayName?: string;
+  dedupeMode?: "active" | "all";
+}) {
+  const rechargeOrder = await findCoinRechargeOrderByRef(input.orderRef);
+  const issueType = input.issueType?.trim() || "manual_review";
+  const severity = normalizeFinanceReconciliationIssueSeverity(input.severity);
+  const dedupeMode = input.dedupeMode ?? "active";
+  const summary =
+    input.summary?.trim() ||
+    (rechargeOrder ? `充值单 ${rechargeOrder.orderNo} 待人工复核` : "财务对账问题待复核");
+
+  const detail = input.detail?.trim() || undefined;
+  const paymentReference = input.paymentReference?.trim() || rechargeOrder?.paymentReference || undefined;
+
+  if (!summary) {
+    throw new Error("FINANCE_RECONCILIATION_SUMMARY_REQUIRED");
+  }
+
+  if (rechargeOrder) {
+    const existing = await prisma.financeReconciliationIssue.findFirst({
+      where: {
+        rechargeOrderId: rechargeOrder.id,
+        issueType,
+        ...(dedupeMode === "active"
+          ? {
+              status: {
+                in: ["open", "reviewing"],
+              },
+            }
+          : {}),
+      },
+      include: {
+        rechargeOrder: {
+          select: {
+            orderNo: true,
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+    });
+
+    if (existing) {
+      return {
+        issue: toAdminFinanceReconciliationIssueRecord(existing),
+        created: false,
+      };
+    }
+  }
+
+  const created = await prisma.financeReconciliationIssue.create({
+    data: {
+      scope: "coin-recharge",
+      issueType,
+      status: "open",
+      severity,
+      summary,
+      detail: detail ?? null,
+      reasonCode: input.reasonCode?.trim() || null,
+      paymentReference: paymentReference ?? null,
+      amount: rechargeOrder?.amount ?? null,
+      sourceStatus: rechargeOrder?.status ?? null,
+      assignedToDisplayName: input.assignedToDisplayName?.trim() || input.createdByDisplayName.trim() || null,
+      createdByDisplayName: input.createdByDisplayName.trim() || "Admin",
+      rechargeOrderId: rechargeOrder?.id ?? null,
+      createdByUserId: input.createdByUserId ?? null,
+    },
+    include: {
+      rechargeOrder: {
+        select: {
+          orderNo: true,
+        },
+      },
+    },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+  return {
+    issue: toAdminFinanceReconciliationIssueRecord(created),
+    created: true,
+  };
+}
+
+export async function updateFinanceReconciliationIssue(input: {
+  issueId: string;
+  status?: FinanceReconciliationIssueStatus | string;
+  resolutionNote?: string;
+  detail?: string;
+  assignedToDisplayName?: string;
+}) {
+  const existing = await prisma.financeReconciliationIssue.findUnique({
+    where: { id: input.issueId },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!existing) {
+    throw new Error("FINANCE_RECONCILIATION_ISSUE_NOT_FOUND");
+  }
+
+  const nextStatus = input.status ? normalizeFinanceReconciliationIssueStatus(input.status) : undefined;
+  const updated = await prisma.financeReconciliationIssue.update({
+    where: { id: input.issueId },
+    data: {
+      status: nextStatus,
+      resolutionNote:
+        typeof input.resolutionNote === "string"
+          ? input.resolutionNote.trim() || null
+          : undefined,
+      detail:
+        typeof input.detail === "string"
+          ? input.detail.trim() || null
+          : undefined,
+      assignedToDisplayName:
+        typeof input.assignedToDisplayName === "string"
+          ? input.assignedToDisplayName.trim() || null
+          : undefined,
+      resolvedAt:
+        nextStatus === "resolved" || nextStatus === "ignored"
+          ? new Date()
+          : nextStatus === "open" || nextStatus === "reviewing"
+            ? null
+            : undefined,
+    },
+    include: {
+      rechargeOrder: {
+        select: {
+          orderNo: true,
+        },
+      },
+    },
+  });
+
+  safeRevalidate(siteSurfacePaths);
+  return toAdminFinanceReconciliationIssueRecord(updated);
+}
+
+export async function scanFinanceReconciliationIssues(input?: {
+  now?: Date;
+  stalePendingHours?: number;
+  createdByUserId?: string | null;
+  createdByDisplayName?: string;
+}) {
+  const now = input?.now ?? new Date();
+  const stalePendingHours = Math.max(1, input?.stalePendingHours ?? 24);
+  const stalePendingThreshold = new Date(now.getTime() - stalePendingHours * 60 * 60 * 1000);
+  const actorDisplayName = input?.createdByDisplayName?.trim() || "System";
+  const actorUserId = input?.createdByUserId ?? null;
+
+  const [stalePendingOrders, failedOrders, refundedOrders, paidMissingCreditOrders] = await Promise.all([
+    prisma.coinRechargeOrder.findMany({
+      where: {
+        status: "pending",
+        createdAt: {
+          lt: stalePendingThreshold,
+        },
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        amount: true,
+        status: true,
+        paymentReference: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      take: 120,
+    }),
+    prisma.coinRechargeOrder.findMany({
+      where: {
+        status: "failed",
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        amount: true,
+        status: true,
+        paymentReference: true,
+        failureReason: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take: 120,
+    }),
+    prisma.coinRechargeOrder.findMany({
+      where: {
+        status: "refunded",
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        amount: true,
+        status: true,
+        paymentReference: true,
+        refundReason: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take: 120,
+    }),
+    prisma.coinRechargeOrder.findMany({
+      where: {
+        status: "paid",
+        creditedAt: null,
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        amount: true,
+        status: true,
+        paymentReference: true,
+        paidAt: true,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take: 120,
+    }),
+  ]);
+
+  let createdCount = 0;
+  let skippedCount = 0;
+
+  for (const order of stalePendingOrders) {
+    const result = await createFinanceReconciliationIssue({
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "stale_pending",
+      severity: "high",
+      summary: `充值单 ${order.orderNo} 超过 ${stalePendingHours} 小时未完成支付`,
+      detail: `订单创建于 ${order.createdAt.toISOString()}，仍处于待支付状态，请核对支付通道与补单情况。`,
+      reasonCode: "stale_pending",
+      createdByUserId: actorUserId,
+      createdByDisplayName: actorDisplayName,
+      assignedToDisplayName: actorDisplayName,
+      dedupeMode: "all",
+    });
+
+    if (result.created) {
+      createdCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  for (const order of failedOrders) {
+    const result = await createFinanceReconciliationIssue({
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "payment_failed",
+      severity: "high",
+      summary: `充值单 ${order.orderNo} 已标记支付失败`,
+      detail: order.failureReason ?? "支付失败订单需要财务确认是否补单、重建订单或通知用户。",
+      reasonCode: "payment_failed",
+      createdByUserId: actorUserId,
+      createdByDisplayName: actorDisplayName,
+      assignedToDisplayName: actorDisplayName,
+      dedupeMode: "all",
+    });
+
+    if (result.created) {
+      createdCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  for (const order of refundedOrders) {
+    const result = await createFinanceReconciliationIssue({
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "refund_review",
+      severity: "medium",
+      summary: `充值单 ${order.orderNo} 已退款，待复核回退链路`,
+      detail: order.refundReason ?? "请确认球币回退、佣金冲回和财务记录是否一致。",
+      reasonCode: "refund_review",
+      createdByUserId: actorUserId,
+      createdByDisplayName: actorDisplayName,
+      assignedToDisplayName: actorDisplayName,
+      dedupeMode: "all",
+    });
+
+    if (result.created) {
+      createdCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  for (const order of paidMissingCreditOrders) {
+    const result = await createFinanceReconciliationIssue({
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "credit_missing",
+      severity: "high",
+      summary: `充值单 ${order.orderNo} 已支付但未完成入账`,
+      detail: `支付时间 ${order.paidAt?.toISOString() ?? "--"}，请检查球币账户与回调处理链路。`,
+      reasonCode: "credit_missing",
+      createdByUserId: actorUserId,
+      createdByDisplayName: actorDisplayName,
+      assignedToDisplayName: actorDisplayName,
+      dedupeMode: "all",
+    });
+
+    if (result.created) {
+      createdCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  return {
+    totalCount:
+      stalePendingOrders.length +
+      failedOrders.length +
+      refundedOrders.length +
+      paidMissingCreditOrders.length,
+    createdCount,
+    skippedCount,
+  };
 }
 
 export async function closeExpiredCoinRechargeOrders(input?: {
@@ -927,6 +2054,13 @@ export async function closeExpiredCoinRechargeOrders(input?: {
     },
   });
 
+  for (const order of expiredOrders) {
+    await syncRechargeOrderReconciliationIssues({
+      orderId: order.id,
+      createdByDisplayName: "System",
+    });
+  }
+
   safeRevalidate(siteSurfacePaths);
 
   return {
@@ -957,6 +2091,7 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     stalePendingCount,
     userOptionsRaw,
     paidContentOrders,
+    reconciliationIssuesRaw,
   ] = await Promise.all([
     prisma.coinPackage.findMany({
       orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
@@ -1108,6 +2243,17 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
       },
       take: 200,
     }),
+    prisma.financeReconciliationIssue.findMany({
+      take: 12,
+      orderBy: [{ updatedAt: "desc" }],
+      include: {
+        rechargeOrder: {
+          select: {
+            orderNo: true,
+          },
+        },
+      },
+    }),
   ]);
 
   const packages: AdminCoinPackageRecord[] = packagesRaw.map((item) => ({
@@ -1185,6 +2331,78 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     createdAt: ledger.createdAt.toISOString(),
   }));
 
+  const reconciliationIssues = reconciliationIssuesRaw.map((issue) =>
+    toAdminFinanceReconciliationIssueRecord(issue),
+  );
+  reconciliationIssues.sort((left, right) => {
+    const statusPriority = (value: FinanceReconciliationIssueStatus) => {
+      if (value === "open") {
+        return 0;
+      }
+
+      if (value === "reviewing") {
+        return 1;
+      }
+
+      if (value === "resolved") {
+        return 2;
+      }
+
+      return 3;
+    };
+    const severityPriority = (value: FinanceReconciliationIssueSeverity) => {
+      if (value === "high") {
+        return 0;
+      }
+
+      if (value === "medium") {
+        return 1;
+      }
+
+      return 2;
+    };
+    const statusDiff = statusPriority(left.status) - statusPriority(right.status);
+
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+
+    if (left.isOverdue !== right.isOverdue) {
+      return left.isOverdue ? -1 : 1;
+    }
+
+    if (left.isUnassigned !== right.isUnassigned) {
+      return left.isUnassigned ? -1 : 1;
+    }
+
+    const severityDiff = severityPriority(left.severity) - severityPriority(right.severity);
+
+    if (severityDiff !== 0) {
+      return severityDiff;
+    }
+
+    if (left.status === "resolved" || left.status === "ignored") {
+      return right.updatedAt.localeCompare(left.updatedAt);
+    }
+
+    return left.updatedAt.localeCompare(right.updatedAt);
+  });
+  const reconciliationSummary: AdminFinanceReconciliationSummary = {
+    openCount: reconciliationIssues.filter((item) => item.status === "open").length,
+    reviewingCount: reconciliationIssues.filter((item) => item.status === "reviewing").length,
+    resolvedCount: reconciliationIssues.filter((item) => item.status === "resolved").length,
+    ignoredCount: reconciliationIssues.filter((item) => item.status === "ignored").length,
+    highSeverityOpenCount: reconciliationIssues.filter(
+      (item) => item.severity === "high" && (item.status === "open" || item.status === "reviewing"),
+    ).length,
+    overdueCount: reconciliationIssues.filter(
+      (item) => item.isOverdue && (item.status === "open" || item.status === "reviewing"),
+    ).length,
+    unassignedActiveCount: reconciliationIssues.filter(
+      (item) => item.isUnassigned && (item.status === "open" || item.status === "reviewing"),
+    ).length,
+  };
+
   const metrics: AdminFinanceMetric[] = [
     {
       label: localizeText(
@@ -1258,6 +2476,25 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
           zhCn: `累计实收 ${formatCompactNumber(paidRechargeAggregate._sum.amount ?? 0)} 元。`,
           zhTw: `累計實收 ${formatCompactNumber(paidRechargeAggregate._sum.amount ?? 0)} 元。`,
           en: `Paid recharge total CNY ${formatCompactNumber(paidRechargeAggregate._sum.amount ?? 0)}.`,
+        },
+        locale,
+      ),
+    },
+    {
+      label: localizeText(
+        {
+          zhCn: "对账问题队列",
+          zhTw: "對帳問題隊列",
+          en: "Reconciliation queue",
+        },
+        locale,
+      ),
+      value: formatCompactNumber(reconciliationSummary.openCount + reconciliationSummary.reviewingCount),
+      description: localizeText(
+        {
+          zhCn: `高优先级 ${formatCompactNumber(reconciliationSummary.highSeverityOpenCount)} 条，逾时 ${formatCompactNumber(reconciliationSummary.overdueCount)} 条，未分配 ${formatCompactNumber(reconciliationSummary.unassignedActiveCount)} 条。`,
+          zhTw: `高優先級 ${formatCompactNumber(reconciliationSummary.highSeverityOpenCount)} 條，逾時 ${formatCompactNumber(reconciliationSummary.overdueCount)} 條，未分配 ${formatCompactNumber(reconciliationSummary.unassignedActiveCount)} 條。`,
+          en: `High severity ${formatCompactNumber(reconciliationSummary.highSeverityOpenCount)}, overdue ${formatCompactNumber(reconciliationSummary.overdueCount)}, unassigned ${formatCompactNumber(reconciliationSummary.unassignedActiveCount)}.`,
         },
         locale,
       ),
@@ -1525,6 +2762,8 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     coinAccounts,
     recentLedgers,
     reconciliationRows,
+    reconciliationIssues,
+    reconciliationSummary,
     settlementRows,
     userOptions: userOptionsRaw.map((user) => ({
       id: user.id,

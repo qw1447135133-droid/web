@@ -20,7 +20,7 @@ export default async function LoginPage({
   const { authPageCopy, roleLabels } = getSiteCopy(displayLocale);
   const resolved = await searchParams;
   const next = pickValue(resolved.next);
-  const inviteCode = pickValue(resolved.invite, "").trim().toUpperCase();
+  const inviteCode = pickValue(resolved.invite).trim().toUpperCase();
 
   return (
     <div className="mx-auto flex min-h-[70vh] w-full max-w-5xl items-center px-4 py-10 sm:px-6 lg:px-8">

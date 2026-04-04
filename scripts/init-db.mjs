@@ -108,8 +108,13 @@ db.exec(`
     "role" TEXT NOT NULL,
     "membershipPlanId" TEXT,
     "membershipExpiresAt" DATETIME,
+    "referredAt" DATETIME,
+    "referredByAgentId" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "User_referredByAgentId_fkey"
+      FOREIGN KEY ("referredByAgentId") REFERENCES "AgentProfile" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS "Session" (
@@ -366,6 +371,14 @@ db.exec(`
     "amount" INTEGER NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "payoutAccount" TEXT,
+    "payoutChannel" TEXT,
+    "payoutBatchNo" TEXT,
+    "payoutReference" TEXT,
+    "payoutOperator" TEXT,
+    "payoutRequestedAt" DATETIME,
+    "callbackStatus" TEXT,
+    "callbackPayload" TEXT,
+    "callbackReceivedAt" DATETIME,
     "note" TEXT,
     "proofUrl" TEXT,
     "requestedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -377,6 +390,50 @@ db.exec(`
     "agentId" TEXT NOT NULL,
     CONSTRAINT "AgentWithdrawal_agentId_fkey"
       FOREIGN KEY ("agentId") REFERENCES "AgentProfile" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "AgentCommissionLedger" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "kind" TEXT NOT NULL DEFAULT 'direct',
+    "rechargeAmount" INTEGER NOT NULL,
+    "commissionRate" REAL NOT NULL DEFAULT 0,
+    "commissionAmount" INTEGER NOT NULL,
+    "settledAmount" INTEGER NOT NULL DEFAULT 0,
+    "reversedAmount" INTEGER NOT NULL DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "note" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "settledAt" DATETIME,
+    "reversedAt" DATETIME,
+    "agentId" TEXT NOT NULL,
+    "sourceAgentId" TEXT,
+    "sourceAgentName" TEXT,
+    "userId" TEXT NOT NULL,
+    "rechargeOrderId" TEXT NOT NULL,
+    CONSTRAINT "AgentCommissionLedger_agentId_fkey"
+      FOREIGN KEY ("agentId") REFERENCES "AgentProfile" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "AgentCommissionLedger_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "AgentCommissionLedger_rechargeOrderId_fkey"
+      FOREIGN KEY ("rechargeOrderId") REFERENCES "CoinRechargeOrder" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "AgentWithdrawalAllocation" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "amount" INTEGER NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "withdrawalId" TEXT NOT NULL,
+    "commissionLedgerId" TEXT NOT NULL,
+    CONSTRAINT "AgentWithdrawalAllocation_withdrawalId_fkey"
+      FOREIGN KEY ("withdrawalId") REFERENCES "AgentWithdrawal" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "AgentWithdrawalAllocation_commissionLedgerId_fkey"
+      FOREIGN KEY ("commissionLedgerId") REFERENCES "AgentCommissionLedger" ("id")
       ON DELETE CASCADE ON UPDATE CASCADE
   );
 
@@ -449,6 +506,59 @@ db.exec(`
     "description" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "AdminExportTask" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "scope" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'queued',
+    "requestedByDisplayName" TEXT NOT NULL,
+    "filtersJson" TEXT,
+    "filename" TEXT,
+    "storageType" TEXT NOT NULL DEFAULT 'local',
+    "storageKey" TEXT,
+    "mimeType" TEXT NOT NULL DEFAULT 'text/csv',
+    "rowCount" INTEGER NOT NULL DEFAULT 0,
+    "sizeBytes" INTEGER,
+    "errorText" TEXT,
+    "downloadCount" INTEGER NOT NULL DEFAULT 0,
+    "startedAt" DATETIME,
+    "finishedAt" DATETIME,
+    "expiresAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "requestedByUserId" TEXT,
+    CONSTRAINT "AdminExportTask_requestedByUserId_fkey"
+      FOREIGN KEY ("requestedByUserId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "FinanceReconciliationIssue" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "scope" TEXT NOT NULL DEFAULT 'coin-recharge',
+    "issueType" TEXT NOT NULL DEFAULT 'manual_review',
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "severity" TEXT NOT NULL DEFAULT 'medium',
+    "summary" TEXT NOT NULL,
+    "detail" TEXT,
+    "reasonCode" TEXT,
+    "paymentReference" TEXT,
+    "amount" INTEGER,
+    "sourceStatus" TEXT,
+    "resolutionNote" TEXT,
+    "assignedToDisplayName" TEXT,
+    "createdByDisplayName" TEXT NOT NULL,
+    "resolvedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "rechargeOrderId" TEXT,
+    "createdByUserId" TEXT,
+    CONSTRAINT "FinanceReconciliationIssue_rechargeOrderId_fkey"
+      FOREIGN KEY ("rechargeOrderId") REFERENCES "CoinRechargeOrder" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "FinanceReconciliationIssue_createdByUserId_fkey"
+      FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS "League" (
@@ -880,6 +990,7 @@ db.exec(`
   );
 
   CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
+  CREATE UNIQUE INDEX IF NOT EXISTS "AgentCommissionLedger_rechargeOrderId_key" ON "AgentCommissionLedger"("rechargeOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinAccount_userId_key" ON "CoinAccount"("userId");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinPackage_key_key" ON "CoinPackage"("key");
@@ -915,6 +1026,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_status_updatedAt_idx" ON "CoinRechargeOrder"("status", "updatedAt");
   CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_userId_updatedAt_idx" ON "CoinRechargeOrder"("userId", "updatedAt");
   CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_packageId_updatedAt_idx" ON "CoinRechargeOrder"("packageId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_status_updatedAt_idx" ON "FinanceReconciliationIssue"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_severity_updatedAt_idx" ON "FinanceReconciliationIssue"("severity", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_scope_updatedAt_idx" ON "FinanceReconciliationIssue"("scope", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_rechargeOrderId_updatedAt_idx" ON "FinanceReconciliationIssue"("rechargeOrderId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_createdByUserId_updatedAt_idx" ON "FinanceReconciliationIssue"("createdByUserId", "updatedAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_orderType_orderId_idx" ON "PaymentCallbackEvent"("orderType", "orderId");
@@ -931,6 +1047,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "AdminAuditLog_scope_createdAt_idx" ON "AdminAuditLog"("scope", "createdAt");
   CREATE INDEX IF NOT EXISTS "AdminAuditLog_status_createdAt_idx" ON "AdminAuditLog"("status", "createdAt");
   CREATE INDEX IF NOT EXISTS "AdminAuditLog_actorUserId_createdAt_idx" ON "AdminAuditLog"("actorUserId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_status_createdAt_idx" ON "FinanceReconciliationIssue"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_severity_createdAt_idx" ON "FinanceReconciliationIssue"("severity", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_scope_createdAt_idx" ON "FinanceReconciliationIssue"("scope", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_rechargeOrderId_createdAt_idx" ON "FinanceReconciliationIssue"("rechargeOrderId", "createdAt");
   CREATE INDEX IF NOT EXISTS "SystemAlertChannel_status_updatedAt_idx" ON "SystemAlertChannel"("status", "updatedAt");
   CREATE INDEX IF NOT EXISTS "SystemAlertEvent_status_createdAt_idx" ON "SystemAlertEvent"("status", "createdAt");
   CREATE INDEX IF NOT EXISTS "SystemAlertEvent_severity_createdAt_idx" ON "SystemAlertEvent"("severity", "createdAt");
@@ -1049,6 +1169,52 @@ ensureColumn("CoinRechargeOrder", "refundReason", "TEXT");
 ensureColumn("CoinRechargeOrder", "creditedAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "createdAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "updatedAt", "DATETIME");
+ensureColumn("FinanceReconciliationIssue", "scope", "TEXT DEFAULT 'coin-recharge'");
+ensureColumn("FinanceReconciliationIssue", "issueType", "TEXT DEFAULT 'manual_review'");
+ensureColumn("FinanceReconciliationIssue", "status", "TEXT DEFAULT 'open'");
+ensureColumn("FinanceReconciliationIssue", "severity", "TEXT DEFAULT 'medium'");
+ensureColumn("FinanceReconciliationIssue", "amount", "INTEGER");
+ensureColumn("FinanceReconciliationIssue", "paymentReference", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "summary", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "detail", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "reasonCode", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "sourceStatus", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "resolutionNote", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "assignedToDisplayName", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "createdByDisplayName", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "resolvedAt", "DATETIME");
+ensureColumn("FinanceReconciliationIssue", "createdAt", "DATETIME");
+ensureColumn("FinanceReconciliationIssue", "updatedAt", "DATETIME");
+ensureColumn("FinanceReconciliationIssue", "rechargeOrderId", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "createdByUserId", "TEXT");
+ensureColumn("User", "referredAt", "DATETIME");
+ensureColumn("User", "referredByAgentId", "TEXT");
+ensureColumn("AgentCommissionLedger", "rechargeAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("AgentCommissionLedger", "kind", "TEXT NOT NULL DEFAULT 'direct'");
+ensureColumn("AgentCommissionLedger", "commissionRate", "REAL NOT NULL DEFAULT 0");
+ensureColumn("AgentCommissionLedger", "commissionAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("AgentCommissionLedger", "settledAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("AgentCommissionLedger", "reversedAmount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("AgentCommissionLedger", "status", "TEXT DEFAULT 'pending'");
+ensureColumn("AgentCommissionLedger", "note", "TEXT");
+ensureColumn("AgentCommissionLedger", "createdAt", "DATETIME");
+ensureColumn("AgentCommissionLedger", "updatedAt", "DATETIME");
+ensureColumn("AgentCommissionLedger", "settledAt", "DATETIME");
+ensureColumn("AgentCommissionLedger", "reversedAt", "DATETIME");
+ensureColumn("AgentCommissionLedger", "sourceAgentId", "TEXT");
+ensureColumn("AgentCommissionLedger", "sourceAgentName", "TEXT");
+ensureColumn("AgentWithdrawalAllocation", "amount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("AgentWithdrawalAllocation", "createdAt", "DATETIME");
+ensureColumn("AgentWithdrawalAllocation", "withdrawalId", "TEXT");
+ensureColumn("AgentWithdrawalAllocation", "commissionLedgerId", "TEXT");
+ensureColumn("AgentWithdrawal", "payoutChannel", "TEXT");
+ensureColumn("AgentWithdrawal", "payoutBatchNo", "TEXT");
+ensureColumn("AgentWithdrawal", "payoutReference", "TEXT");
+ensureColumn("AgentWithdrawal", "payoutOperator", "TEXT");
+ensureColumn("AgentWithdrawal", "payoutRequestedAt", "DATETIME");
+ensureColumn("AgentWithdrawal", "callbackStatus", "TEXT");
+ensureColumn("AgentWithdrawal", "callbackPayload", "TEXT");
+ensureColumn("AgentWithdrawal", "callbackReceivedAt", "DATETIME");
 ensureColumn("PaymentCallbackEvent", "provider", "TEXT DEFAULT 'mock'");
 ensureColumn("PaymentCallbackEvent", "providerEventId", "TEXT");
 ensureColumn("PaymentCallbackEvent", "eventKey", "TEXT");
@@ -1183,6 +1349,25 @@ db.exec(`
     OR "provider" IS NULL
     OR "createdAt" IS NULL
     OR "updatedAt" IS NULL;
+  UPDATE "FinanceReconciliationIssue"
+  SET
+    "status" = COALESCE("status", 'open'),
+    "severity" = COALESCE("severity", 'medium'),
+    "scope" = COALESCE("scope", 'coin-recharge'),
+    "issueType" = COALESCE("issueType", 'manual_review'),
+    "summary" = COALESCE("summary", "detail", 'Finance reconciliation issue'),
+    "createdByDisplayName" = COALESCE("createdByDisplayName", 'Admin'),
+    "createdAt" = COALESCE("createdAt", CURRENT_TIMESTAMP),
+    "updatedAt" = COALESCE("updatedAt", "createdAt", CURRENT_TIMESTAMP)
+  WHERE
+    "status" IS NULL
+    OR "severity" IS NULL
+    OR "scope" IS NULL
+    OR "issueType" IS NULL
+    OR "summary" IS NULL
+    OR "createdByDisplayName" IS NULL
+    OR "createdAt" IS NULL
+    OR "updatedAt" IS NULL;
   UPDATE "PaymentCallbackEvent"
   SET
     "lastSeenAt" = COALESCE("lastSeenAt", "createdAt", CURRENT_TIMESTAMP),
@@ -1233,14 +1418,17 @@ db.exec(`
     OR "updatedAt" IS NULL;
 `);
 db.exec(`
+  DROP INDEX IF EXISTS "AgentCommissionLedger_rechargeOrderId_key";
   CREATE INDEX IF NOT EXISTS "MembershipOrder_status_updatedAt_idx" ON "MembershipOrder"("status", "updatedAt");
   CREATE INDEX IF NOT EXISTS "ContentOrder_status_updatedAt_idx" ON "ContentOrder"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "User_referredByAgentId_createdAt_idx" ON "User"("referredByAgentId", "createdAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "MembershipOrder_provider_providerOrderId_key" ON "MembershipOrder"("provider", "providerOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "ContentOrder_provider_providerOrderId_key" ON "ContentOrder"("provider", "providerOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinAccount_userId_key" ON "CoinAccount"("userId");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinPackage_key_key" ON "CoinPackage"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_orderNo_key" ON "CoinRechargeOrder"("orderNo");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_provider_providerOrderId_key" ON "CoinRechargeOrder"("provider", "providerOrderId");
+  CREATE UNIQUE INDEX IF NOT EXISTS "AgentCommissionLedger_rechargeOrderId_agentId_kind_key" ON "AgentCommissionLedger"("rechargeOrderId", "agentId", "kind");
   CREATE INDEX IF NOT EXISTS "CoinAccount_balance_updatedAt_idx" ON "CoinAccount"("balance", "updatedAt");
   CREATE INDEX IF NOT EXISTS "CoinLedger_accountId_createdAt_idx" ON "CoinLedger"("accountId", "createdAt");
   CREATE INDEX IF NOT EXISTS "CoinLedger_referenceType_referenceId_idx" ON "CoinLedger"("referenceType", "referenceId");
@@ -1249,10 +1437,29 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_status_updatedAt_idx" ON "CoinRechargeOrder"("status", "updatedAt");
   CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_userId_updatedAt_idx" ON "CoinRechargeOrder"("userId", "updatedAt");
   CREATE INDEX IF NOT EXISTS "CoinRechargeOrder_packageId_updatedAt_idx" ON "CoinRechargeOrder"("packageId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_status_updatedAt_idx" ON "FinanceReconciliationIssue"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_severity_updatedAt_idx" ON "FinanceReconciliationIssue"("severity", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_scope_updatedAt_idx" ON "FinanceReconciliationIssue"("scope", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_rechargeOrderId_updatedAt_idx" ON "FinanceReconciliationIssue"("rechargeOrderId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_createdByUserId_updatedAt_idx" ON "FinanceReconciliationIssue"("createdByUserId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AgentCommissionLedger_agentId_status_createdAt_idx" ON "AgentCommissionLedger"("agentId", "status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AgentCommissionLedger_rechargeOrderId_kind_createdAt_idx" ON "AgentCommissionLedger"("rechargeOrderId", "kind", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AgentCommissionLedger_userId_createdAt_idx" ON "AgentCommissionLedger"("userId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AgentCommissionLedger_status_createdAt_idx" ON "AgentCommissionLedger"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AgentWithdrawalAllocation_withdrawalId_createdAt_idx" ON "AgentWithdrawalAllocation"("withdrawalId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AgentWithdrawalAllocation_commissionLedgerId_createdAt_idx" ON "AgentWithdrawalAllocation"("commissionLedgerId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AgentWithdrawal_payoutBatchNo_updatedAt_idx" ON "AgentWithdrawal"("payoutBatchNo", "updatedAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "PaymentCallbackEvent_eventKey_key" ON "PaymentCallbackEvent"("eventKey");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_provider_createdAt_idx" ON "PaymentCallbackEvent"("provider", "createdAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_processingStatus_lastSeenAt_idx" ON "PaymentCallbackEvent"("processingStatus", "lastSeenAt");
   CREATE INDEX IF NOT EXISTS "PaymentCallbackEvent_orderType_orderId_idx" ON "PaymentCallbackEvent"("orderType", "orderId");
+  CREATE INDEX IF NOT EXISTS "AdminExportTask_status_createdAt_idx" ON "AdminExportTask"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AdminExportTask_requestedByUserId_createdAt_idx" ON "AdminExportTask"("requestedByUserId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AdminExportTask_scope_createdAt_idx" ON "AdminExportTask"("scope", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_status_createdAt_idx" ON "FinanceReconciliationIssue"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_severity_createdAt_idx" ON "FinanceReconciliationIssue"("severity", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_scope_createdAt_idx" ON "FinanceReconciliationIssue"("scope", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_rechargeOrderId_createdAt_idx" ON "FinanceReconciliationIssue"("rechargeOrderId", "createdAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "SupportKnowledgeItem_key_key" ON "SupportKnowledgeItem"("key");
   CREATE INDEX IF NOT EXISTS "AssistantConversation_sessionKey_updatedAt_idx" ON "AssistantConversation"("sessionKey", "updatedAt");
   CREATE INDEX IF NOT EXISTS "AssistantConversation_status_updatedAt_idx" ON "AssistantConversation"("status", "updatedAt");

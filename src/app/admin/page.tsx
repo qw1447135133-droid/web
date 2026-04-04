@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { AdminBannerComposer } from "@/components/admin-banner-composer";
 import { SectionHeading } from "@/components/section-heading";
 import { getAdminAgentsDashboard } from "@/lib/admin-agents";
+import { getAgentPayoutRuntimeConfig } from "@/lib/agent-payout-provider";
+import { getRecentAdminExportTasks } from "@/lib/admin-export-tasks";
 import { getAdminReportsDashboard } from "@/lib/admin-reports";
 import { getAdminSystemDashboard } from "@/lib/admin-system";
 import {
@@ -16,6 +18,10 @@ import {
   buildFinancePackageCards,
   getAdminFinanceDashboard,
   getCoinRechargeOrderStatusMeta,
+  getFinanceReconciliationIssueSeverityMeta,
+  getFinanceReconciliationIssueSlaMeta,
+  getFinanceReconciliationIssueStatusMeta,
+  getFinanceReconciliationIssueTypeLabel,
 } from "@/lib/admin-finance";
 import {
   getAdminAssistantHandoffRequests,
@@ -119,6 +125,22 @@ function formatDurationMs(value?: number) {
   const minutes = Math.floor(value / 60_000);
   const seconds = Math.round((value % 60_000) / 1000);
   return `${minutes}m ${seconds}s`;
+}
+
+function formatAdminFileSize(value?: number) {
+  if (!value || value <= 0) {
+    return "--";
+  }
+
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatAdminCoinAmount(value: number, locale: Locale | DisplayLocale) {
@@ -884,12 +906,50 @@ function FinanceRechargeOrdersPanel({
       locale === "en" ? "Mark failed" : locale === "zh-TW" ? "記為失敗" : "记为失败",
     close: locale === "en" ? "Close" : locale === "zh-TW" ? "關閉" : "关闭",
     refund: locale === "en" ? "Refund" : locale === "zh-TW" ? "退款" : "退款",
+    flagIssue:
+      locale === "en" ? "Flag issue" : locale === "zh-TW" ? "加入對帳問題" : "加入对账问题",
     empty:
       locale === "en"
         ? "No coin recharge orders yet. Create one manually from the admin form above."
         : locale === "zh-TW"
           ? "目前還沒有球幣充值訂單，可先用上方表單建立手動訂單。"
           : "当前还没有球币充值订单，可先用上方表单建立手动订单。",
+  };
+  const batchCopy = {
+    title: locale === "en" ? "Batch abnormal order handling" : locale === "zh-TW" ? "批量異常訂單處理" : "批量异常订单处理",
+    description:
+      locale === "en"
+        ? "Select recent recharge orders and run the same finance action in one batch."
+        : locale === "zh-TW"
+          ? "可選取最近充值單，批量執行補單、記失敗或關閉。"
+          : "可选取最近充值单，批量执行补单、记失败或关闭。",
+    selection:
+      locale === "en" ? "Recent recharge orders" : locale === "zh-TW" ? "最近充值訂單" : "最近充值订单",
+    reference:
+      locale === "en" ? "Batch reference" : locale === "zh-TW" ? "批次流水號" : "批次流水号",
+    reason: locale === "en" ? "Batch note" : locale === "zh-TW" ? "批次備註" : "批次备注",
+    referencePlaceholder:
+      locale === "en"
+        ? "Optional shared payment reference"
+        : locale === "zh-TW"
+          ? "可選，共用對賬流水號"
+          : "可选，共用对账流水号",
+    reasonPlaceholder:
+      locale === "en"
+        ? "Optional note for batch failure handling"
+        : locale === "zh-TW"
+          ? "可選，批次失敗處理備註"
+          : "可选，批次失败处理备注",
+    selectionHint:
+      locale === "en"
+        ? "Hold Ctrl/Cmd for multi-select."
+        : locale === "zh-TW"
+          ? "可按 Ctrl/Cmd 多選。"
+          : "可按 Ctrl/Cmd 多选。",
+    batchPaid: locale === "en" ? "Batch mark paid" : locale === "zh-TW" ? "批量補單" : "批量补单",
+    batchFailed: locale === "en" ? "Batch mark failed" : locale === "zh-TW" ? "批量記失敗" : "批量记失败",
+    batchClose: locale === "en" ? "Batch close" : locale === "zh-TW" ? "批量關閉" : "批量关闭",
+    batchRefund: locale === "en" ? "Batch refund" : locale === "zh-TW" ? "批量退款" : "批量退款",
   };
 
   return (
@@ -898,6 +958,90 @@ function FinanceRechargeOrdersPanel({
         <h3 className="text-xl font-semibold text-white">{title}</h3>
         <span className="text-sm text-slate-500">{orders.length}</span>
       </div>
+      <form action="/api/admin/finance/recharge-orders" method="post" className="mt-5 rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-white">{batchCopy.title}</p>
+            <p className="mt-2 text-sm text-slate-400">{batchCopy.description}</p>
+          </div>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+            {batchCopy.selectionHint}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-4">
+          <label className="space-y-2 text-sm">
+            <span className="text-slate-400">{batchCopy.selection}</span>
+            <select
+              name="orderIds"
+              multiple
+              size={Math.min(Math.max(orders.length, 4), 8)}
+              className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+            >
+              {orders.map((order) => (
+                <option key={`finance-batch-order-${order.id}`} value={order.id}>
+                  {`${order.orderNo} / ${order.userDisplayName} / ${order.status}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{batchCopy.reference}</span>
+              <input
+                name="paymentReference"
+                placeholder={batchCopy.referencePlaceholder}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{batchCopy.reason}</span>
+              <input
+                name="reason"
+                placeholder={batchCopy.reasonPlaceholder}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button
+            type="submit"
+            name="intent"
+            value="batch-mark-paid"
+            disabled={orders.length === 0}
+            className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm font-semibold text-lime-100 transition hover:bg-lime-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {batchCopy.batchPaid}
+          </button>
+          <button
+            type="submit"
+            name="intent"
+            value="batch-mark-failed"
+            disabled={orders.length === 0}
+            className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm font-semibold text-orange-100 transition hover:bg-orange-300/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {batchCopy.batchFailed}
+          </button>
+          <button
+            type="submit"
+            name="intent"
+            value="batch-close"
+            disabled={orders.length === 0}
+            className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {batchCopy.batchClose}
+          </button>
+          <button
+            type="submit"
+            name="intent"
+            value="batch-refund"
+            disabled={orders.length === 0}
+            className="rounded-full border border-rose-300/20 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-400/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {batchCopy.batchRefund}
+          </button>
+        </div>
+      </form>
       <div className="mt-5 grid gap-4">
         {orders.length > 0 ? (
           orders.map((order) => {
@@ -980,6 +1124,32 @@ function FinanceRechargeOrdersPanel({
                       </button>
                     </form>
                   ) : null}
+                  <form action="/api/admin/finance/recharge-orders" method="post">
+                    <input type="hidden" name="intent" value="flag-reconciliation-issue" />
+                    <input type="hidden" name="orderRef" value={order.id} />
+                    <input type="hidden" name="paymentReference" value={order.paymentReference ?? ""} />
+                    <input
+                      type="hidden"
+                      name="issueType"
+                      value={order.status === "refunded" ? "refund_review" : order.status === "pending" ? "missing_payment" : "manual_review"}
+                    />
+                    <input type="hidden" name="severity" value={order.status === "failed" || order.status === "pending" ? "high" : "medium"} />
+                    <input
+                      type="hidden"
+                      name="summary"
+                      value={
+                        locale === "en"
+                          ? `Recharge order ${order.orderNo} needs reconciliation review`
+                          : locale === "zh-TW"
+                            ? `充值單 ${order.orderNo} 需要對帳複核`
+                            : `充值单 ${order.orderNo} 需要对账复核`
+                      }
+                    />
+                    <input type="hidden" name="detail" value={order.failureReason ?? order.refundReason ?? ""} />
+                    <button type="submit" className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100 transition hover:bg-cyan-300/15">
+                      {actionLabel.flagIssue}
+                    </button>
+                  </form>
                 </div>
               </div>
             );
@@ -989,6 +1159,390 @@ function FinanceRechargeOrdersPanel({
             {actionLabel.empty}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function FinanceReconciliationIssuesPanel({
+  title,
+  locale,
+  issues,
+  summary,
+}: {
+  title: string;
+  locale: Locale;
+  issues: Array<{
+    id: string;
+    issueType: string;
+    status: "open" | "reviewing" | "resolved" | "ignored";
+    severity: "low" | "medium" | "high";
+    summary: string;
+    detail?: string;
+    paymentReference?: string;
+    amount?: number;
+    sourceStatus?: string;
+    resolutionNote?: string;
+    assignedToDisplayName?: string;
+    createdByDisplayName: string;
+    resolvedAt?: string;
+    createdAt: string;
+    updatedAt: string;
+    rechargeOrderId?: string;
+    rechargeOrderNo?: string;
+    ageHours: number;
+    isOverdue: boolean;
+    isUnassigned: boolean;
+  }>;
+  summary: {
+    openCount: number;
+    reviewingCount: number;
+    resolvedCount: number;
+    ignoredCount: number;
+    highSeverityOpenCount: number;
+    overdueCount: number;
+    unassignedActiveCount: number;
+  };
+}) {
+  const copy = {
+    createTitle:
+      locale === "en" ? "Create issue" : locale === "zh-TW" ? "新增對帳問題" : "新增对账问题",
+    createDescription:
+      locale === "en"
+        ? "Use this queue to track recharge exceptions, missing payments, and manual finance reviews."
+        : locale === "zh-TW"
+          ? "把充值異常、到帳核驗與人工財務複核統一沉澱到對帳問題隊列。"
+          : "把充值异常、到账核验与人工财务复核统一沉淀到对账问题队列。",
+    issueType: locale === "en" ? "Issue type" : locale === "zh-TW" ? "問題類型" : "问题类型",
+    severity: locale === "en" ? "Priority" : locale === "zh-TW" ? "優先級" : "优先级",
+    orderRef: locale === "en" ? "Order ref" : locale === "zh-TW" ? "訂單標識" : "订单标识",
+    paymentReference: locale === "en" ? "Payment reference" : locale === "zh-TW" ? "支付流水" : "支付流水",
+    summary: locale === "en" ? "Summary" : locale === "zh-TW" ? "問題摘要" : "问题摘要",
+    detail: locale === "en" ? "Detail" : locale === "zh-TW" ? "補充說明" : "补充说明",
+    orderRefPlaceholder:
+      locale === "en"
+        ? "Recharge order ID or order number"
+        : locale === "zh-TW"
+          ? "充值單 ID 或訂單號"
+          : "充值单 ID 或订单号",
+    paymentReferencePlaceholder:
+      locale === "en"
+        ? "Optional external payment reference"
+        : locale === "zh-TW"
+          ? "可選，外部支付流水"
+          : "可选，外部支付流水",
+    summaryPlaceholder:
+      locale === "en"
+        ? "Describe the reconciliation issue"
+        : locale === "zh-TW"
+          ? "描述本次對帳問題"
+          : "描述本次对账问题",
+    detailPlaceholder:
+      locale === "en"
+        ? "Optional notes for finance follow-up"
+        : locale === "zh-TW"
+          ? "可選，填寫財務跟進備註"
+          : "可选，填写财务跟进备注",
+    submit: locale === "en" ? "Create issue" : locale === "zh-TW" ? "建立問題" : "建立问题",
+    scan:
+      locale === "en" ? "Run anomaly scan" : locale === "zh-TW" ? "執行異常掃描" : "执行异常扫描",
+    scanHint:
+      locale === "en"
+        ? "Scans stale pending, failed, refunded, and paid-but-not-credited recharge orders."
+        : locale === "zh-TW"
+          ? "掃描超時待支付、支付失敗、已退款與已支付未入帳的充值單。"
+          : "扫描超时待支付、支付失败、已退款与已支付未入账的充值单。",
+    empty:
+      locale === "en"
+        ? "No reconciliation issues yet."
+        : locale === "zh-TW"
+          ? "目前還沒有對帳問題。"
+          : "当前还没有对账问题。",
+    notePlaceholder:
+      locale === "en"
+        ? "Optional handling note"
+        : locale === "zh-TW"
+          ? "可選，處理備註"
+          : "可选，处理备注",
+    markReviewing:
+      locale === "en" ? "Move to reviewing" : locale === "zh-TW" ? "轉為處理中" : "转为处理中",
+    resolve:
+      locale === "en" ? "Resolve" : locale === "zh-TW" ? "標記已解決" : "标记已解决",
+    ignore:
+      locale === "en" ? "Ignore" : locale === "zh-TW" ? "標記忽略" : "标记忽略",
+    reopen:
+      locale === "en" ? "Reopen" : locale === "zh-TW" ? "重新打開" : "重新打开",
+    queueTitle:
+      locale === "en" ? "Issue queue" : locale === "zh-TW" ? "問題隊列" : "问题队列",
+    highPriority:
+      locale === "en" ? "High priority open" : locale === "zh-TW" ? "高優先級待處理" : "高优先级待处理",
+    createdBy:
+      locale === "en" ? "Created by" : locale === "zh-TW" ? "建立人" : "建立人",
+    owner:
+      locale === "en" ? "Owner" : locale === "zh-TW" ? "當前跟進" : "当前跟进",
+    assignOwner:
+      locale === "en" ? "Assign owner" : locale === "zh-TW" ? "分配跟進人" : "分配跟进人",
+    assignPlaceholder:
+      locale === "en" ? "Type owner name" : locale === "zh-TW" ? "輸入跟進人名稱" : "输入跟进人名称",
+    assign:
+      locale === "en" ? "Assign" : locale === "zh-TW" ? "分配" : "分配",
+    resolvedAt:
+      locale === "en" ? "Resolved at" : locale === "zh-TW" ? "完成時間" : "完成时间",
+    overdue:
+      locale === "en" ? "Overdue" : locale === "zh-TW" ? "已逾時" : "已逾时",
+    unassigned:
+      locale === "en" ? "Unassigned" : locale === "zh-TW" ? "未分配" : "未分配",
+  };
+
+  return (
+    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1 text-orange-100">
+            {locale === "en" ? `Open ${summary.openCount}` : locale === "zh-TW" ? `待處理 ${summary.openCount}` : `待处理 ${summary.openCount}`}
+          </span>
+          <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-cyan-100">
+            {locale === "en"
+              ? `Reviewing ${summary.reviewingCount}`
+              : locale === "zh-TW"
+                ? `處理中 ${summary.reviewingCount}`
+                : `处理中 ${summary.reviewingCount}`}
+          </span>
+          <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-lime-100">
+            {locale === "en" ? `Resolved ${summary.resolvedCount}` : locale === "zh-TW" ? `已解決 ${summary.resolvedCount}` : `已解决 ${summary.resolvedCount}`}
+          </span>
+          <span className="rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-rose-100">
+            {locale === "en" ? `Overdue ${summary.overdueCount}` : locale === "zh-TW" ? `逾時 ${summary.overdueCount}` : `逾时 ${summary.overdueCount}`}
+          </span>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-slate-200">
+            {locale === "en"
+              ? `Unassigned ${summary.unassignedActiveCount}`
+              : locale === "zh-TW"
+                ? `未分配 ${summary.unassignedActiveCount}`
+                : `未分配 ${summary.unassignedActiveCount}`}
+          </span>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
+        <form action="/api/admin/finance/recharge-orders" method="post" className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+          <input type="hidden" name="intent" value="flag-reconciliation-issue" />
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-white">{copy.createTitle}</p>
+              <p className="mt-2 text-sm text-slate-400">{copy.createDescription}</p>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <span className="rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-xs text-rose-100">
+                {copy.highPriority} {summary.highSeverityOpenCount}
+              </span>
+              <form action="/api/admin/finance/recharge-orders" method="post">
+                <button
+                  type="submit"
+                  name="intent"
+                  value="scan-reconciliation-issues"
+                  className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-300/15"
+                >
+                  {copy.scan}
+                </button>
+              </form>
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">{copy.scanHint}</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{copy.issueType}</span>
+              <select name="issueType" defaultValue="manual_review" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                <option value="manual_review">{getFinanceReconciliationIssueTypeLabel(locale, "manual_review")}</option>
+                <option value="missing_payment">{getFinanceReconciliationIssueTypeLabel(locale, "missing_payment")}</option>
+                <option value="refund_review">{getFinanceReconciliationIssueTypeLabel(locale, "refund_review")}</option>
+                <option value="stale_pending">{getFinanceReconciliationIssueTypeLabel(locale, "stale_pending")}</option>
+              </select>
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{copy.severity}</span>
+              <select name="severity" defaultValue="medium" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                <option value="high">{getFinanceReconciliationIssueSeverityMeta("high", locale).label}</option>
+                <option value="medium">{getFinanceReconciliationIssueSeverityMeta("medium", locale).label}</option>
+                <option value="low">{getFinanceReconciliationIssueSeverityMeta("low", locale).label}</option>
+              </select>
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{copy.orderRef}</span>
+              <input
+                name="orderRef"
+                placeholder={copy.orderRefPlaceholder}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{copy.paymentReference}</span>
+              <input
+                name="paymentReference"
+                placeholder={copy.paymentReferencePlaceholder}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <label className="space-y-2 text-sm md:col-span-2">
+              <span className="text-slate-400">{copy.summary}</span>
+              <input
+                name="summary"
+                required
+                placeholder={copy.summaryPlaceholder}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <label className="space-y-2 text-sm md:col-span-2">
+              <span className="text-slate-400">{copy.detail}</span>
+              <textarea
+                name="detail"
+                rows={4}
+                placeholder={copy.detailPlaceholder}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+          </div>
+          <button type="submit" className="mt-5 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15">
+            {copy.submit}
+          </button>
+        </form>
+        <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-white">{copy.queueTitle}</p>
+            <span className="text-xs text-slate-400">{issues.length}</span>
+          </div>
+          <div className="mt-4 grid gap-4">
+            {issues.length > 0 ? (
+              issues.map((issue) => {
+                const statusMeta = getFinanceReconciliationIssueStatusMeta(issue.status, locale);
+                const severityMeta = getFinanceReconciliationIssueSeverityMeta(issue.severity, locale);
+                const slaMeta = getFinanceReconciliationIssueSlaMeta(issue, locale);
+
+                return (
+                  <div key={issue.id} className="rounded-[1.1rem] border border-white/8 bg-slate-950/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{issue.summary}</p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {getFinanceReconciliationIssueTypeLabel(locale, issue.issueType)}
+                          {issue.rechargeOrderNo ? ` / ${issue.rechargeOrderNo}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>{statusMeta.label}</span>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(severityMeta.tone)}`}>{severityMeta.label}</span>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(slaMeta.tone)}`}>{slaMeta.label}</span>
+                      </div>
+                    </div>
+                    {issue.detail ? <p className="mt-3 text-sm text-slate-300">{issue.detail}</p> : null}
+                    {issue.resolutionNote ? <p className="mt-3 text-sm text-lime-100">{issue.resolutionNote}</p> : null}
+                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {copy.createdBy} {issue.createdByDisplayName}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {copy.owner} {issue.assignedToDisplayName ?? "--"}
+                      </span>
+                      {issue.isUnassigned ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {copy.unassigned}
+                        </span>
+                      ) : null}
+                      {issue.isOverdue ? (
+                        <span className="rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-rose-100">
+                          {copy.overdue}
+                        </span>
+                      ) : null}
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(issue.updatedAt, locale)}</span>
+                      {issue.paymentReference ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{issue.paymentReference}</span>
+                      ) : null}
+                      {typeof issue.amount === "number" ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatPrice(issue.amount, locale)}</span>
+                      ) : null}
+                      {issue.sourceStatus ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{issue.sourceStatus}</span>
+                      ) : null}
+                      {issue.resolvedAt ? (
+                        <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-lime-100">
+                          {copy.resolvedAt} {formatDateTime(issue.resolvedAt, locale)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <form action="/api/admin/finance/recharge-orders" method="post" className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
+                      <input type="hidden" name="issueId" value={issue.id} />
+                      <input
+                        name="reason"
+                        placeholder={copy.notePlaceholder}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                      />
+                      <input
+                        name="assignedToDisplayName"
+                        defaultValue={issue.assignedToDisplayName ?? ""}
+                        placeholder={copy.assignPlaceholder}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="submit"
+                          name="intent"
+                          value="assign-reconciliation-issue"
+                          className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
+                        >
+                          {copy.assign}
+                        </button>
+                        {issue.status === "open" ? (
+                          <button
+                            type="submit"
+                            name="intent"
+                            value="review-reconciliation-issue"
+                            className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100 transition hover:bg-cyan-300/15"
+                          >
+                            {copy.markReviewing}
+                          </button>
+                        ) : null}
+                        {issue.status === "open" || issue.status === "reviewing" ? (
+                          <>
+                            <button
+                              type="submit"
+                              name="intent"
+                              value="resolve-reconciliation-issue"
+                              className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:bg-lime-300/15"
+                            >
+                              {copy.resolve}
+                            </button>
+                            <button
+                              type="submit"
+                              name="intent"
+                              value="ignore-reconciliation-issue"
+                              className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
+                            >
+                              {copy.ignore}
+                            </button>
+                          </>
+                        ) : null}
+                        {issue.status === "resolved" || issue.status === "ignored" ? (
+                          <button
+                            type="submit"
+                            name="intent"
+                            value="reopen-reconciliation-issue"
+                            className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15"
+                          >
+                            {copy.reopen}
+                          </button>
+                        ) : null}
+                      </div>
+                    </form>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="rounded-[1.1rem] border border-dashed border-white/10 bg-white/[0.02] px-4 py-8 text-sm text-slate-400">
+                {copy.empty}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1315,6 +1869,69 @@ function getWithdrawalStatusMeta(status: string, locale: Locale) {
   } as const;
 }
 
+function getExportTaskStatusMeta(status: string, locale: Locale) {
+  if (status === "completed") {
+    return {
+      label: locale === "en" ? "Completed" : locale === "zh-TW" ? "已完成" : "已完成",
+      tone: "good",
+    } as const;
+  }
+
+  if (status === "running") {
+    return {
+      label: locale === "en" ? "Running" : locale === "zh-TW" ? "執行中" : "执行中",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "failed") {
+    return {
+      label: locale === "en" ? "Failed" : locale === "zh-TW" ? "失敗" : "失败",
+      tone: "warn",
+    } as const;
+  }
+
+  if (status === "expired") {
+    return {
+      label: locale === "en" ? "Expired" : locale === "zh-TW" ? "已過期" : "已过期",
+      tone: "warn",
+    } as const;
+  }
+
+  return {
+    label: locale === "en" ? "Queued" : locale === "zh-TW" ? "排隊中" : "排队中",
+    tone: "warn",
+  } as const;
+}
+
+function getAgentCommissionStatusMeta(status: string, locale: Locale) {
+  if (status === "settled") {
+    return {
+      label: locale === "en" ? "Settled" : locale === "zh-TW" ? "已結算" : "已结算",
+      tone: "good",
+    } as const;
+  }
+
+  if (status === "reversed") {
+    return {
+      label: locale === "en" ? "Reversed" : locale === "zh-TW" ? "已沖回" : "已冲回",
+      tone: "neutral",
+    } as const;
+  }
+
+  if (status === "partial") {
+    return {
+      label: locale === "en" ? "Partial" : locale === "zh-TW" ? "部分結算" : "部分结算",
+      tone: "warn",
+    } as const;
+  }
+
+  return {
+    label: locale === "en" ? "Pending" : locale === "zh-TW" ? "待結算" : "待结算",
+    tone: "warn",
+  } as const;
+}
+
 export default async function AdminPage({ searchParams }: { searchParams: SearchParams }) {
   const displayLocale = await getCurrentDisplayLocale();
   const locale = resolveRenderLocale(displayLocale);
@@ -1333,6 +1950,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const aiImportPanelCopy = adminPageCopy.aiImport;
   const opsCopy = getOpsCopy(locale);
   const paymentRuntime = getPaymentRuntimeConfig();
+  const agentPayoutRuntime = getAgentPayoutRuntimeConfig();
   const manualCollection = getPaymentManualCollectionConfig();
   const paymentCheckoutFlow = getPaymentCheckoutFlow(paymentRuntime.provider);
   const paymentRuntimeCopy = getPaymentRuntimeCopy(locale, paymentRuntime, paymentCheckoutFlow);
@@ -1363,6 +1981,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const saved = pickValue(resolved.saved, "");
   const error = pickValue(resolved.error, "");
   const seeded = pickValue(resolved.seeded, "");
+  const financeProcessed = pickPositiveInt(resolved.financeProcessed, 0);
+  const financeFailed = pickPositiveInt(resolved.financeFailed, 0);
+  const financeSkipped = pickPositiveInt(resolved.financeSkipped, 0);
+  const financeTotal = pickPositiveInt(resolved.financeTotal, 0);
+  const agentProcessed = pickPositiveInt(resolved.agentProcessed, 0);
+  const agentFailed = pickPositiveInt(resolved.agentFailed, 0);
+  const agentSkipped = pickPositiveInt(resolved.agentSkipped, 0);
+  const agentTotal = pickPositiveInt(resolved.agentTotal, 0);
+  const reportTaskId = pickValue(resolved.reportTaskId, "");
+  const reportTaskStatus = pickValue(resolved.reportTaskStatus, "");
+  const reportScope = pickValue(resolved.reportScope, "");
   const orderQuery = pickValue(resolved.q, "");
   const orderStatus = normalizeAdminOrderFilterStatus(pickValue(resolved.orderStatus, "all"));
   const orderType = normalizeAdminOrderFilterType(pickValue(resolved.orderType, "all"));
@@ -1371,7 +2000,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const membershipPage = pickPositiveInt(resolved.membershipPage, 1);
   const contentPage = pickPositiveInt(resolved.contentPage, 1);
 
-  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard, agentsDashboard, reportsDashboard, systemDashboard] = await Promise.all([
+  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard, agentsDashboard, reportsDashboard, exportTasks, systemDashboard] = await Promise.all([
     getMatchesBySport("football", locale),
     getMatchesBySport("basketball", locale),
     getMatchesBySport("cricket", locale),
@@ -1406,6 +2035,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     getAdminFinanceDashboard(locale),
     getAdminAgentsDashboard(locale),
     getAdminReportsDashboard(locale),
+    getRecentAdminExportTasks(),
     getAdminSystemDashboard(locale),
   ]);
 
@@ -1416,6 +2046,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const currentBanner = homepageBanners.find((item) => item.id === editBannerId);
   const currentFeaturedSlot = homepageFeaturedSlots.find((item) => item.id === editFeaturedSlotId);
   const currentModule = homepageModules.find((item) => item.id === editModuleId);
+  const exportCardMap = new Map(reportsDashboard.exportCards.map((item) => [item.scope, item]));
   const homepageModuleSeedCodes = new Set(homepageModuleSeeds.map((module) => module.key ?? module.id));
   const homepageModulePreviewSource = [
     ...homepageModuleSeeds.map((module) => homepageModules.find((item) => item.key === (module.key ?? module.id)) ?? module),
@@ -1739,6 +2370,24 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : locale === "zh-TW"
           ? "預設球幣套餐已初始化。"
           : "默认球币套餐已初始化。"
+      : saved === "batch-coin-adjustment"
+        ? locale === "en"
+          ? `Batch coin adjustment completed: ${financeProcessed}/${financeTotal} processed, ${financeSkipped} skipped, ${financeFailed} failed.`
+          : locale === "zh-TW"
+            ? `批量球幣調整已完成：成功 ${financeProcessed}/${financeTotal}，跳過 ${financeSkipped}，失敗 ${financeFailed}。`
+            : `批量球币调整已完成：成功 ${financeProcessed}/${financeTotal}，跳过 ${financeSkipped}，失败 ${financeFailed}。`
+      : saved === "batch-coin-recharge-order"
+        ? locale === "en"
+          ? `Batch recharge order handling completed: ${financeProcessed}/${financeTotal} processed, ${financeSkipped} skipped, ${financeFailed} failed.`
+          : locale === "zh-TW"
+            ? `批量充值單處理已完成：成功 ${financeProcessed}/${financeTotal}，跳過 ${financeSkipped}，失敗 ${financeFailed}。`
+            : `批量充值单处理已完成：成功 ${financeProcessed}/${financeTotal}，跳过 ${financeSkipped}，失败 ${financeFailed}。`
+      : saved === "finance-reconciliation-scan"
+        ? locale === "en"
+          ? `Reconciliation scan completed: ${financeProcessed}/${financeTotal} new issues, ${financeSkipped} skipped, ${financeFailed} failed.`
+          : locale === "zh-TW"
+            ? `對帳掃描已完成：新增 ${financeProcessed}/${financeTotal}，跳過 ${financeSkipped}，失敗 ${financeFailed}。`
+            : `对账扫描已完成：新增 ${financeProcessed}/${financeTotal}，跳过 ${financeSkipped}，失败 ${financeFailed}。`
       : saved === "coin-expiry"
         ? locale === "en"
           ? "Expired recharge cleanup completed."
@@ -1751,6 +2400,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           : locale === "zh-TW"
             ? "球幣餘額調整已保存。"
             : "球币余额调整已保存。"
+      : saved === "finance-reconciliation-issue"
+        ? locale === "en"
+          ? "Reconciliation issue queue was updated."
+          : locale === "zh-TW"
+            ? "對帳問題隊列已更新。"
+            : "对账问题队列已更新。"
       : saved === "coin-recharge-order"
         ? locale === "en"
           ? "Coin recharge order was updated."
@@ -1775,6 +2430,24 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             : locale === "zh-TW"
               ? "退款已攔截，會員球幣餘額不足。"
               : "退款已拦截，会员球币余额不足。"
+          : error === "batch-coin-adjustment"
+            ? locale === "en"
+              ? "Batch coin adjustment failed. Check member identifiers, amount, and balance constraints."
+              : locale === "zh-TW"
+                ? "批量球幣調整失敗，請檢查會員標識、數量與餘額限制。"
+                : "批量球币调整失败，请检查会员标识、数量与余额限制。"
+        : error === "batch-coin-recharge-order"
+            ? locale === "en"
+              ? "Batch recharge order handling failed. Check order references and status eligibility."
+              : locale === "zh-TW"
+                ? "批量充值單處理失敗，請檢查訂單標識與狀態是否符合條件。"
+                : "批量充值单处理失败，请检查订单标识与状态是否符合条件。"
+          : error === "finance-reconciliation-issue"
+            ? locale === "en"
+              ? "Reconciliation issue update failed."
+              : locale === "zh-TW"
+                ? "對帳問題更新失敗。"
+                : "对账问题更新失败。"
           : error === "coin-package" || error === "coin-recharge-order" || error === "coin-adjustment"
             ? locale === "en"
               ? "Finance action failed. Please check the form and try again."
@@ -1789,6 +2462,30 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : locale === "zh-TW"
           ? "代理與招商資料已更新。"
           : "代理与招商资料已更新。"
+      : saved === "agents-withdrawal-batch"
+        ? locale === "en"
+          ? `Batch withdrawal processing completed: ${agentProcessed}/${agentTotal} processed, ${agentSkipped} skipped, ${agentFailed} failed.`
+          : locale === "zh-TW"
+            ? `批量提現處理已完成：成功 ${agentProcessed}/${agentTotal}，跳過 ${agentSkipped}，失敗 ${agentFailed}。`
+            : `批量提现处理已完成：成功 ${agentProcessed}/${agentTotal}，跳过 ${agentSkipped}，失败 ${agentFailed}。`
+      : error === "agents-withdrawal-balance"
+        ? locale === "en"
+          ? "Withdrawal settlement was blocked because the agent does not have enough available commission."
+          : locale === "zh-TW"
+            ? "提現結算已攔截，代理可結算佣金不足。"
+            : "提现结算已拦截，代理可结算佣金不足。"
+        : error === "agents-withdrawal-locked"
+          ? locale === "en"
+            ? "Settled withdrawals are locked and cannot be reverted from the admin form."
+            : locale === "zh-TW"
+              ? "已結算提現已鎖定，暫不支持在後台表單中回退。"
+              : "已结算提现已锁定，暂不支持在后台表单中回退。"
+      : error === "agents-withdrawal-batch"
+        ? locale === "en"
+          ? "Batch withdrawal processing failed. Check withdrawal IDs, status eligibility, and commission availability."
+          : locale === "zh-TW"
+            ? "批量提現處理失敗，請檢查提現 ID、狀態條件與佣金可用額度。"
+            : "批量提现处理失败，请检查提现 ID、状态条件与佣金可用额度。"
       : error === "agents"
         ? locale === "en"
           ? "Agent action failed. Please check the form and try again."
@@ -1808,7 +2505,33 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           ? "System action failed. Please check the form and try again."
           : locale === "zh-TW"
             ? "系統操作失敗，請檢查表單後重試。"
-            : "系统操作失败，请检查表单后重试。"
+          : "系统操作失败，请检查表单后重试。"
+        : null;
+  const reportNotice =
+    saved === "report-export-task"
+      ? reportTaskStatus === "completed"
+        ? locale === "en"
+          ? `Export task completed for ${reportScope || "report"}.`
+          : locale === "zh-TW"
+            ? `${reportScope || "報表"} 匯出任務已完成。`
+            : `${reportScope || "报表"} 导出任务已完成。`
+        : reportTaskStatus === "failed"
+          ? locale === "en"
+            ? `Export task failed for ${reportScope || "report"}.`
+            : locale === "zh-TW"
+              ? `${reportScope || "報表"} 匯出任務失敗。`
+              : `${reportScope || "报表"} 导出任务失败。`
+          : locale === "en"
+            ? `Export task created for ${reportScope || "report"}.`
+            : locale === "zh-TW"
+              ? `${reportScope || "報表"} 匯出任務已建立。`
+              : `${reportScope || "报表"} 导出任务已建立。`
+      : error === "report-export-task"
+        ? locale === "en"
+          ? `Failed to create export task for ${reportScope || "report"}.`
+          : locale === "zh-TW"
+            ? `${reportScope || "報表"} 匯出任務建立失敗。`
+            : `${reportScope || "报表"} 导出任务创建失败。`
         : null;
   const predictionNotice =
     saved === "prediction"
@@ -4602,7 +5325,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 error === "coin-recharge-order" ||
                 error === "coin-recharge-order-balance" ||
                 error === "coin-adjustment" ||
-                error === "coin-adjustment-balance"
+                error === "coin-adjustment-balance" ||
+                error === "batch-coin-adjustment" ||
+                error === "batch-coin-recharge-order"
                   ? "border-rose-300/25 bg-rose-400/10 text-rose-100"
                   : "border-lime-300/20 bg-lime-300/10 text-lime-100"
               }`}
@@ -4847,6 +5572,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       POST /api/internal/finance/recharge-expiry
                     </span>
                     <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                      POST /api/internal/finance/reconciliation-scan
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
                       {locale === "en"
                         ? "Bearer FINANCE_TRIGGER_TOKEN or SYNC_TRIGGER_TOKEN"
                         : locale === "zh-TW"
@@ -4855,6 +5583,81 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     </span>
                   </div>
                 </div>
+              </div>
+              <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+                <div>
+                  <p className="section-label">{adminExpansion.finance.eyebrow}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en"
+                      ? "Batch coin adjustment"
+                      : locale === "zh-TW"
+                        ? "批量球幣調整"
+                        : "批量球币调整"}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "One member identifier per line. Support user ID or email. Apply the same amount to all selected members."
+                      : locale === "zh-TW"
+                        ? "每行一個會員標識，支援 user ID 或 email，對整批會員套用同一數量。"
+                        : "每行一个会员标识，支持 user ID 或 email，对整批会员套用同一数量。"}
+                  </p>
+                </div>
+                <form action="/api/admin/finance/recharge-orders" method="post" className="mt-6">
+                  <div className="grid gap-4">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Members" : locale === "zh-TW" ? "會員列表" : "会员列表"}
+                      </span>
+                      <textarea
+                        name="batchRefs"
+                        rows={6}
+                        placeholder={locale === "en" ? "user@example.com\ncuid_user_id" : locale === "zh-TW" ? "user@example.com\ncuid_user_id" : "user@example.com\ncuid_user_id"}
+                        className="w-full rounded-[1.2rem] border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Amount per member" : locale === "zh-TW" ? "每人球幣數量" : "每人球币数量"}
+                      </span>
+                      <input
+                        name="amount"
+                        type="number"
+                        min="1"
+                        step="1"
+                        defaultValue="100"
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">
+                        {locale === "en" ? "Batch note" : locale === "zh-TW" ? "批次備註" : "批次备注"}
+                      </span>
+                      <input
+                        name="reason"
+                        placeholder={locale === "en" ? "Campaign, ticket, or reconciliation reason" : locale === "zh-TW" ? "活動、工單或對帳原因" : "活动、工单或对账原因"}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="batch-manual-credit"
+                      className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm font-semibold text-lime-100 transition hover:bg-lime-300/15"
+                    >
+                      {locale === "en" ? "Batch credit" : locale === "zh-TW" ? "批量加幣" : "批量加币"}
+                    </button>
+                    <button
+                      type="submit"
+                      name="intent"
+                      value="batch-manual-debit"
+                      className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm font-semibold text-orange-100 transition hover:bg-orange-300/15"
+                    >
+                      {locale === "en" ? "Batch debit" : locale === "zh-TW" ? "批量扣幣" : "批量扣币"}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
             <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
@@ -4898,6 +5701,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               rows={financeDashboard.reconciliationRows}
             />
           </div>
+          <div className="mt-6">
+            <FinanceReconciliationIssuesPanel
+              title={locale === "en" ? "Reconciliation issue center" : locale === "zh-TW" ? "對帳問題中心" : "对账问题中心"}
+              locale={locale}
+              issues={financeDashboard.reconciliationIssues}
+              summary={financeDashboard.reconciliationSummary}
+            />
+          </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
             <FinanceCoinAccountsPanel
               title={locale === "en" ? "Top coin balances" : locale === "zh-TW" ? "球幣餘額帳戶" : "球币余额账户"}
@@ -4931,6 +5742,74 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           ) : null}
           <div className="mt-6">
             <ExpansionMetricGrid items={agentsDashboard.metrics} />
+          </div>
+          <div className="mt-6">
+            <ExpansionMetricGrid items={agentsDashboard.performanceMetrics} />
+          </div>
+          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="section-label">
+                  {locale === "en" ? "Agent BI" : locale === "zh-TW" ? "代理 BI" : "代理 BI"}
+                </p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {locale === "en" ? "Performance leaderboard" : locale === "zh-TW" ? "業績排行榜" : "业绩排行榜"}
+                </h3>
+              </div>
+              <span className="text-sm text-slate-500">{agentsDashboard.performanceRecords.length}</span>
+            </div>
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              {agentsDashboard.performanceRecords.map((item) => (
+                <div key={`agent-performance-${item.agentId}`} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">{item.agentName}</p>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {getAgentLevelLabel(item.level, locale)} / {item.inviteCode}
+                        {item.parentAgentName ? ` / ${locale === "en" ? "Parent" : locale === "zh-TW" ? "上級" : "上级"} ${item.parentAgentName}` : ""}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(item.totalCommissionNet > 0 ? "good" : "neutral")}`}>
+                      CNY {formatAdminCoinAmount(item.totalCommissionNet, displayLocale)}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                      {locale === "en" ? "Direct users" : locale === "zh-TW" ? "直推用戶" : "直推用户"} {item.referredUsers}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                      {locale === "en" ? "Child agents" : locale === "zh-TW" ? "下級代理" : "下级代理"} {item.childAgents}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                      {locale === "en" ? "Direct orders" : locale === "zh-TW" ? "直推訂單" : "直推订单"} {item.directOrderCount}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                      {locale === "en" ? "Recharge" : locale === "zh-TW" ? "充值額" : "充值额"} CNY {formatAdminCoinAmount(item.directRechargeAmount, displayLocale)}
+                    </span>
+                    <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-lime-100">
+                      {locale === "en" ? "Direct commission" : locale === "zh-TW" ? "直推佣金" : "直推佣金"} CNY {formatAdminCoinAmount(item.directCommissionNet, displayLocale)}
+                    </span>
+                    <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-cyan-100">
+                      {locale === "en" ? "Downstream commission" : locale === "zh-TW" ? "下級分佣" : "下级分佣"} CNY {formatAdminCoinAmount(item.downstreamCommissionNet, displayLocale)}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                      {locale === "en" ? "Unsettled" : locale === "zh-TW" ? "待結算" : "待结算"} CNY {formatAdminCoinAmount(item.unsettledCommission, displayLocale)}
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                      {locale === "en" ? "Settled withdrawal" : locale === "zh-TW" ? "已提現" : "已提现"} CNY {formatAdminCoinAmount(item.settledWithdrawalAmount, displayLocale)}
+                    </span>
+                    <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-amber-100">
+                      {locale === "en" ? "Pending payout" : locale === "zh-TW" ? "待打款" : "待打款"} CNY {formatAdminCoinAmount(item.pendingWithdrawalAmount, displayLocale)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {agentsDashboard.performanceRecords.length === 0 ? (
+                <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400 xl:col-span-2">
+                  {locale === "en" ? "No agent BI data yet." : locale === "zh-TW" ? "目前沒有代理 BI 數據。" : "当前没有代理 BI 数据。"}
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
             <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
@@ -5050,6 +5929,106 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   </div>
                 ) : null}
               </div>
+            </div>
+          </div>
+          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="section-label">{adminExpansion.agents.withdrawals.title}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {locale === "en" ? "Attributed recharge commissions" : locale === "zh-TW" ? "充值歸因佣金流水" : "充值归因佣金流水"}
+                </h3>
+              </div>
+              <span className="text-sm text-slate-500">{agentsDashboard.commissionLedgers.length}</span>
+            </div>
+            <div className="mt-5 grid gap-4">
+              {agentsDashboard.commissionLedgers.map((item) => {
+                const statusMeta = getAgentCommissionStatusMeta(item.status, locale);
+
+                return (
+                  <div key={item.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{item.agentName}</p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {item.userDisplayName} / {item.userEmail}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {item.kind === "downstream"
+                          ? locale === "en"
+                            ? "Downstream commission"
+                            : locale === "zh-TW"
+                              ? "下級分佣"
+                              : "下级分佣"
+                          : locale === "en"
+                            ? "Direct commission"
+                            : locale === "zh-TW"
+                              ? "直推佣金"
+                              : "直推佣金"}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {item.rechargeOrderNo}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {locale === "en" ? "Recharge" : locale === "zh-TW" ? "充值額" : "充值额"} CNY {formatAdminCoinAmount(item.rechargeAmount, displayLocale)}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {locale === "en" ? "Commission" : locale === "zh-TW" ? "佣金" : "佣金"} CNY {formatAdminCoinAmount(item.commissionAmount, displayLocale)}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {locale === "en" ? "Available" : locale === "zh-TW" ? "可結算" : "可结算"} CNY {formatAdminCoinAmount(item.availableAmount, displayLocale)}
+                      </span>
+                      {item.settledAmount > 0 ? (
+                        <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-lime-100">
+                          {locale === "en" ? "Settled" : locale === "zh-TW" ? "已結算" : "已结算"} CNY {formatAdminCoinAmount(item.settledAmount, displayLocale)}
+                        </span>
+                      ) : null}
+                      {item.reversedAmount > 0 ? (
+                        <span className="rounded-full border border-slate-300/20 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Reversed" : locale === "zh-TW" ? "已沖回" : "已冲回"} CNY {formatAdminCoinAmount(item.reversedAmount, displayLocale)}
+                        </span>
+                      ) : null}
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {formatPercentValue(item.commissionRate)}
+                      </span>
+                      {item.sourceAgentName ? (
+                        <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-cyan-100">
+                          {locale === "en" ? "From" : locale === "zh-TW" ? "來源代理" : "来源代理"} {item.sourceAgentName}
+                        </span>
+                      ) : null}
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {formatDateTime(item.createdAt, displayLocale)}
+                      </span>
+                      {item.settledAt ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Settled" : locale === "zh-TW" ? "已結算" : "已结算"} {formatDateTime(item.settledAt, displayLocale)}
+                        </span>
+                      ) : null}
+                      {item.reversedAt ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Reversed" : locale === "zh-TW" ? "已沖回" : "已冲回"} {formatDateTime(item.reversedAt, displayLocale)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {item.note ? <p className="mt-3 text-sm text-slate-300">{item.note}</p> : null}
+                  </div>
+                );
+              })}
+              {agentsDashboard.commissionLedgers.length === 0 ? (
+                <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                  {locale === "en"
+                    ? "No attributed commission ledger yet. Use an invite link and complete a recharge order to generate one."
+                    : locale === "zh-TW"
+                      ? "目前沒有歸因佣金流水，可先使用邀請碼註冊並完成充值來生成。"
+                      : "目前没有归因佣金流水，可先使用邀请码注册并完成充值来生成。"}
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
@@ -5553,6 +6532,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   <span>{locale === "en" ? "Payout account" : locale === "zh-TW" ? "打款帳戶" : "打款账户"}</span>
                   <input name="payoutAccount" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
                 </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Payout channel" : locale === "zh-TW" ? "打款渠道" : "打款渠道"}</span>
+                  <input name="payoutChannel" placeholder={locale === "en" ? "Bank / Alipay / USDT" : locale === "zh-TW" ? "銀行 / 支付寶 / USDT" : "银行 / 支付宝 / USDT"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300">
+                  <span>{locale === "en" ? "Payout reference" : locale === "zh-TW" ? "打款流水號" : "打款流水号"}</span>
+                  <input name="payoutReference" placeholder={locale === "en" ? "Manual payout reference" : locale === "zh-TW" ? "人工打款單號" : "人工打款单号"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
+                  <span>{locale === "en" ? "Payout operator" : locale === "zh-TW" ? "打款操作人" : "打款操作人"}</span>
+                  <input name="payoutOperator" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
                 <label className="grid gap-2 text-sm text-slate-300 md:col-span-2">
                   <span>{locale === "en" ? "Proof URL" : locale === "zh-TW" ? "憑證 URL" : "凭证 URL"}</span>
                   <input name="proofUrl" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
@@ -5581,6 +6572,170 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 <span className="text-sm text-slate-500">{agentsDashboard.withdrawals.length}</span>
               </div>
+              <form action="/api/admin/agents" method="post" className="mt-5 rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                <input type="hidden" name="intent" value="batch-save-withdrawal" />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white">
+                      {locale === "en" ? "Batch payout writeback" : locale === "zh-TW" ? "批量打款回寫" : "批量打款回写"}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-400">
+                      {locale === "en"
+                        ? "Select withdrawals or paste withdrawal IDs, then apply one payout status, reference, operator, and proof link to the whole batch."
+                        : locale === "zh-TW"
+                          ? "可勾選提現單或貼上提現 ID，對整批同步回寫打款狀態、流水號、操作人與憑證。"
+                          : "可勾选提现单或粘贴提现 ID，对整批同步回写打款状态、流水号、操作人与凭证。"}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                    {locale === "en" ? "Ctrl/Cmd multi-select" : locale === "zh-TW" ? "支援 Ctrl/Cmd 多選" : "支持 Ctrl/Cmd 多选"}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-4">
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">
+                      {locale === "en" ? "Withdrawal queue" : locale === "zh-TW" ? "提現隊列" : "提现队列"}
+                    </span>
+                    <select
+                      name="withdrawalIds"
+                      multiple
+                      size={Math.min(Math.max(agentsDashboard.withdrawals.length, 4), 8)}
+                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                    >
+                      {agentsDashboard.withdrawals.map((item) => (
+                        <option key={`withdrawal-batch-${item.id}`} value={item.id}>
+                          {`${item.agentName} / ${item.id.slice(0, 8)} / CNY ${formatAdminCoinAmount(item.amount, displayLocale)} / ${getWithdrawalStatusMeta(item.status, locale).label}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">
+                      {locale === "en" ? "Withdrawal refs" : locale === "zh-TW" ? "提現標識" : "提现标识"}
+                    </span>
+                    <textarea
+                      name="batchRefs"
+                      rows={3}
+                      placeholder={
+                        locale === "en"
+                          ? "One withdrawal ID per line, optional when selecting above"
+                          : locale === "zh-TW"
+                            ? "每行一個提現 ID，不選上方清單時可直接貼上"
+                            : "每行一个提现 ID，不选上方清单时可直接粘贴"
+                      }
+                      className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                    />
+                  </label>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态"}</span>
+                      <select name="status" defaultValue="paying" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                        <option value="pending">{getWithdrawalStatusMeta("pending", locale).label}</option>
+                        <option value="reviewing">{getWithdrawalStatusMeta("reviewing", locale).label}</option>
+                        <option value="paying">{getWithdrawalStatusMeta("paying", locale).label}</option>
+                        <option value="settled">{getWithdrawalStatusMeta("settled", locale).label}</option>
+                        <option value="rejected">{getWithdrawalStatusMeta("rejected", locale).label}</option>
+                        <option value="frozen">{getWithdrawalStatusMeta("frozen", locale).label}</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Payout channel" : locale === "zh-TW" ? "打款渠道" : "打款渠道"}</span>
+                      <input name="payoutChannel" placeholder={locale === "en" ? "Bank / Alipay / USDT" : locale === "zh-TW" ? "銀行 / 支付寶 / USDT" : "银行 / 支付宝 / USDT"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Payout account" : locale === "zh-TW" ? "打款帳戶" : "打款账户"}</span>
+                      <input name="payoutAccount" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Payout batch no." : locale === "zh-TW" ? "打款批次號" : "打款批次号"}</span>
+                      <input name="payoutBatchNo" placeholder={locale === "en" ? "Provider batch / bank batch" : locale === "zh-TW" ? "通道批次號 / 銀行批次號" : "通道批次号 / 银行批次号"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Payout reference" : locale === "zh-TW" ? "打款流水號" : "打款流水号"}</span>
+                      <input name="payoutReference" placeholder={locale === "en" ? "Batch payout reference" : locale === "zh-TW" ? "批次打款單號" : "批次打款单号"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Payout operator" : locale === "zh-TW" ? "打款操作人" : "打款操作人"}</span>
+                      <input name="payoutOperator" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Proof URL" : locale === "zh-TW" ? "憑證 URL" : "凭证 URL"}</span>
+                      <input name="proofUrl" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                  </div>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">{locale === "en" ? "Batch note" : locale === "zh-TW" ? "批次備註" : "批次备注"}</span>
+                    <textarea name="note" rows={2} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">{locale === "en" ? "Rejection reason" : locale === "zh-TW" ? "拒絕原因" : "拒绝原因"}</span>
+                    <textarea name="rejectionReason" rows={2} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  </label>
+                </div>
+                <button type="submit" className="mt-4 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100 transition hover:border-cyan-300/45 hover:bg-cyan-300/20">
+                  {locale === "en" ? "Run batch writeback" : locale === "zh-TW" ? "執行批量回寫" : "执行批量回写"}
+                </button>
+              </form>
+              <div className="mt-4 rounded-[1.2rem] border border-sky-300/15 bg-sky-400/10 p-4 text-sm text-sky-50">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="section-label">
+                      {locale === "en" ? "Payout callback" : locale === "zh-TW" ? "打款回調" : "打款回调"}
+                    </p>
+                    <p className="mt-2 text-sm text-sky-100/85">
+                      {locale === "en"
+                        ? "Use this internal endpoint for provider or script writeback after a payout batch is sent."
+                        : locale === "zh-TW"
+                          ? "打款批次送出後，可由供應商或內部腳本呼叫此介面回寫狀態。"
+                          : "打款批次送出后，可由供应商或内部脚本调用此接口回写状态。"}
+                    </p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs ${agentPayoutRuntime.callbackTokenConfigured ? "bg-lime-300/15 text-lime-100" : "bg-rose-400/15 text-rose-100"}`}>
+                    {locale === "en"
+                      ? `Token ${agentPayoutRuntime.callbackTokenConfigured ? "ready" : "missing"}`
+                      : locale === "zh-TW"
+                        ? `令牌${agentPayoutRuntime.callbackTokenConfigured ? "已配置" : "未配置"}`
+                        : `令牌${agentPayoutRuntime.callbackTokenConfigured ? "已配置" : "未配置"}`}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">
+                      {locale === "en" ? "Endpoint" : locale === "zh-TW" ? "介面路徑" : "接口路径"}
+                    </p>
+                    <p className="mt-2 break-all font-medium">{agentPayoutRuntime.callbackPath}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">
+                      {locale === "en" ? "Public URL" : locale === "zh-TW" ? "公開位址" : "公开地址"}
+                    </p>
+                    <p className="mt-2 break-all font-medium">{agentPayoutRuntime.callbackUrl}</p>
+                    {!agentPayoutRuntime.callbackUrlConfigured ? (
+                      <p className="mt-2 text-xs text-sky-100/70">
+                        {locale === "en"
+                          ? "Set AGENT_PAYOUT_CALLBACK_BASE_URL, PAYMENT_CALLBACK_BASE_URL, or SITE_URL after deployment."
+                          : locale === "zh-TW"
+                            ? "部署後請配置 AGENT_PAYOUT_CALLBACK_BASE_URL、PAYMENT_CALLBACK_BASE_URL 或 SITE_URL。"
+                            : "部署后请配置 AGENT_PAYOUT_CALLBACK_BASE_URL、PAYMENT_CALLBACK_BASE_URL 或 SITE_URL。"}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/25 p-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-sky-100/70">
+                      {locale === "en" ? "Auth header" : locale === "zh-TW" ? "鑑權方式" : "鉴权方式"}
+                    </p>
+                    <p className="mt-2 font-medium">
+                      {agentPayoutRuntime.callbackAuthMode === "shared-token"
+                        ? "Authorization: Bearer <token> / x-agent-payout-token"
+                        : locale === "en"
+                          ? "Disabled"
+                          : locale === "zh-TW"
+                            ? "未啟用"
+                            : "未启用"}
+                    </p>
+                  </div>
+                </div>
+              </div>
               <div className="mt-5 grid gap-4">
                 {agentsDashboard.withdrawals.map((item) => {
                   const statusMeta = getWithdrawalStatusMeta(item.status, locale);
@@ -5596,17 +6751,78 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
                         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(item.requestedAt, displayLocale)}</span>
                         {item.payoutAccount ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{item.payoutAccount}</span> : null}
+                        {item.payoutChannel ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{item.payoutChannel}</span> : null}
+                        {item.payoutBatchNo ? (
+                          <span className="rounded-full border border-cyan-300/25 bg-cyan-300/10 px-3 py-1 text-cyan-100">
+                            {locale === "en" ? "Batch" : locale === "zh-TW" ? "批次" : "批次"} {item.payoutBatchNo}
+                          </span>
+                        ) : null}
+                        {item.payoutReference ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{item.payoutReference}</span> : null}
+                        {item.payoutOperator ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{item.payoutOperator}</span> : null}
+                        {item.payoutRequestedAt ? (
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            {locale === "en" ? "Requested payout" : locale === "zh-TW" ? "已送打款" : "已送打款"} {formatDateTime(item.payoutRequestedAt, displayLocale)}
+                          </span>
+                        ) : null}
+                        {item.callbackStatus ? (
+                          <span className="rounded-full border border-lime-300/25 bg-lime-300/10 px-3 py-1 text-lime-100">
+                            {locale === "en" ? "Callback" : locale === "zh-TW" ? "回調" : "回调"} {item.callbackStatus}
+                          </span>
+                        ) : null}
+                        {item.callbackReceivedAt ? (
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            {locale === "en" ? "Callback at" : locale === "zh-TW" ? "回調時間" : "回调时间"} {formatDateTime(item.callbackReceivedAt, displayLocale)}
+                          </span>
+                        ) : null}
                         {item.settledAt ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(item.settledAt, displayLocale)}</span> : null}
                       </div>
                       {item.note ? <p className="mt-3 text-sm text-slate-300">{item.note}</p> : null}
+                      {item.proofUrl ? (
+                        <p className="mt-2 text-sm">
+                          <a href={item.proofUrl} target="_blank" rel="noreferrer" className="text-cyan-300 transition hover:text-cyan-200">
+                            {locale === "en" ? "Open payout proof" : locale === "zh-TW" ? "查看打款憑證" : "查看打款凭证"}
+                          </a>
+                        </p>
+                      ) : null}
+                      {item.callbackPayload ? (
+                        <details className="mt-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+                          <summary className="cursor-pointer list-none text-xs uppercase tracking-[0.16em] text-slate-400">
+                            {locale === "en" ? "Callback payload" : locale === "zh-TW" ? "回調原文" : "回调原文"}
+                          </summary>
+                          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all text-xs leading-6 text-slate-300">
+                            {item.callbackPayload}
+                          </pre>
+                        </details>
+                      ) : null}
+                      {item.allocationCount > 0 ? (
+                        <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+                            <span>
+                              {locale === "en"
+                                ? `Allocations ${item.allocationCount}`
+                                : locale === "zh-TW"
+                                  ? `分配筆數 ${item.allocationCount}`
+                                  : `分配笔数 ${item.allocationCount}`}
+                            </span>
+                            <span>
+                              {locale === "en" ? "Allocated" : locale === "zh-TW" ? "已分配" : "已分配"} CNY {formatAdminCoinAmount(item.allocatedAmount, displayLocale)}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
+                            {item.allocationSummary.map((summary) => (
+                              <span key={`${item.id}-${summary}`} className="rounded-full border border-white/8 bg-slate-950/60 px-3 py-1">
+                                {summary}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       {item.rejectionReason ? <p className="mt-2 text-xs text-rose-100">{item.rejectionReason}</p> : null}
                       <form action="/api/admin/agents" method="post" className="mt-4 grid gap-3">
                         <input type="hidden" name="intent" value="save-withdrawal" />
                         <input type="hidden" name="id" value={item.id} />
                         <input type="hidden" name="agentId" value={item.agentId} />
                         <input type="hidden" name="amount" value={item.amount} />
-                        <input type="hidden" name="payoutAccount" value={item.payoutAccount ?? ""} />
-                        <input type="hidden" name="proofUrl" value={item.proofUrl ?? ""} />
                         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                           <select name="status" defaultValue={item.status} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none">
                             <option value="pending">{getWithdrawalStatusMeta("pending", locale).label}</option>
@@ -5620,6 +6836,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                             {locale === "en" ? "Update status" : locale === "zh-TW" ? "更新狀態" : "更新状态"}
                           </button>
                         </div>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <input name="payoutAccount" defaultValue={item.payoutAccount ?? ""} placeholder={locale === "en" ? "Payout account" : locale === "zh-TW" ? "打款帳戶" : "打款账户"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                          <input name="payoutChannel" defaultValue={item.payoutChannel ?? ""} placeholder={locale === "en" ? "Payout channel" : locale === "zh-TW" ? "打款渠道" : "打款渠道"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                          <input name="payoutBatchNo" defaultValue={item.payoutBatchNo ?? ""} placeholder={locale === "en" ? "Payout batch no." : locale === "zh-TW" ? "打款批次號" : "打款批次号"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                          <input name="payoutReference" defaultValue={item.payoutReference ?? ""} placeholder={locale === "en" ? "Payout reference" : locale === "zh-TW" ? "打款流水號" : "打款流水号"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                          <input name="payoutOperator" defaultValue={item.payoutOperator ?? ""} placeholder={locale === "en" ? "Payout operator" : locale === "zh-TW" ? "打款操作人" : "打款操作人"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                        </div>
+                        <input name="proofUrl" defaultValue={item.proofUrl ?? ""} placeholder={locale === "en" ? "Proof URL" : locale === "zh-TW" ? "憑證 URL" : "凭证 URL"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
                         <textarea name="note" rows={2} defaultValue={item.note ?? ""} placeholder={locale === "en" ? "Review note" : locale === "zh-TW" ? "審核備註" : "审核备注"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
                         <textarea name="rejectionReason" rows={2} defaultValue={item.rejectionReason ?? ""} placeholder={locale === "en" ? "Rejection reason" : locale === "zh-TW" ? "拒絕原因" : "拒绝原因"} className="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
                       </form>
@@ -5890,8 +7114,27 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             title={adminExpansion.reports.title}
             description={adminExpansion.reports.description}
           />
+          {reportNotice ? (
+            <div
+              className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                error === "report-export-task" || reportTaskStatus === "failed"
+                  ? "border-rose-300/25 bg-rose-400/10 text-rose-100"
+                  : "border-lime-300/20 bg-lime-300/10 text-lime-100"
+              }`}
+            >
+              {reportNotice}
+              {reportTaskId ? (
+                <span className="ml-2 text-xs text-current/80">
+                  ID: {reportTaskId}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-6">
             <ExpansionMetricGrid items={reportsDashboard.metrics} />
+          </div>
+          <div className="mt-6">
+            <ExpansionMetricGrid items={reportsDashboard.agentBiMetrics} />
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
             <ExpansionRowsPanel
@@ -5901,6 +7144,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             <ExpansionRowsPanel
               title={locale === "en" ? "Growth and channel" : locale === "zh-TW" ? "增長與渠道" : "增长与渠道"}
               rows={reportsDashboard.growthRows}
+            />
+          </div>
+          <div className="mt-6">
+            <ExpansionRowsPanel
+              title={locale === "en" ? "Agent BI snapshot" : locale === "zh-TW" ? "代理 BI 快照" : "代理 BI 快照"}
+              rows={reportsDashboard.agentBiRows}
             />
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
@@ -5925,7 +7174,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {reportsDashboard.exportCards.map((item) => (
-                <div key={item.href} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                <div key={item.scope} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-medium text-white">{item.title}</p>
@@ -5935,14 +7184,85 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       {item.badge}
                     </span>
                   </div>
-                  <a
-                    href={item.href}
-                    className="mt-4 inline-flex items-center justify-center rounded-full border border-sky-300/25 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20"
-                  >
-                    {locale === "en" ? "Download CSV" : locale === "zh-TW" ? "下載 CSV" : "下载 CSV"}
-                  </a>
+                  <form action="/api/admin/reports/tasks" method="post" className="mt-4">
+                    <input type="hidden" name="scope" value={item.scope} />
+                    <button
+                      type="submit"
+                      className="inline-flex items-center justify-center rounded-full border border-sky-300/25 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20"
+                    >
+                      {locale === "en" ? "Create export task" : locale === "zh-TW" ? "建立匯出任務" : "建立导出任务"}
+                    </button>
+                  </form>
                 </div>
               ))}
+            </div>
+            <div className="mt-6 rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "Task center" : locale === "zh-TW" ? "任務中心" : "任务中心"}</p>
+                  <h4 className="mt-2 text-lg font-semibold text-white">
+                    {locale === "en" ? "Recent export tasks" : locale === "zh-TW" ? "最近匯出任務" : "最近导出任务"}
+                  </h4>
+                </div>
+                <span className="text-sm text-slate-500">{exportTasks.length}</span>
+              </div>
+              <div className="mt-4 grid gap-4">
+                {exportTasks.map((task) => {
+                  const statusMeta = getExportTaskStatusMeta(task.status, locale);
+                  const card = exportCardMap.get(task.scope);
+
+                  return (
+                    <div key={task.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/45 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{card?.title ?? task.scope}</p>
+                          <p className="mt-2 text-sm text-slate-400">
+                            {task.requestedByDisplayName} · {task.id}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>
+                          {statusMeta.label}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {formatDateTime(task.createdAt, displayLocale)}
+                        </span>
+                        {task.finishedAt ? (
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            {locale === "en" ? "Finished" : locale === "zh-TW" ? "完成於" : "完成于"} {formatDateTime(task.finishedAt, displayLocale)}
+                          </span>
+                        ) : null}
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Rows" : locale === "zh-TW" ? "筆數" : "笔数"} {formatAdminCoinAmount(task.rowCount, displayLocale)}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Size" : locale === "zh-TW" ? "大小" : "大小"} {formatAdminFileSize(task.sizeBytes)}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {locale === "en" ? "Downloads" : locale === "zh-TW" ? "下載次數" : "下载次数"} {formatAdminCoinAmount(task.downloadCount, displayLocale)}
+                        </span>
+                      </div>
+                      {task.errorText ? <p className="mt-3 text-sm text-rose-100">{task.errorText}</p> : null}
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        {task.status === "completed" ? (
+                          <a
+                            href={`/api/admin/reports/tasks/${task.id}/download`}
+                            className="inline-flex items-center justify-center rounded-full border border-lime-300/25 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:border-lime-300/45 hover:bg-lime-300/20"
+                          >
+                            {locale === "en" ? "Download file" : locale === "zh-TW" ? "下載文件" : "下载文件"}
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+                {exportTasks.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No export tasks yet." : locale === "zh-TW" ? "目前沒有匯出任務。" : "当前没有导出任务。"}
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </section>

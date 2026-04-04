@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getIntlLocale } from "@/lib/i18n";
 import type { Locale } from "@/lib/i18n-config";
 import { buildAdminOrdersCsv, getAdminOrdersExportRows } from "@/lib/admin-users";
+import { getAgentPerformanceSnapshot } from "@/lib/admin-agents";
 
 type ReportTone = "good" | "warn" | "neutral";
 
@@ -20,16 +21,18 @@ export type AdminReportRow = {
 };
 
 export type AdminReportExportCard = {
+  scope: AdminReportExportScope;
   title: string;
   description: string;
-  href: string;
   badge: string;
 };
 
 export type AdminReportsDashboard = {
   metrics: AdminReportMetric[];
+  agentBiMetrics: AdminReportMetric[];
   revenueRows: AdminReportRow[];
   growthRows: AdminReportRow[];
+  agentBiRows: AdminReportRow[];
   operationsRows: AdminReportRow[];
   stabilityRows: AdminReportRow[];
   exportCards: AdminReportExportCard[];
@@ -37,10 +40,13 @@ export type AdminReportsDashboard = {
 
 export type AdminReportExportScope =
   | "orders"
+  | "finance-reconciliation"
   | "coin-recharges"
   | "coin-ledgers"
   | "agent-applications"
   | "agents"
+  | "agent-commissions"
+  | "agent-performance"
   | "leads"
   | "withdrawals";
 
@@ -71,12 +77,27 @@ function formatCurrency(value: number, locale: Locale) {
   return `CNY ${formatNumber(value, locale)}`;
 }
 
+function getAgentLevelSummary(value: string, locale: Locale) {
+  if (value === "level3") {
+    return localizeText({ zhCn: "三级代理", zhTw: "三級代理", en: "Level 3" }, locale);
+  }
+
+  if (value === "level2") {
+    return localizeText({ zhCn: "二级代理", zhTw: "二級代理", en: "Level 2" }, locale);
+  }
+
+  return localizeText({ zhCn: "一级代理", zhTw: "一級代理", en: "Level 1" }, locale);
+}
+
 export function normalizeAdminReportExportScope(value?: string | null): AdminReportExportScope {
   switch (value) {
+    case "finance-reconciliation":
     case "coin-recharges":
     case "coin-ledgers":
     case "agent-applications":
     case "agents":
+    case "agent-commissions":
+    case "agent-performance":
     case "leads":
     case "withdrawals":
     case "orders":
@@ -87,6 +108,32 @@ export function normalizeAdminReportExportScope(value?: string | null): AdminRep
 }
 
 type CsvRow = Record<string, string | number | null | undefined>;
+
+type AgentCommissionExportRow = {
+  createdAt: Date;
+  agent: {
+    displayName: string;
+  };
+  kind?: string | null;
+  sourceAgentId?: string | null;
+  sourceAgentName?: string | null;
+  user: {
+    displayName: string;
+    email: string;
+  };
+  rechargeOrder: {
+    orderNo: string;
+  };
+  rechargeAmount: number;
+  commissionRate: number;
+  commissionAmount: number;
+  settledAmount: number;
+  reversedAmount: number;
+  status: string;
+  settledAt?: Date | null;
+  reversedAt?: Date | null;
+  note?: string | null;
+};
 
 function escapeCsvValue(value: string | number | null | undefined) {
   const normalized = value == null ? "" : String(value);
@@ -140,6 +187,7 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
     callbackConflicts,
     callbackFailed,
     pendingRechargeOrders,
+    agentPerformanceSnapshot,
   ] = await Promise.all([
     prisma.membershipOrder.aggregate({
       _count: { id: true },
@@ -265,6 +313,7 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
         status: "pending",
       },
     }),
+    getAgentPerformanceSnapshot(),
   ]);
 
   const membershipRevenue = membershipPaid._sum.amount ?? 0;
@@ -273,6 +322,14 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
   const totalRevenue = membershipRevenue + contentRevenue + rechargeRevenue;
   const totalPaidOrders = (membershipPaid._count.id ?? 0) + (contentPaid._count.id ?? 0) + (rechargePaid._count.id ?? 0);
   const recentSuccessCount = recentSyncRuns.filter((item) => item.status === "success").length;
+  const agentBiRows = agentPerformanceSnapshot.slice(0, 6);
+  const totalAttributedRecharge = agentPerformanceSnapshot.reduce((total, item) => total + item.directRechargeAmount, 0);
+  const totalDirectCommission = agentPerformanceSnapshot.reduce((total, item) => total + item.directCommissionNet, 0);
+  const totalDownstreamCommission = agentPerformanceSnapshot.reduce((total, item) => total + item.downstreamCommissionNet, 0);
+  const totalPendingPayout = agentPerformanceSnapshot.reduce((total, item) => total + item.pendingWithdrawalAmount, 0);
+  const totalSettledWithdrawal = agentPerformanceSnapshot.reduce((total, item) => total + item.settledWithdrawalAmount, 0);
+  const totalReferredUsers = agentPerformanceSnapshot.reduce((total, item) => total + item.referredUsers, 0);
+  const totalChildAgents = agentPerformanceSnapshot.reduce((total, item) => total + item.childAgents, 0);
 
   return {
     metrics: [
@@ -332,6 +389,68 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
             zhCn: `待审申请 ${formatNumber(pendingApplications, locale)} 条，线索池 ${formatNumber(newLeads + followingLeads, locale)} 条。`,
             zhTw: `待審申請 ${formatNumber(pendingApplications, locale)} 條，線索池 ${formatNumber(newLeads + followingLeads, locale)} 條。`,
             en: `${formatNumber(pendingApplications, locale)} pending applications and ${formatNumber(newLeads + followingLeads, locale)} leads in pipeline.`,
+          },
+          locale,
+        ),
+      },
+    ],
+    agentBiMetrics: [
+      {
+        label: localizeText(
+          { zhCn: "归因充值额", zhTw: "歸因充值額", en: "Attributed recharge" },
+          locale,
+        ),
+        value: formatCurrency(totalAttributedRecharge, locale),
+        description: localizeText(
+          {
+            zhCn: `当前代理网络累计直推用户 ${formatNumber(totalReferredUsers, locale)} 人。`,
+            zhTw: `當前代理網路累計直推用戶 ${formatNumber(totalReferredUsers, locale)} 人。`,
+            en: `${formatNumber(totalReferredUsers, locale)} directly attributed users in the agent network.`,
+          },
+          locale,
+        ),
+      },
+      {
+        label: localizeText(
+          { zhCn: "直推净佣金", zhTw: "直推淨佣金", en: "Direct net commission" },
+          locale,
+        ),
+        value: formatCurrency(totalDirectCommission, locale),
+        description: localizeText(
+          {
+            zhCn: `下级分佣累计 ${formatCurrency(totalDownstreamCommission, locale)}。`,
+            zhTw: `下級分佣累計 ${formatCurrency(totalDownstreamCommission, locale)}。`,
+            en: `Downstream commission totals ${formatCurrency(totalDownstreamCommission, locale)}.`,
+          },
+          locale,
+        ),
+      },
+      {
+        label: localizeText(
+          { zhCn: "代理层级扩展", zhTw: "代理層級擴展", en: "Downstream expansion" },
+          locale,
+        ),
+        value: formatNumber(totalChildAgents, locale),
+        description: localizeText(
+          {
+            zhCn: "统计所有代理已挂接的下级代理数量。",
+            zhTw: "統計所有代理已掛接的下級代理數量。",
+            en: "Total number of downstream agents attached to the network.",
+          },
+          locale,
+        ),
+      },
+      {
+        label: localizeText(
+          { zhCn: "待打款压力", zhTw: "待打款壓力", en: "Pending payout" },
+          locale,
+        ),
+        value: formatCurrency(totalPendingPayout, locale),
+        description: localizeText(
+          {
+            zhCn: `已完成提现 ${formatCurrency(totalSettledWithdrawal, locale)}。`,
+            zhTw: `已完成提現 ${formatCurrency(totalSettledWithdrawal, locale)}。`,
+            en: `Settled withdrawals total ${formatCurrency(totalSettledWithdrawal, locale)}.`,
           },
           locale,
         ),
@@ -445,6 +564,69 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
         tone: pendingWithdrawals > 0 ? "warn" : "neutral",
       },
     ],
+    agentBiRows: agentBiRows.map((item) => ({
+      title: `${item.agentName} / ${item.inviteCode}`,
+      subtitle: localizeText(
+        {
+          zhCn: `${getAgentLevelSummary(item.level, locale)} / 直推 ${formatNumber(item.referredUsers, locale)} / 下级 ${formatNumber(item.childAgents, locale)}`,
+          zhTw: `${getAgentLevelSummary(item.level, locale)} / 直推 ${formatNumber(item.referredUsers, locale)} / 下級 ${formatNumber(item.childAgents, locale)}`,
+          en: `${getAgentLevelSummary(item.level, locale)} / ${formatNumber(item.referredUsers, locale)} direct / ${formatNumber(item.childAgents, locale)} downstream`,
+        },
+        locale,
+      ),
+      status: formatCurrency(item.totalCommissionNet, locale),
+      tone: item.totalCommissionNet > 0 ? "good" : "neutral",
+      meta: [
+        localizeText(
+          {
+            zhCn: `直推充值 ${formatCurrency(item.directRechargeAmount, locale)}`,
+            zhTw: `直推充值 ${formatCurrency(item.directRechargeAmount, locale)}`,
+            en: `Direct recharge ${formatCurrency(item.directRechargeAmount, locale)}`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `直推佣金 ${formatCurrency(item.directCommissionNet, locale)}`,
+            zhTw: `直推佣金 ${formatCurrency(item.directCommissionNet, locale)}`,
+            en: `Direct commission ${formatCurrency(item.directCommissionNet, locale)}`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `下级分佣 ${formatCurrency(item.downstreamCommissionNet, locale)}`,
+            zhTw: `下級分佣 ${formatCurrency(item.downstreamCommissionNet, locale)}`,
+            en: `Downstream commission ${formatCurrency(item.downstreamCommissionNet, locale)}`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `待结算 ${formatCurrency(item.unsettledCommission, locale)}`,
+            zhTw: `待結算 ${formatCurrency(item.unsettledCommission, locale)}`,
+            en: `Unsettled ${formatCurrency(item.unsettledCommission, locale)}`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `已提现 ${formatCurrency(item.settledWithdrawalAmount, locale)}`,
+            zhTw: `已提現 ${formatCurrency(item.settledWithdrawalAmount, locale)}`,
+            en: `Settled withdrawal ${formatCurrency(item.settledWithdrawalAmount, locale)}`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `待打款 ${formatCurrency(item.pendingWithdrawalAmount, locale)}`,
+            zhTw: `待打款 ${formatCurrency(item.pendingWithdrawalAmount, locale)}`,
+            en: `Pending payout ${formatCurrency(item.pendingWithdrawalAmount, locale)}`,
+          },
+          locale,
+        ),
+      ],
+    })),
     operationsRows: [
       {
         title: localizeText({ zhCn: "计划单发布面", zhTw: "計劃單發布面", en: "Plan publishing" }, locale),
@@ -557,6 +739,7 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
     ],
     exportCards: [
       {
+        scope: "orders",
         title: localizeText({ zhCn: "订单总表", zhTw: "訂單總表", en: "Orders CSV" }, locale),
         description: localizeText(
           {
@@ -566,10 +749,23 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
           },
           locale,
         ),
-        href: "/api/admin/reports/export?scope=orders",
         badge: "CSV",
       },
       {
+        scope: "finance-reconciliation",
+        title: localizeText({ zhCn: "财务对账表", zhTw: "財務對帳表", en: "Finance reconciliation" }, locale),
+        description: localizeText(
+          {
+            zhCn: "统一导出会员、内容、球币充值和退款状态，方便财务核对。",
+            zhTw: "統一導出會員、內容、球幣充值與退款狀態，方便財務核對。",
+            en: "Unified export of membership, content, coin recharge, and refund status.",
+          },
+          locale,
+        ),
+        badge: "Finance",
+      },
+      {
+        scope: "coin-recharges",
         title: localizeText({ zhCn: "球币充值单", zhTw: "球幣充值單", en: "Coin recharges" }, locale),
         description: localizeText(
           {
@@ -579,10 +775,10 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
           },
           locale,
         ),
-        href: "/api/admin/reports/export?scope=coin-recharges",
         badge: "Finance",
       },
       {
+        scope: "coin-ledgers",
         title: localizeText({ zhCn: "球币流水", zhTw: "球幣流水", en: "Coin ledger" }, locale),
         description: localizeText(
           {
@@ -592,10 +788,10 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
           },
           locale,
         ),
-        href: "/api/admin/reports/export?scope=coin-ledgers",
         badge: "Finance",
       },
       {
+        scope: "agents",
         title: localizeText({ zhCn: "代理名册", zhTw: "代理名冊", en: "Agent roster" }, locale),
         description: localizeText(
           {
@@ -605,10 +801,36 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
           },
           locale,
         ),
-        href: "/api/admin/reports/export?scope=agents",
         badge: "Agents",
       },
       {
+        scope: "agent-commissions",
+        title: localizeText({ zhCn: "代理佣金流水", zhTw: "代理佣金流水", en: "Agent commissions" }, locale),
+        description: localizeText(
+          {
+            zhCn: "导出归因充值、佣金金额、已结算/已冲回与可结算余额。",
+            zhTw: "導出歸因充值、佣金金額、已結算/已沖回與可結算餘額。",
+            en: "Commission ledger with settled, reversed, and available amounts.",
+          },
+          locale,
+        ),
+        badge: "Agents",
+      },
+      {
+        scope: "agent-performance",
+        title: localizeText({ zhCn: "代理业绩看板", zhTw: "代理業績看板", en: "Agent performance" }, locale),
+        description: localizeText(
+          {
+            zhCn: "导出代理层级、归因用户、累计佣金与提现表现。",
+            zhTw: "導出代理層級、歸因用戶、累計佣金與提現表現。",
+            en: "Agent hierarchy, attributed users, commission totals, and withdrawals.",
+          },
+          locale,
+        ),
+        badge: "BI",
+      },
+      {
+        scope: "leads",
         title: localizeText({ zhCn: "招商线索", zhTw: "招商線索", en: "Recruitment leads" }, locale),
         description: localizeText(
           {
@@ -618,10 +840,10 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
           },
           locale,
         ),
-        href: "/api/admin/reports/export?scope=leads",
         badge: "Agents",
       },
       {
+        scope: "withdrawals",
         title: localizeText({ zhCn: "提现审核", zhTw: "提現審核", en: "Withdrawal review" }, locale),
         description: localizeText(
           {
@@ -631,7 +853,6 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
           },
           locale,
         ),
-        href: "/api/admin/reports/export?scope=withdrawals",
         badge: "Agents",
       },
     ],
@@ -644,6 +865,91 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
     return {
       filename: "admin-orders",
       csv: buildAdminOrdersCsv(rows),
+    };
+  }
+
+  if (scope === "finance-reconciliation") {
+    const [orderRows, rechargeOrders] = await Promise.all([
+      getAdminOrdersExportRows(),
+      prisma.coinRechargeOrder.findMany({
+        orderBy: { updatedAt: "desc" },
+        include: {
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+          package: {
+            select: {
+              titleZhCn: true,
+              titleEn: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      filename: "admin-finance-reconciliation",
+      csv: buildCsv([
+        ...orderRows.map((item) => ({
+          channel: item.orderType,
+          orderNo: item.orderId,
+          status: item.status,
+          reconciliationStatus:
+            item.status === "paid"
+              ? "entitled"
+              : item.status === "refunded"
+                ? "reversed"
+                : item.status,
+          provider: item.provider,
+          providerOrderId: item.providerOrderId ?? "",
+          paymentReference: item.paymentReference ?? "",
+          userDisplayName: item.userDisplayName,
+          userEmail: item.userEmail,
+          subjectTitle: item.subjectTitle,
+          amount: item.amount,
+          coinAmount: "",
+          bonusAmount: "",
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          paidAt: item.paidAt ?? "",
+          refundedAt: item.refundedAt ?? "",
+          creditedAt: "",
+          failureReason: item.failureReason ?? "",
+          refundReason: item.refundReason ?? "",
+        })),
+        ...rechargeOrders.map((item) => ({
+          channel: "coin-recharge",
+          orderNo: item.orderNo,
+          status: item.status,
+          reconciliationStatus:
+            item.status === "paid"
+              ? item.creditedAt
+                ? "credited"
+                : "paid-not-credited"
+              : item.status === "refunded"
+                ? "refunded"
+                : item.status,
+          provider: item.provider,
+          providerOrderId: item.providerOrderId ?? "",
+          paymentReference: item.paymentReference ?? "",
+          userDisplayName: item.user.displayName,
+          userEmail: item.user.email,
+          subjectTitle: item.package.titleZhCn || item.package.titleEn,
+          amount: item.amount,
+          coinAmount: item.coinAmount,
+          bonusAmount: item.bonusAmount,
+          createdAt: item.createdAt.toISOString(),
+          updatedAt: item.updatedAt.toISOString(),
+          paidAt: item.paidAt?.toISOString() ?? "",
+          refundedAt: item.refundedAt?.toISOString() ?? "",
+          creditedAt: item.creditedAt?.toISOString() ?? "",
+          failureReason: item.failureReason ?? "",
+          refundReason: item.refundReason ?? "",
+        })),
+      ]),
     };
   }
 
@@ -822,12 +1128,185 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
     };
   }
 
+  if (scope === "agent-commissions") {
+    const recordsUntyped = await prisma.agentCommissionLedger.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        agent: {
+          select: {
+            displayName: true,
+          },
+        },
+        user: {
+          select: {
+            displayName: true,
+            email: true,
+          },
+        },
+        rechargeOrder: {
+          select: {
+            orderNo: true,
+          },
+        },
+      },
+    });
+    const records = recordsUntyped as AgentCommissionExportRow[];
+
+    return {
+      filename: "admin-agent-commissions",
+      csv: buildCsv(
+        records.map((item) => {
+          const availableAmount = Math.max(0, item.commissionAmount - item.settledAmount - item.reversedAmount);
+          return {
+            createdAt: item.createdAt.toISOString(),
+            agentName: item.agent.displayName,
+            kind: item.kind,
+            sourceAgentId: item.sourceAgentId ?? "",
+            sourceAgentName: item.sourceAgentName ?? "",
+            userDisplayName: item.user.displayName,
+            userEmail: item.user.email,
+            rechargeOrderNo: item.rechargeOrder.orderNo,
+            rechargeAmount: item.rechargeAmount,
+            commissionRate: item.commissionRate,
+            commissionAmount: item.commissionAmount,
+            settledAmount: item.settledAmount,
+            reversedAmount: item.reversedAmount,
+            availableAmount,
+            status: item.status,
+            settledAt: item.settledAt?.toISOString() ?? "",
+            reversedAt: item.reversedAt?.toISOString() ?? "",
+            note: item.note ?? "",
+          };
+        }),
+      ),
+    };
+  }
+
+  if (scope === "agent-performance") {
+    const [agents, withdrawals] = await Promise.all([
+      prisma.agentProfile.findMany({
+        orderBy: { updatedAt: "desc" },
+        include: {
+          parentAgent: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      }),
+      prisma.agentWithdrawal.groupBy({
+        by: ["agentId", "status"],
+        _count: {
+          _all: true,
+        },
+        _sum: {
+          amount: true,
+        },
+      }),
+    ]);
+
+    const withdrawalStats = withdrawals.reduce<Record<string, {
+      pendingCount: number;
+      pendingAmount: number;
+      settledCount: number;
+      settledAmount: number;
+      rejectedCount: number;
+      rejectedAmount: number;
+    }>>((accumulator, item) => {
+      const entry = accumulator[item.agentId] ?? {
+        pendingCount: 0,
+        pendingAmount: 0,
+        settledCount: 0,
+        settledAmount: 0,
+        rejectedCount: 0,
+        rejectedAmount: 0,
+      };
+
+      const amount = item._sum.amount ?? 0;
+      if (item.status === "settled") {
+        entry.settledCount += item._count._all;
+        entry.settledAmount += amount;
+      } else if (item.status === "rejected") {
+        entry.rejectedCount += item._count._all;
+        entry.rejectedAmount += amount;
+      } else {
+        entry.pendingCount += item._count._all;
+        entry.pendingAmount += amount;
+      }
+
+      accumulator[item.agentId] = entry;
+      return accumulator;
+    }, {});
+
+    return {
+      filename: "admin-agent-performance",
+      csv: buildCsv(
+        agents.map((item) => {
+          const stats = withdrawalStats[item.id] ?? {
+            pendingCount: 0,
+            pendingAmount: 0,
+            settledCount: 0,
+            settledAmount: 0,
+            rejectedCount: 0,
+            rejectedAmount: 0,
+          };
+
+          return {
+            displayName: item.displayName,
+            level: item.level,
+            status: item.status,
+            inviteCode: item.inviteCode,
+            parentAgentName: item.parentAgent?.displayName ?? "",
+            totalReferredUsers: item.totalReferredUsers,
+            monthlyRechargeAmount: item.monthlyRechargeAmount,
+            totalCommission: item.totalCommission,
+            unsettledCommission: item.unsettledCommission,
+            payoutAccount: item.payoutAccount ?? "",
+            pendingWithdrawalCount: stats.pendingCount,
+            pendingWithdrawalAmount: stats.pendingAmount,
+            settledWithdrawalCount: stats.settledCount,
+            settledWithdrawalAmount: stats.settledAmount,
+            rejectedWithdrawalCount: stats.rejectedCount,
+            rejectedWithdrawalAmount: stats.rejectedAmount,
+            updatedAt: item.updatedAt.toISOString(),
+          };
+        }),
+      ),
+    };
+  }
+
   const records = await prisma.agentWithdrawal.findMany({
     orderBy: { updatedAt: "desc" },
-    include: {
+    select: {
+      amount: true,
+      status: true,
+      payoutAccount: true,
+      payoutChannel: true,
+      payoutReference: true,
+      payoutOperator: true,
+      note: true,
+      proofUrl: true,
+      rejectionReason: true,
+      requestedAt: true,
+      reviewedAt: true,
+      settledAt: true,
       agent: {
         select: {
           displayName: true,
+        },
+      },
+      allocations: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        include: {
+          commissionLedger: {
+            select: {
+              rechargeOrder: {
+                select: {
+                  orderNo: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -841,8 +1320,14 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
         amount: item.amount,
         status: item.status,
         payoutAccount: item.payoutAccount ?? "",
+        payoutChannel: item.payoutChannel ?? "",
+        payoutReference: item.payoutReference ?? "",
+        payoutOperator: item.payoutOperator ?? "",
         note: item.note ?? "",
         proofUrl: item.proofUrl ?? "",
+        allocationCount: item.allocations.length,
+        allocatedAmount: item.allocations.reduce((total, allocation) => total + allocation.amount, 0),
+        allocationRefs: item.allocations.map((allocation) => allocation.commissionLedger.rechargeOrder.orderNo).join(" | "),
         rejectionReason: item.rejectionReason ?? "",
         requestedAt: item.requestedAt.toISOString(),
         reviewedAt: item.reviewedAt?.toISOString() ?? "",

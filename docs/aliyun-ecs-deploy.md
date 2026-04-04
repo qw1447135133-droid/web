@@ -228,6 +228,59 @@ curl -X POST https://你的域名/api/payments/callback \
     "state": "paid",
     "paymentReference": "MANUAL-MEM-8A1B2C3D",
     "expiresAt": "2026-04-03T16:30:00+08:00"
+}'
+```
+
+### 代理提现回调接入
+
+后台代理提现已提供内部回调入口，可用于“脚本批量打款回写”或后续接入真实打款供应商：
+
+```bash
+POST /api/internal/agents/payout-callback
+Authorization: Bearer ${AGENT_PAYOUT_CALLBACK_TOKEN}
+```
+
+建议至少配置：
+
+- `AGENT_PAYOUT_CALLBACK_TOKEN`
+  如未单独配置，代码会回退到 `PAYMENT_CALLBACK_TOKEN`，再回退到 `SYNC_TRIGGER_TOKEN`
+- `AGENT_PAYOUT_CALLBACK_BASE_URL`
+  可选；未配置时会回退到 `PAYMENT_CALLBACK_BASE_URL / SITE_URL`
+
+请求体可写回这些字段：
+
+- `withdrawalId`
+- `status`: `pending`、`reviewing`、`paying`、`settled`、`rejected`、`frozen`
+- `payoutBatchNo`
+- `payoutReference`
+- `payoutOperator`
+- `payoutAccount`
+- `payoutChannel`
+- `callbackStatus`
+- `callbackReceivedAt`
+- `callbackPayload`
+- `proofUrl`
+- `note`
+- `rejectionReason`
+
+示例：
+
+```bash
+curl -X POST https://你的域名/api/internal/agents/payout-callback \
+  -H "Authorization: Bearer ${AGENT_PAYOUT_CALLBACK_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "withdrawalId": "cm_agent_withdrawal_001",
+    "status": "settled",
+    "payoutBatchNo": "BATCH-20260405-001",
+    "payoutReference": "BANK-REF-8899123",
+    "payoutOperator": "finance-bot",
+    "callbackStatus": "success",
+    "callbackReceivedAt": "2026-04-05T12:00:00+08:00",
+    "callbackPayload": {
+      "provider": "mock-payout",
+      "result": "success"
+    }
   }'
 ```
 
