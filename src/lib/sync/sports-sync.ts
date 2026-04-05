@@ -243,6 +243,41 @@ function stringifyPayload(value: unknown) {
   }
 }
 
+function parseLockedFields(value: string | null | undefined) {
+  if (!value) {
+    return new Set<string>();
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return new Set<string>();
+    }
+
+    return new Set(parsed.filter((item): item is string => typeof item === "string"));
+  } catch {
+    return new Set(
+      value
+        .split("|")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    );
+  }
+}
+
+function parseOverrideJson<T>(value: string | null | undefined) {
+  if (!value) {
+    return {} as Partial<T>;
+  }
+
+  try {
+    return JSON.parse(value) as Partial<T>;
+  } catch {
+    return {} as Partial<T>;
+  }
+}
+
 function buildCountsSummary(counts: SyncCounts) {
   return [
     `L ${counts.leagues}`,
@@ -462,39 +497,84 @@ function findTeamIdByName(teams: StoredTeamRef[], teamName: string) {
 }
 
 async function upsertTrackedLeague(league: League, syncedAt: Date, counts: SyncCounts): Promise<StoredLeagueRef> {
-  const stored = await prisma.league.upsert({
+  const existing = await prisma.league.findUnique({
     where: { slug: league.slug },
-    update: {
-      source: STORAGE_SOURCE,
-      sourceKey: buildLeagueSourceKey(league),
-      sourcePayload: stringifyPayload(league),
-      sport: league.sport,
-      name: league.name,
-      displayName: league.name,
-      region: league.region,
-      season: league.season,
-      featured: league.featured,
-      lastSyncedAt: syncedAt,
-    },
-    create: {
-      source: STORAGE_SOURCE,
-      sourceKey: buildLeagueSourceKey(league),
-      sourcePayload: stringifyPayload(league),
-      sport: league.sport,
-      slug: league.slug,
-      name: league.name,
-      displayName: league.name,
-      region: league.region,
-      season: league.season,
-      featured: league.featured,
-      lastSyncedAt: syncedAt,
-    },
     select: {
       id: true,
+      source: true,
       slug: true,
       sport: true,
+      name: true,
+      displayName: true,
+      region: true,
+      season: true,
+      status: true,
+      featured: true,
+      sortOrder: true,
+      adminLockedFields: true,
+      adminOverrideJson: true,
     },
   });
+
+  const sourcePayload = stringifyPayload(league);
+  let stored: { id: string; slug: string; sport: string };
+
+  if (existing) {
+    const lockedFields = parseLockedFields(existing.adminLockedFields);
+    const overrides = parseOverrideJson<{
+      name?: string;
+      displayName?: string;
+      region?: string;
+      season?: string;
+      status?: string;
+      featured?: boolean;
+      sortOrder?: number;
+    }>(existing.adminOverrideJson);
+    stored = await prisma.league.update({
+      where: { id: existing.id },
+      data: {
+        source: existing.source ?? STORAGE_SOURCE,
+        sourceKey: buildLeagueSourceKey(league),
+        sourcePayload,
+        sport: league.sport,
+        name: lockedFields.has("name") ? overrides.name ?? existing.name : league.name,
+        displayName: lockedFields.has("displayName") ? overrides.displayName ?? existing.displayName ?? existing.name : league.name,
+        region: lockedFields.has("region") ? overrides.region ?? existing.region : league.region,
+        season: lockedFields.has("season") ? overrides.season ?? existing.season : league.season,
+        status: lockedFields.has("status") ? overrides.status ?? existing.status : existing.status ?? "active",
+        featured: lockedFields.has("featured") ? overrides.featured ?? existing.featured : existing.featured,
+        sortOrder: lockedFields.has("sortOrder") ? overrides.sortOrder ?? existing.sortOrder : existing.sortOrder,
+        lastSyncedAt: syncedAt,
+      },
+      select: {
+        id: true,
+        slug: true,
+        sport: true,
+      },
+    });
+  } else {
+    stored = await prisma.league.create({
+      data: {
+        source: STORAGE_SOURCE,
+        sourceKey: buildLeagueSourceKey(league),
+        sourcePayload,
+        sport: league.sport,
+        slug: league.slug,
+        name: league.name,
+        displayName: league.name,
+        region: league.region,
+        season: league.season,
+        status: "active",
+        featured: league.featured,
+        lastSyncedAt: syncedAt,
+      },
+      select: {
+        id: true,
+        slug: true,
+        sport: true,
+      },
+    });
+  }
 
   counts.leagues += 1;
 
@@ -676,58 +756,127 @@ async function syncSportMatches(
 
     const teams = teamsByLeagueId.get(league.id) ?? [];
     const score = parseScore(match.score);
-
-    const storedMatch = await prisma.match.upsert({
+    const sourceKey = buildMatchSourceKey(sport, match.id);
+    const kickoff = new Date(match.kickoff);
+    const incomingHomeTeamId = findTeamIdByName(teams, match.homeTeam);
+    const incomingAwayTeamId = findTeamIdByName(teams, match.awayTeam);
+    const existing = await prisma.match.findUnique({
       where: {
         source_sourceKey: {
           source: STORAGE_SOURCE,
-          sourceKey: buildMatchSourceKey(sport, match.id),
+          sourceKey,
         },
       },
-      update: {
-        sourcePayload: stringifyPayload(match),
-        sport,
-        slug: slugify(`${match.homeTeam}-${match.awayTeam}-${match.kickoff}`),
-        status: match.status,
-        kickoff: new Date(match.kickoff),
-        clock: match.clock ?? null,
-        venue: match.venue,
-        leagueId: league.id,
-        homeTeamId: findTeamIdByName(teams, match.homeTeam),
-        awayTeamId: findTeamIdByName(teams, match.awayTeam),
-        homeTeamName: match.homeTeam,
-        awayTeamName: match.awayTeam,
-        homeScore: score.homeScore,
-        awayScore: score.awayScore,
-        scoreText: match.score,
-        statLine: match.statLine,
-        insight: match.insight,
-        lastSyncedAt: syncedAt,
+      select: {
+        id: true,
+        source: true,
+        slug: true,
+        status: true,
+        kickoff: true,
+        clock: true,
+        venue: true,
+        leagueId: true,
+        homeTeamId: true,
+        awayTeamId: true,
+        homeTeamName: true,
+        awayTeamName: true,
+        homeScore: true,
+        awayScore: true,
+        scoreText: true,
+        statLine: true,
+        insight: true,
+        adminVisible: true,
+        adminLockedFields: true,
+        adminOverrideJson: true,
       },
-      create: {
-        source: STORAGE_SOURCE,
-        sourceKey: buildMatchSourceKey(sport, match.id),
-        sourcePayload: stringifyPayload(match),
-        sport,
-        slug: slugify(`${match.homeTeam}-${match.awayTeam}-${match.kickoff}`),
-        status: match.status,
-        kickoff: new Date(match.kickoff),
-        clock: match.clock ?? null,
-        venue: match.venue,
-        leagueId: league.id,
-        homeTeamId: findTeamIdByName(teams, match.homeTeam),
-        awayTeamId: findTeamIdByName(teams, match.awayTeam),
-        homeTeamName: match.homeTeam,
-        awayTeamName: match.awayTeam,
-        homeScore: score.homeScore,
-        awayScore: score.awayScore,
-        scoreText: match.score,
-        statLine: match.statLine,
-        insight: match.insight,
-        lastSyncedAt: syncedAt,
-      },
-      select: { id: true },
     });
+
+    const sourcePayload = stringifyPayload(match);
+    let storedMatch: { id: string };
+
+    if (existing) {
+      const lockedFields = parseLockedFields(existing.adminLockedFields);
+      const overrides = parseOverrideJson<{
+        status?: string;
+        kickoff?: string;
+        clock?: string | null;
+        venue?: string;
+        leagueId?: string;
+        homeTeamId?: string | null;
+        awayTeamId?: string | null;
+        homeTeamName?: string;
+        awayTeamName?: string;
+        homeScore?: number | null;
+        awayScore?: number | null;
+        scoreText?: string | null;
+        statLine?: string | null;
+        insight?: string | null;
+        adminVisible?: boolean;
+      }>(existing.adminOverrideJson);
+      const nextKickoff = lockedFields.has("kickoff") && overrides.kickoff ? new Date(overrides.kickoff) : existing.kickoff;
+      const nextHomeTeamName = lockedFields.has("homeTeamName") ? overrides.homeTeamName ?? existing.homeTeamName : match.homeTeam;
+      const nextAwayTeamName = lockedFields.has("awayTeamName") ? overrides.awayTeamName ?? existing.awayTeamName : match.awayTeam;
+
+      storedMatch = await prisma.match.update({
+        where: { id: existing.id },
+        data: {
+          source: existing.source ?? STORAGE_SOURCE,
+          sourceKey,
+          sourcePayload,
+          sport,
+          slug: existing.slug ?? slugify(`${match.homeTeam}-${match.awayTeam}-${match.kickoff}`),
+          status: lockedFields.has("status") ? overrides.status ?? existing.status : match.status,
+          kickoff: lockedFields.has("kickoff") ? nextKickoff : kickoff,
+          clock: lockedFields.has("clock") ? overrides.clock ?? existing.clock : match.clock ?? null,
+          venue: lockedFields.has("venue") ? overrides.venue ?? existing.venue : match.venue,
+          leagueId: lockedFields.has("leagueId") ? overrides.leagueId ?? existing.leagueId : league.id,
+          homeTeamId:
+            lockedFields.has("homeTeamId") || lockedFields.has("homeTeamName")
+              ? overrides.homeTeamId ?? existing.homeTeamId
+              : incomingHomeTeamId,
+          awayTeamId:
+            lockedFields.has("awayTeamId") || lockedFields.has("awayTeamName")
+              ? overrides.awayTeamId ?? existing.awayTeamId
+              : incomingAwayTeamId,
+          homeTeamName: nextHomeTeamName,
+          awayTeamName: nextAwayTeamName,
+          homeScore: lockedFields.has("homeScore") ? overrides.homeScore ?? existing.homeScore : score.homeScore,
+          awayScore: lockedFields.has("awayScore") ? overrides.awayScore ?? existing.awayScore : score.awayScore,
+          scoreText: lockedFields.has("scoreText") ? overrides.scoreText ?? existing.scoreText : match.score,
+          statLine: lockedFields.has("statLine") ? overrides.statLine ?? existing.statLine : match.statLine,
+          insight: lockedFields.has("insight") ? overrides.insight ?? existing.insight : match.insight,
+          adminVisible: lockedFields.has("adminVisible") ? overrides.adminVisible ?? existing.adminVisible : existing.adminVisible,
+          lastSyncedAt: syncedAt,
+        },
+        select: { id: true },
+      });
+    } else {
+      storedMatch = await prisma.match.create({
+        data: {
+          source: STORAGE_SOURCE,
+          sourceKey,
+          sourcePayload,
+          sport,
+          slug: slugify(`${match.homeTeam}-${match.awayTeam}-${match.kickoff}`),
+          status: match.status,
+          kickoff,
+          clock: match.clock ?? null,
+          venue: match.venue,
+          leagueId: league.id,
+          homeTeamId: incomingHomeTeamId,
+          awayTeamId: incomingAwayTeamId,
+          homeTeamName: match.homeTeam,
+          awayTeamName: match.awayTeam,
+          homeScore: score.homeScore,
+          awayScore: score.awayScore,
+          scoreText: match.score,
+          statLine: match.statLine,
+          insight: match.insight,
+          lastSyncedAt: syncedAt,
+        },
+        select: { id: true },
+      });
+    }
 
     counts.matches += 1;
 

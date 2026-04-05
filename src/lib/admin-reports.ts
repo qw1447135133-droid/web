@@ -27,9 +27,24 @@ export type AdminReportExportCard = {
   badge: string;
 };
 
+export type AdminReportTrendPoint = {
+  label: string;
+  value: number;
+};
+
+export type AdminReportTrendCard = {
+  key: string;
+  title: string;
+  description: string;
+  value: string;
+  tone: ReportTone;
+  points: AdminReportTrendPoint[];
+};
+
 export type AdminReportsDashboard = {
   metrics: AdminReportMetric[];
   agentBiMetrics: AdminReportMetric[];
+  trendCards: AdminReportTrendCard[];
   revenueRows: AdminReportRow[];
   growthRows: AdminReportRow[];
   agentBiRows: AdminReportRow[];
@@ -49,6 +64,17 @@ export type AdminReportExportScope =
   | "agent-performance"
   | "leads"
   | "withdrawals";
+
+type AdminReportDailyMetricKey =
+  | "revenue_membership"
+  | "revenue_content"
+  | "revenue_recharge"
+  | "membership_conversions"
+  | "content_unlocks"
+  | "coin_consumption"
+  | "agent_commission_generated"
+  | "agent_commission_reversed"
+  | "agent_withdrawal_settled";
 
 function localizeText(
   value: {
@@ -75,6 +101,84 @@ function formatNumber(value: number, locale: Locale) {
 
 function formatCurrency(value: number, locale: Locale) {
   return `CNY ${formatNumber(value, locale)}`;
+}
+
+function formatShortDate(value: Date, locale: Locale) {
+  return new Intl.DateTimeFormat(getIntlLocale(locale), {
+    month: "numeric",
+    day: "numeric",
+  }).format(value);
+}
+
+function startOfDay(value: Date) {
+  const next = new Date(value);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfDay(value: Date) {
+  const next = startOfDay(value);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function toMetricDateKey(value: Date) {
+  return startOfDay(value).toISOString().slice(0, 10);
+}
+
+function fromMetricDateKey(value: string) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function clampTrendWindow(value?: number) {
+  if (value === 7 || value === 90) {
+    return value;
+  }
+
+  return 30;
+}
+
+function buildDateRange(windowDays: number) {
+  const normalizedWindow = clampTrendWindow(windowDays);
+  const end = startOfDay(new Date());
+  const start = addDays(end, -(normalizedWindow - 1));
+  return { start, end: endOfDay(end), windowDays: normalizedWindow };
+}
+
+function buildDateKeys(windowDays: number) {
+  const { start, windowDays: normalizedWindow } = buildDateRange(windowDays);
+  return Array.from({ length: normalizedWindow }, (_, index) => toMetricDateKey(addDays(start, index)));
+}
+
+function emptyDailyFactMap(windowDays: number) {
+  const byMetric = new Map<AdminReportDailyMetricKey, Map<string, { countValue: number; amountValue: number }>>();
+  const metricKeys: AdminReportDailyMetricKey[] = [
+    "revenue_membership",
+    "revenue_content",
+    "revenue_recharge",
+    "membership_conversions",
+    "content_unlocks",
+    "coin_consumption",
+    "agent_commission_generated",
+    "agent_commission_reversed",
+    "agent_withdrawal_settled",
+  ];
+  const dateKeys = buildDateKeys(windowDays);
+
+  for (const metricKey of metricKeys) {
+    byMetric.set(
+      metricKey,
+      new Map(dateKeys.map((dateKey) => [dateKey, { countValue: 0, amountValue: 0 }])),
+    );
+  }
+
+  return byMetric;
 }
 
 function getAgentLevelSummary(value: string, locale: Locale) {
@@ -105,6 +209,289 @@ export function normalizeAdminReportExportScope(value?: string | null): AdminRep
     default:
       return "orders";
   }
+}
+
+async function rebuildAdminReportDailyFacts(windowDays: number) {
+  const { start, end } = buildDateRange(windowDays);
+  const dateKeys = buildDateKeys(windowDays);
+  const dailyFacts = emptyDailyFactMap(windowDays);
+
+  const [
+    membershipOrders,
+    contentOrders,
+    coinRechargeOrders,
+    coinLedgerDebits,
+    agentCommissionLedgers,
+    reversedCommissionLedgers,
+    settledWithdrawals,
+  ] = await Promise.all([
+    prisma.membershipOrder.findMany({
+      where: {
+        status: "paid",
+        paidAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+      select: {
+        amount: true,
+        paidAt: true,
+      },
+    }),
+    prisma.contentOrder.findMany({
+      where: {
+        status: "paid",
+        paidAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+      select: {
+        amount: true,
+        paidAt: true,
+      },
+    }),
+    prisma.coinRechargeOrder.findMany({
+      where: {
+        status: "paid",
+        paidAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+      select: {
+        amount: true,
+        paidAt: true,
+      },
+    }),
+    prisma.coinLedger.findMany({
+      where: {
+        direction: "debit",
+        createdAt: {
+          gte: start,
+          lt: end,
+        },
+        reason: {
+          in: ["content_unlock", "membership_unlock", "refund"],
+        },
+      },
+      select: {
+        amount: true,
+        createdAt: true,
+      },
+    }),
+    prisma.agentCommissionLedger.findMany({
+      where: {
+        createdAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+      select: {
+        commissionAmount: true,
+        createdAt: true,
+      },
+    }),
+    prisma.agentCommissionLedger.findMany({
+      where: {
+        reversedAt: {
+          gte: start,
+          lt: end,
+        },
+        reversedAmount: {
+          gt: 0,
+        },
+      },
+      select: {
+        reversedAmount: true,
+        reversedAt: true,
+      },
+    }),
+    prisma.agentWithdrawal.findMany({
+      where: {
+        status: "settled",
+        settledAt: {
+          gte: start,
+          lt: end,
+        },
+      },
+      select: {
+        amount: true,
+        settledAt: true,
+      },
+    }),
+  ]);
+
+  const incrementMetric = (
+    metricKey: AdminReportDailyMetricKey,
+    dateKey: string,
+    countValue: number,
+    amountValue: number,
+  ) => {
+    const metricMap = dailyFacts.get(metricKey);
+    const existing = metricMap?.get(dateKey);
+
+    if (!metricMap || !existing) {
+      return;
+    }
+
+    existing.countValue += countValue;
+    existing.amountValue += amountValue;
+  };
+
+  for (const item of membershipOrders) {
+    if (!item.paidAt) {
+      continue;
+    }
+
+    const dateKey = toMetricDateKey(item.paidAt);
+    incrementMetric("revenue_membership", dateKey, 1, item.amount);
+    incrementMetric("membership_conversions", dateKey, 1, item.amount);
+  }
+
+  for (const item of contentOrders) {
+    if (!item.paidAt) {
+      continue;
+    }
+
+    const dateKey = toMetricDateKey(item.paidAt);
+    incrementMetric("revenue_content", dateKey, 1, item.amount);
+    incrementMetric("content_unlocks", dateKey, 1, item.amount);
+  }
+
+  for (const item of coinRechargeOrders) {
+    if (!item.paidAt) {
+      continue;
+    }
+
+    incrementMetric("revenue_recharge", toMetricDateKey(item.paidAt), 1, item.amount);
+  }
+
+  for (const item of coinLedgerDebits) {
+    incrementMetric("coin_consumption", toMetricDateKey(item.createdAt), 1, item.amount);
+  }
+
+  for (const item of agentCommissionLedgers) {
+    incrementMetric("agent_commission_generated", toMetricDateKey(item.createdAt), 1, item.commissionAmount);
+  }
+
+  for (const item of reversedCommissionLedgers) {
+    if (!item.reversedAt) {
+      continue;
+    }
+
+    incrementMetric("agent_commission_reversed", toMetricDateKey(item.reversedAt), 1, item.reversedAmount);
+  }
+
+  for (const item of settledWithdrawals) {
+    if (!item.settledAt) {
+      continue;
+    }
+
+    incrementMetric("agent_withdrawal_settled", toMetricDateKey(item.settledAt), 1, item.amount);
+  }
+
+  const operations = dateKeys.flatMap((dateKey) => {
+    const metricDate = fromMetricDateKey(dateKey);
+    return (Array.from(dailyFacts.entries()) as Array<
+      [AdminReportDailyMetricKey, Map<string, { countValue: number; amountValue: number }>]
+    >).map(([metricKey, metricMap]) => {
+      const metric = metricMap.get(dateKey) ?? { countValue: 0, amountValue: 0 };
+      return prisma.adminReportDailyFact.upsert({
+        where: {
+          metricDate_scope_metricKey_dimensionKey: {
+            metricDate,
+            scope: "overview",
+            metricKey,
+            dimensionKey: "",
+          },
+        },
+        update: {
+          countValue: metric.countValue,
+          amountValue: metric.amountValue,
+          extraJson: null,
+        },
+        create: {
+          metricDate,
+          scope: "overview",
+          metricKey,
+          dimensionKey: "",
+          countValue: metric.countValue,
+          amountValue: metric.amountValue,
+        },
+      });
+    });
+  });
+
+  await prisma.$transaction(operations);
+
+  return {
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+    dayCount: dateKeys.length,
+    recordCount: operations.length,
+  };
+}
+
+async function ensureAdminReportDailyFacts(windowDays: number) {
+  const { start, end } = buildDateRange(windowDays);
+  const existingCount = await prisma.adminReportDailyFact.count({
+    where: {
+      scope: "overview",
+      metricDate: {
+        gte: start,
+        lt: end,
+      },
+    },
+  });
+  const expectedMinimum = buildDateKeys(windowDays).length * 9;
+
+  if (existingCount < expectedMinimum) {
+    await rebuildAdminReportDailyFacts(windowDays);
+  }
+}
+
+async function getDailyFactSeries(windowDays: number) {
+  await ensureAdminReportDailyFacts(windowDays);
+  const { start, end } = buildDateRange(windowDays);
+  const rows = await prisma.adminReportDailyFact.findMany({
+    where: {
+      scope: "overview",
+      metricDate: {
+        gte: start,
+        lt: end,
+      },
+    },
+    orderBy: [{ metricDate: "asc" }],
+    select: {
+      metricDate: true,
+      metricKey: true,
+      countValue: true,
+      amountValue: true,
+    },
+  });
+
+  const series = emptyDailyFactMap(windowDays);
+
+  for (const row of rows) {
+    const metricKey = row.metricKey as AdminReportDailyMetricKey;
+    const metricMap = series.get(metricKey);
+
+    if (!metricMap) {
+      continue;
+    }
+
+    metricMap.set(toMetricDateKey(row.metricDate), {
+      countValue: row.countValue,
+      amountValue: row.amountValue,
+    });
+  }
+
+  return { series, dateKeys: buildDateKeys(windowDays) };
+}
+
+export async function refreshAdminReportDailyFacts(windowDays = 30) {
+  return rebuildAdminReportDailyFacts(windowDays);
 }
 
 type CsvRow = Record<string, string | number | null | undefined>;
@@ -159,8 +546,14 @@ function buildCsv(rows: CsvRow[]) {
   return `\uFEFF${lines.join("\n")}`;
 }
 
-export async function getAdminReportsDashboard(locale: Locale): Promise<AdminReportsDashboard> {
+export async function getAdminReportsDashboard(
+  locale: Locale,
+  options?: {
+    trendWindowDays?: number;
+  },
+): Promise<AdminReportsDashboard> {
   const now = new Date();
+  const trendWindowDays = clampTrendWindow(options?.trendWindowDays);
 
   const [
     membershipPaid,
@@ -188,6 +581,7 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
     callbackFailed,
     pendingRechargeOrders,
     agentPerformanceSnapshot,
+    trendFacts,
   ] = await Promise.all([
     prisma.membershipOrder.aggregate({
       _count: { id: true },
@@ -314,6 +708,7 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
       },
     }),
     getAgentPerformanceSnapshot(),
+    getDailyFactSeries(trendWindowDays),
   ]);
 
   const membershipRevenue = membershipPaid._sum.amount ?? 0;
@@ -330,6 +725,125 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
   const totalSettledWithdrawal = agentPerformanceSnapshot.reduce((total, item) => total + item.settledWithdrawalAmount, 0);
   const totalReferredUsers = agentPerformanceSnapshot.reduce((total, item) => total + item.referredUsers, 0);
   const totalChildAgents = agentPerformanceSnapshot.reduce((total, item) => total + item.childAgents, 0);
+  const buildTrendPoints = (
+    metricKeys: AdminReportDailyMetricKey[],
+    valueField: "countValue" | "amountValue",
+  ) =>
+    trendFacts.dateKeys.map((dateKey) => ({
+      label: formatShortDate(new Date(`${dateKey}T00:00:00.000Z`), locale),
+      value: metricKeys.reduce(
+        (sum, metricKey) => sum + (trendFacts.series.get(metricKey)?.get(dateKey)?.[valueField] ?? 0),
+        0,
+      ),
+    }));
+  const totalTrendValue = (points: AdminReportTrendPoint[]) =>
+    points.reduce((sum, point) => sum + point.value, 0);
+  const revenueTrendPoints = buildTrendPoints(
+    ["revenue_membership", "revenue_content", "revenue_recharge"],
+    "amountValue",
+  );
+  const coinConsumptionTrendPoints = buildTrendPoints(["coin_consumption"], "amountValue");
+  const membershipConversionTrendPoints = buildTrendPoints(["membership_conversions"], "countValue");
+  const agentCommissionTrendPoints = buildTrendPoints(
+    ["agent_commission_generated"],
+    "amountValue",
+  );
+  const settledWithdrawalTrendPoints = buildTrendPoints(
+    ["agent_withdrawal_settled"],
+    "amountValue",
+  );
+  const trendCards: AdminReportTrendCard[] = [
+    {
+      key: "revenue",
+      title: localizeText(
+        { zhCn: "营收趋势", zhTw: "營收趨勢", en: "Revenue trend" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: `最近 ${trendWindowDays} 天会员、内容与球币充值合计营收。`,
+          zhTw: `最近 ${trendWindowDays} 天會員、內容與球幣充值合計營收。`,
+          en: `Combined membership, content, and recharge revenue in the last ${trendWindowDays} days.`,
+        },
+        locale,
+      ),
+      value: formatCurrency(totalTrendValue(revenueTrendPoints), locale),
+      tone: "good",
+      points: revenueTrendPoints,
+    },
+    {
+      key: "coin-consumption",
+      title: localizeText(
+        { zhCn: "球币消耗", zhTw: "球幣消耗", en: "Coin consumption" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: "统计内容解锁、会员开通与退款回退对应的球币变动。",
+          zhTw: "統計內容解鎖、會員開通與退款回退對應的球幣變動。",
+          en: "Coin movement tied to unlocks, membership, and refund reversals.",
+        },
+        locale,
+      ),
+      value: formatNumber(totalTrendValue(coinConsumptionTrendPoints), locale),
+      tone: "neutral",
+      points: coinConsumptionTrendPoints,
+    },
+    {
+      key: "membership-conversion",
+      title: localizeText(
+        { zhCn: "会员转化", zhTw: "會員轉化", en: "Membership conversions" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: `最近 ${trendWindowDays} 天已支付会员订单数。`,
+          zhTw: `最近 ${trendWindowDays} 天已支付會員訂單數。`,
+          en: `Paid membership orders in the last ${trendWindowDays} days.`,
+        },
+        locale,
+      ),
+      value: formatNumber(totalTrendValue(membershipConversionTrendPoints), locale),
+      tone: "good",
+      points: membershipConversionTrendPoints,
+    },
+    {
+      key: "agent-commission",
+      title: localizeText(
+        { zhCn: "代理佣金生成", zhTw: "代理佣金生成", en: "Agent commission generated" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: `最近 ${trendWindowDays} 天新生成的代理佣金金额。`,
+          zhTw: `最近 ${trendWindowDays} 天新生成的代理佣金金額。`,
+          en: `New commission amount generated in the last ${trendWindowDays} days.`,
+        },
+        locale,
+      ),
+      value: formatCurrency(totalTrendValue(agentCommissionTrendPoints), locale),
+      tone: "good",
+      points: agentCommissionTrendPoints,
+    },
+    {
+      key: "withdrawal-settled",
+      title: localizeText(
+        { zhCn: "已结算提现", zhTw: "已結算提現", en: "Settled withdrawals" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: `最近 ${trendWindowDays} 天已完成打款的提现金额。`,
+          zhTw: `最近 ${trendWindowDays} 天已完成打款的提現金額。`,
+          en: `Settled withdrawal amount in the last ${trendWindowDays} days.`,
+        },
+        locale,
+      ),
+      value: formatCurrency(totalTrendValue(settledWithdrawalTrendPoints), locale),
+      tone: totalTrendValue(settledWithdrawalTrendPoints) > 0 ? "good" : "neutral",
+      points: settledWithdrawalTrendPoints,
+    },
+  ];
 
   return {
     metrics: [
@@ -456,6 +970,7 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
         ),
       },
     ],
+    trendCards,
     revenueRows: [
       {
         title: localizeText({ zhCn: "会员订单营收", zhTw: "會員訂單營收", en: "Membership revenue" }, locale),
@@ -798,6 +1313,19 @@ export async function getAdminReportsDashboard(locale: Locale): Promise<AdminRep
             zhCn: "导出代理层级、邀请码和佣金配置。",
             zhTw: "導出代理層級、邀請碼和佣金配置。",
             en: "Hierarchy, invite codes, and commission settings.",
+          },
+          locale,
+        ),
+        badge: "Agents",
+      },
+      {
+        scope: "agent-applications",
+        title: localizeText({ zhCn: "代理申请池", zhTw: "代理申請池", en: "Agent applications" }, locale),
+        description: localizeText(
+          {
+            zhCn: "导出代理申请、审批结果与转正情况。",
+            zhTw: "導出代理申請、審批結果與轉正情況。",
+            en: "Application queue, review result, and approved profile linkage.",
           },
           locale,
         ),

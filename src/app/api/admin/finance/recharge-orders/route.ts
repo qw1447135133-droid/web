@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   adjustCoinAccountByAdmin,
+  batchUpdateFinanceReconciliationIssues,
   batchAdjustCoinAccountsByAdmin,
   batchUpdateCoinRechargeOrdersByAdmin,
   closeExpiredCoinRechargeOrders,
@@ -10,6 +11,7 @@ import {
   markCoinRechargeOrderFailedByAdmin,
   markCoinRechargeOrderPaidByAdmin,
   refundCoinRechargeOrderByAdmin,
+  runFinanceReconciliationReminderScan,
   scanFinanceReconciliationIssues,
   updateFinanceReconciliationIssue,
 } from "@/lib/admin-finance";
@@ -22,7 +24,12 @@ function redirectToAdmin(request: NextRequest, suffix = "") {
 
 function redirectWithBatchResult(
   request: NextRequest,
-  key: "batch-coin-adjustment" | "batch-coin-recharge-order" | "finance-reconciliation-scan",
+  key:
+    | "batch-coin-adjustment"
+    | "batch-coin-recharge-order"
+    | "finance-reconciliation-scan"
+    | "finance-reconciliation-batch"
+    | "finance-reconciliation-reminder-scan",
   processedCount: number,
   totalCount: number,
   skippedCount = 0,
@@ -83,8 +90,13 @@ export async function POST(request: NextRequest) {
   const paymentReference = String(formData.get("paymentReference") || "").trim();
   const orderRef = String(formData.get("orderRef") || "").trim();
   const issueId = String(formData.get("issueId") || "").trim();
+  const selectedIssueIds = formData
+    .getAll("issueIds")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
   const issueType = String(formData.get("issueType") || "").trim();
   const severity = String(formData.get("severity") || "").trim();
+  const workflowStage = String(formData.get("workflowStage") || "").trim();
   const summary = String(formData.get("summary") || "").trim();
   const detail = String(formData.get("detail") || "").trim();
   const assignedToDisplayName = String(formData.get("assignedToDisplayName") || "").trim();
@@ -98,6 +110,17 @@ export async function POST(request: NextRequest) {
         ? selectedUserIds
         : selectedOrderIds
       : parseBatchRefs(formData.get("batchRefs"));
+  const isFinanceIssueIntent =
+    intent === "flag-reconciliation-issue" ||
+    intent === "assign-reconciliation-issue" ||
+    intent === "review-reconciliation-issue" ||
+    intent === "resolve-reconciliation-issue" ||
+    intent === "ignore-reconciliation-issue" ||
+    intent === "reopen-reconciliation-issue" ||
+    intent === "scan-reconciliation-issues" ||
+    intent === "remind-reconciliation-issue" ||
+    intent === "scan-reconciliation-reminders" ||
+    (intent.startsWith("batch-") && intent.includes("reconciliation"));
 
   try {
     if (intent === "create") {
@@ -235,6 +258,8 @@ export async function POST(request: NextRequest) {
         status: nextStatus,
         resolutionNote: reason || detail,
         assignedToDisplayName: assignedToDisplayName || session.displayName,
+        workflowStage: workflowStage || undefined,
+        reminderNote: reason || detail,
       });
       await recordAdminAuditLog({
         actorUserId: currentUser?.id,
@@ -247,6 +272,60 @@ export async function POST(request: NextRequest) {
         detail: `status: ${issue.status} | note: ${reason || detail || "--"}`,
         ipAddress,
       });
+    } else if (intent === "remind-reconciliation-issue") {
+      const issue = await updateFinanceReconciliationIssue({
+        issueId,
+        assignedToDisplayName: assignedToDisplayName || session.displayName,
+        workflowStage: workflowStage || undefined,
+        remind: true,
+        reminderNote: reason || detail,
+      });
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: "remind-reconciliation-issue",
+        scope: "finance.reconciliation-issue",
+        targetType: "finance-reconciliation-issue",
+        targetId: issue.id,
+        detail: `reminderCount: ${issue.reminderCount} | note: ${reason || detail || "--"}`,
+        ipAddress,
+      });
+    } else if (intent === "batch-review-reconciliation-issues" || intent === "batch-resolve-reconciliation-issues" || intent === "batch-ignore-reconciliation-issues" || intent === "batch-reopen-reconciliation-issues" || intent === "batch-remind-reconciliation-issues") {
+      const result = await batchUpdateFinanceReconciliationIssues({
+        issueIds: selectedIssueIds.length > 0 ? selectedIssueIds : batchRefs,
+        action:
+          intent === "batch-review-reconciliation-issues"
+            ? "review"
+            : intent === "batch-resolve-reconciliation-issues"
+              ? "resolve"
+              : intent === "batch-ignore-reconciliation-issues"
+                ? "ignore"
+                : intent === "batch-reopen-reconciliation-issues"
+                  ? "reopen"
+                  : "remind",
+        resolutionNote: reason || detail,
+        assignedToDisplayName: assignedToDisplayName || undefined,
+        workflowStage: workflowStage || undefined,
+      });
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: intent,
+        scope: "finance.reconciliation-issue.batch",
+        targetType: "batch-issue",
+        targetId: summarizeBatchRefs(selectedIssueIds.length > 0 ? selectedIssueIds : batchRefs),
+        detail: `processedCount: ${result.processedCount} | note: ${reason || detail || "--"} | workflowStage: ${workflowStage || "--"}`,
+        ipAddress,
+      });
+      return redirectWithBatchResult(
+        request,
+        "finance-reconciliation-batch",
+        result.processedCount,
+        result.totalCount,
+        result.skippedCount,
+      );
     } else if (intent === "scan-reconciliation-issues") {
       const result = await scanFinanceReconciliationIssues({
         createdByUserId: currentUser?.id,
@@ -267,6 +346,29 @@ export async function POST(request: NextRequest) {
         request,
         "finance-reconciliation-scan",
         result.createdCount,
+        result.totalCount,
+        result.skippedCount,
+      );
+    } else if (intent === "scan-reconciliation-reminders") {
+      const result = await runFinanceReconciliationReminderScan({
+        actorDisplayName: session.displayName,
+        assignedToDisplayName: session.displayName,
+      });
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: "scan-finance-reconciliation-reminders",
+        scope: "finance.reconciliation-issue",
+        targetType: "scan",
+        targetId: "finance-reminders",
+        detail: `processed: ${result.processedCount} | skipped: ${result.skippedCount} | total: ${result.totalCount}`,
+        ipAddress,
+      });
+      return redirectWithBatchResult(
+        request,
+        "finance-reconciliation-reminder-scan",
+        result.processedCount,
         result.totalCount,
         result.skippedCount,
       );
@@ -470,15 +572,9 @@ export async function POST(request: NextRequest) {
       request,
       intent === "manual-credit" || intent === "manual-debit"
         ? "&error=coin-adjustment"
-        : intent === "flag-reconciliation-issue" ||
-            intent === "assign-reconciliation-issue" ||
-            intent === "review-reconciliation-issue" ||
-            intent === "resolve-reconciliation-issue" ||
-            intent === "ignore-reconciliation-issue" ||
-            intent === "reopen-reconciliation-issue" ||
-            intent === "scan-reconciliation-issues"
+        : isFinanceIssueIntent
           ? "&error=finance-reconciliation-issue"
-          : intent === "batch-manual-credit" || intent === "batch-manual-debit"
+        : intent === "batch-manual-credit" || intent === "batch-manual-debit"
             ? "&error=batch-coin-adjustment"
             : intent === "close-expired"
             ? "&error=coin-expiry"
@@ -488,19 +584,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return redirectToAdmin(
-    request,
-    intent === "manual-credit" || intent === "manual-debit"
-      ? "&saved=coin-adjustment"
-      : intent === "flag-reconciliation-issue" ||
-          intent === "assign-reconciliation-issue" ||
-          intent === "review-reconciliation-issue" ||
-          intent === "resolve-reconciliation-issue" ||
-          intent === "ignore-reconciliation-issue" ||
-          intent === "reopen-reconciliation-issue"
-        ? "&saved=finance-reconciliation-issue"
-      : intent === "close-expired"
-        ? "&saved=coin-expiry"
-        : "&saved=coin-recharge-order",
-  );
+  let successSuffix = "&saved=coin-recharge-order";
+
+  if (intent === "manual-credit" || intent === "manual-debit") {
+    successSuffix = "&saved=coin-adjustment";
+  } else if (
+    intent === "flag-reconciliation-issue" ||
+    intent === "assign-reconciliation-issue" ||
+    intent === "review-reconciliation-issue" ||
+    intent === "resolve-reconciliation-issue" ||
+    intent === "ignore-reconciliation-issue" ||
+    intent === "reopen-reconciliation-issue" ||
+    intent === "remind-reconciliation-issue"
+  ) {
+    successSuffix = "&saved=finance-reconciliation-issue";
+  } else if (intent === "close-expired") {
+    successSuffix = "&saved=coin-expiry";
+  }
+
+  return redirectToAdmin(request, successSuffix);
 }

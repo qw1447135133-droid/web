@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminBannerComposer } from "@/components/admin-banner-composer";
+import { AdminEventsPanel } from "@/components/admin-events-panel";
 import { SectionHeading } from "@/components/section-heading";
 import { getAdminAgentsDashboard } from "@/lib/admin-agents";
 import { getAgentPayoutRuntimeConfig } from "@/lib/agent-payout-provider";
 import { getRecentAdminExportTasks } from "@/lib/admin-export-tasks";
 import { getAdminReportsDashboard } from "@/lib/admin-reports";
 import { getAdminSystemDashboard } from "@/lib/admin-system";
+import { getAdminEventsDashboard } from "@/lib/admin-events";
 import {
   applyHomepageModuleMetrics,
   getArticlePlans as getSiteArticlePlans,
@@ -22,6 +24,7 @@ import {
   getFinanceReconciliationIssueSlaMeta,
   getFinanceReconciliationIssueStatusMeta,
   getFinanceReconciliationIssueTypeLabel,
+  getFinanceReconciliationWorkflowStageMeta,
 } from "@/lib/admin-finance";
 import {
   getAdminAssistantHandoffRequests,
@@ -75,6 +78,13 @@ type AdminPredictionResultFilter = "all" | "pending" | "won" | "lost";
 type AdminAiScope = "recent" | "all";
 type AdminAssistantKnowledgeStatusFilter = "all" | "active" | "inactive";
 type AdminAssistantHandoffStatusFilter = "all" | "pending" | "resolved";
+type AdminFinanceIssueQueueFilter = "all" | "overdue" | "unassigned" | "active" | "closed";
+type AdminReportsWindow = 7 | 30 | 90;
+type AdminEventsLeagueStatusFilter = "all" | "active" | "inactive";
+type AdminEventsMatchStatusFilter = "all" | "live" | "upcoming" | "finished";
+type AdminEventsMatchVisibilityFilter = "all" | "visible" | "hidden";
+type AdminEventsAuditStatusFilter = "all" | "success" | "failed";
+type AdminEventsAuditTargetTypeFilter = "all" | "league" | "match";
 const ADMIN_AI_PAGE_SIZE = 12;
 
 function pickValue(value: string | string[] | undefined, fallback: string) {
@@ -88,6 +98,46 @@ function pickValue(value: string | string[] | undefined, fallback: string) {
 function pickPositiveInt(value: string | string[] | undefined, fallback: number) {
   const parsed = Number.parseInt(pickValue(value, String(fallback)), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeAdminFinanceIssueQueueFilter(value: string): AdminFinanceIssueQueueFilter {
+  if (value === "overdue" || value === "unassigned" || value === "active" || value === "closed") {
+    return value;
+  }
+
+  return "all";
+}
+
+function normalizeAdminReportsWindow(value: string): AdminReportsWindow {
+  if (value === "7") {
+    return 7;
+  }
+
+  if (value === "90") {
+    return 90;
+  }
+
+  return 30;
+}
+
+function normalizeAdminEventsLeagueStatusFilter(value: string): AdminEventsLeagueStatusFilter {
+  return value === "active" || value === "inactive" ? value : "all";
+}
+
+function normalizeAdminEventsMatchStatusFilter(value: string): AdminEventsMatchStatusFilter {
+  return value === "live" || value === "upcoming" || value === "finished" ? value : "all";
+}
+
+function normalizeAdminEventsMatchVisibilityFilter(value: string): AdminEventsMatchVisibilityFilter {
+  return value === "visible" || value === "hidden" ? value : "all";
+}
+
+function normalizeAdminEventsAuditStatusFilter(value: string): AdminEventsAuditStatusFilter {
+  return value === "success" || value === "failed" ? value : "all";
+}
+
+function normalizeAdminEventsAuditTargetTypeFilter(value: string): AdminEventsAuditTargetTypeFilter {
+  return value === "league" || value === "match" ? value : "all";
 }
 
 function toDateTimeLocalValue(value?: string) {
@@ -246,6 +296,14 @@ function getTrendMaxValue(
   }>,
 ) {
   return points.reduce((max, item) => Math.max(max, item.impressionCount, item.clickCount), 0);
+}
+
+function getSimpleTrendMaxValue(
+  points: Array<{
+    value: number;
+  }>,
+) {
+  return points.reduce((max, item) => Math.max(max, item.value), 0);
 }
 
 function getReadinessStateMeta(
@@ -1168,6 +1226,8 @@ function FinanceReconciliationIssuesPanel({
   title,
   locale,
   issues,
+  issueTypeOptions,
+  filters,
   summary,
 }: {
   title: string;
@@ -1177,6 +1237,7 @@ function FinanceReconciliationIssuesPanel({
     issueType: string;
     status: "open" | "reviewing" | "resolved" | "ignored";
     severity: "low" | "medium" | "high";
+    workflowStage: "triage" | "investigating" | "awaiting-callback" | "awaiting-finance" | "closed";
     summary: string;
     detail?: string;
     paymentReference?: string;
@@ -1184,6 +1245,9 @@ function FinanceReconciliationIssuesPanel({
     sourceStatus?: string;
     resolutionNote?: string;
     assignedToDisplayName?: string;
+    reminderCount: number;
+    lastRemindedAt?: string;
+    lastReminderNote?: string;
     createdByDisplayName: string;
     resolvedAt?: string;
     createdAt: string;
@@ -1194,6 +1258,14 @@ function FinanceReconciliationIssuesPanel({
     isOverdue: boolean;
     isUnassigned: boolean;
   }>;
+  issueTypeOptions: string[];
+  filters: {
+    status: string;
+    severity: string;
+    issueType: string;
+    queue: AdminFinanceIssueQueueFilter;
+    query: string;
+  };
   summary: {
     openCount: number;
     reviewingCount: number;
@@ -1280,6 +1352,8 @@ function FinanceReconciliationIssuesPanel({
       locale === "en" ? "Created by" : locale === "zh-TW" ? "建立人" : "建立人",
     owner:
       locale === "en" ? "Owner" : locale === "zh-TW" ? "當前跟進" : "当前跟进",
+    stage:
+      locale === "en" ? "Stage" : locale === "zh-TW" ? "處理階段" : "处理阶段",
     assignOwner:
       locale === "en" ? "Assign owner" : locale === "zh-TW" ? "分配跟進人" : "分配跟进人",
     assignPlaceholder:
@@ -1292,6 +1366,64 @@ function FinanceReconciliationIssuesPanel({
       locale === "en" ? "Overdue" : locale === "zh-TW" ? "已逾時" : "已逾时",
     unassigned:
       locale === "en" ? "Unassigned" : locale === "zh-TW" ? "未分配" : "未分配",
+    reminders:
+      locale === "en" ? "Reminders" : locale === "zh-TW" ? "催辦次數" : "催办次数",
+    lastReminder:
+      locale === "en" ? "Last reminder" : locale === "zh-TW" ? "最近催辦" : "最近催办",
+    remind:
+      locale === "en" ? "Remind" : locale === "zh-TW" ? "催辦" : "催办",
+    reminderScan:
+      locale === "en" ? "Run reminder scan" : locale === "zh-TW" ? "執行催辦掃描" : "执行催办扫描",
+    reminderHint:
+      locale === "en"
+        ? "Reminder scan nudges overdue open issues that have not been reminded recently."
+        : locale === "zh-TW"
+          ? "催辦掃描會為逾時且近期未催辦的問題補一次系統催辦。"
+          : "催办扫描会为逾时且近期未催办的问题补一次系统催办。",
+    filterTitle:
+      locale === "en" ? "Queue filters" : locale === "zh-TW" ? "隊列篩選" : "队列筛选",
+    filterStatus:
+      locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态",
+    filterQueue:
+      locale === "en" ? "Queue" : locale === "zh-TW" ? "隊列" : "队列",
+    filterSearch:
+      locale === "en" ? "Search" : locale === "zh-TW" ? "搜尋" : "搜索",
+    filterSearchPlaceholder:
+      locale === "en"
+        ? "Search owner, order, summary, or payment ref"
+        : locale === "zh-TW"
+          ? "搜尋跟進人、訂單號、摘要或支付流水"
+          : "搜索跟进人、订单号、摘要或支付流水",
+    applyFilters:
+      locale === "en" ? "Apply filters" : locale === "zh-TW" ? "套用篩選" : "应用筛选",
+    clearFilters:
+      locale === "en" ? "Clear" : locale === "zh-TW" ? "清除" : "清除",
+    batchTitle:
+      locale === "en" ? "Batch actions" : locale === "zh-TW" ? "批量動作" : "批量动作",
+    batchSelectionHint:
+      locale === "en"
+        ? "Use the multi-select queue to review, resolve, ignore, or remind a group of issues."
+        : locale === "zh-TW"
+          ? "使用多選隊列統一批量轉處理中、解決、忽略或催辦問題。"
+          : "使用多选队列统一批量转处理中、解决、忽略或催办问题。",
+    batchSelectPlaceholder:
+      locale === "en" ? "Select issues" : locale === "zh-TW" ? "選擇問題" : "选择问题",
+    batchReview:
+      locale === "en" ? "Batch review" : locale === "zh-TW" ? "批量轉處理中" : "批量转处理中",
+    batchResolve:
+      locale === "en" ? "Batch resolve" : locale === "zh-TW" ? "批量解決" : "批量解决",
+    batchIgnore:
+      locale === "en" ? "Batch ignore" : locale === "zh-TW" ? "批量忽略" : "批量忽略",
+    batchRemind:
+      locale === "en" ? "Batch remind" : locale === "zh-TW" ? "批量催辦" : "批量催办",
+    all:
+      locale === "en" ? "All" : locale === "zh-TW" ? "全部" : "全部",
+    active:
+      locale === "en" ? "Active" : locale === "zh-TW" ? "進行中" : "进行中",
+    closed:
+      locale === "en" ? "Closed" : locale === "zh-TW" ? "已收口" : "已收口",
+    keepCurrent:
+      locale === "en" ? "Keep current" : locale === "zh-TW" ? "維持現狀" : "维持现状",
   };
 
   return (
@@ -1336,7 +1468,18 @@ function FinanceReconciliationIssuesPanel({
               <span className="rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-xs text-rose-100">
                 {copy.highPriority} {summary.highSeverityOpenCount}
               </span>
-              <form action="/api/admin/finance/recharge-orders" method="post">
+              <div className="flex flex-wrap justify-end gap-2">
+                <form action="/api/admin/finance/recharge-orders" method="post">
+                  <button
+                    type="submit"
+                    name="intent"
+                    value="scan-reconciliation-reminders"
+                    className="rounded-full border border-white/12 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-white/25 hover:text-white"
+                  >
+                    {copy.reminderScan}
+                  </button>
+                </form>
+                <form action="/api/admin/finance/recharge-orders" method="post">
                 <button
                   type="submit"
                   name="intent"
@@ -1345,10 +1488,14 @@ function FinanceReconciliationIssuesPanel({
                 >
                   {copy.scan}
                 </button>
-              </form>
+                </form>
+              </div>
             </div>
           </div>
-          <p className="mt-3 text-xs text-slate-500">{copy.scanHint}</p>
+          <div className="mt-3 space-y-1 text-xs text-slate-500">
+            <p>{copy.scanHint}</p>
+            <p>{copy.reminderHint}</p>
+          </div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="space-y-2 text-sm">
               <span className="text-slate-400">{copy.issueType}</span>
@@ -1357,6 +1504,9 @@ function FinanceReconciliationIssuesPanel({
                 <option value="missing_payment">{getFinanceReconciliationIssueTypeLabel(locale, "missing_payment")}</option>
                 <option value="refund_review">{getFinanceReconciliationIssueTypeLabel(locale, "refund_review")}</option>
                 <option value="stale_pending">{getFinanceReconciliationIssueTypeLabel(locale, "stale_pending")}</option>
+                <option value="duplicate_payment_reference">{getFinanceReconciliationIssueTypeLabel(locale, "duplicate_payment_reference")}</option>
+                <option value="callback_pending_state">{getFinanceReconciliationIssueTypeLabel(locale, "callback_pending_state")}</option>
+                <option value="order_status_conflict">{getFinanceReconciliationIssueTypeLabel(locale, "order_status_conflict")}</option>
               </select>
             </label>
             <label className="space-y-2 text-sm">
@@ -1411,12 +1561,139 @@ function FinanceReconciliationIssuesPanel({
             <p className="text-sm font-medium text-white">{copy.queueTitle}</p>
             <span className="text-xs text-slate-400">{issues.length}</span>
           </div>
+          <form method="get" action="/admin" className="mt-4 rounded-[1rem] border border-white/8 bg-white/[0.02] p-4">
+            <input type="hidden" name="tab" value="finance" />
+            <p className="text-sm font-medium text-white">{copy.filterTitle}</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.filterStatus}</span>
+                <select name="financeIssueStatus" defaultValue={filters.status} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                  <option value="all">{copy.all}</option>
+                  <option value="open">{getFinanceReconciliationIssueStatusMeta("open", locale).label}</option>
+                  <option value="reviewing">{getFinanceReconciliationIssueStatusMeta("reviewing", locale).label}</option>
+                  <option value="resolved">{getFinanceReconciliationIssueStatusMeta("resolved", locale).label}</option>
+                  <option value="ignored">{getFinanceReconciliationIssueStatusMeta("ignored", locale).label}</option>
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.severity}</span>
+                <select name="financeIssueSeverity" defaultValue={filters.severity} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                  <option value="all">{copy.all}</option>
+                  <option value="high">{getFinanceReconciliationIssueSeverityMeta("high", locale).label}</option>
+                  <option value="medium">{getFinanceReconciliationIssueSeverityMeta("medium", locale).label}</option>
+                  <option value="low">{getFinanceReconciliationIssueSeverityMeta("low", locale).label}</option>
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.issueType}</span>
+                <select name="financeIssueType" defaultValue={filters.issueType} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                  <option value="all">{copy.all}</option>
+                  {issueTypeOptions.map((issueType) => (
+                    <option key={`finance-issue-type-${issueType}`} value={issueType}>
+                      {getFinanceReconciliationIssueTypeLabel(locale, issueType)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.filterQueue}</span>
+                <select name="financeIssueQueue" defaultValue={filters.queue} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                  <option value="all">{copy.all}</option>
+                  <option value="active">{copy.active}</option>
+                  <option value="overdue">{copy.overdue}</option>
+                  <option value="unassigned">{copy.unassigned}</option>
+                  <option value="closed">{copy.closed}</option>
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.filterSearch}</span>
+                <input
+                  name="financeIssueQuery"
+                  defaultValue={filters.query}
+                  placeholder={copy.filterSearchPlaceholder}
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="submit" className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15">
+                {copy.applyFilters}
+              </button>
+              <Link href="/admin?tab=finance" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                {copy.clearFilters}
+              </Link>
+            </div>
+          </form>
+          <form action="/api/admin/finance/recharge-orders" method="post" className="mt-4 rounded-[1rem] border border-white/8 bg-white/[0.02] p-4">
+            <p className="text-sm font-medium text-white">{copy.batchTitle}</p>
+            <p className="mt-2 text-sm text-slate-400">{copy.batchSelectionHint}</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.batchSelectPlaceholder}</span>
+                <select
+                  name="issueIds"
+                  multiple
+                  size={Math.min(Math.max(issues.length, 4), 10)}
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                >
+                  {issues.map((issue) => (
+                    <option key={`finance-batch-issue-${issue.id}`} value={issue.id}>
+                      {issue.rechargeOrderNo ? `${issue.rechargeOrderNo} / ` : ""}{issue.summary}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.stage}</span>
+                <select name="workflowStage" defaultValue="" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                  <option value="">{copy.keepCurrent}</option>
+                  <option value="triage">{getFinanceReconciliationWorkflowStageMeta("triage", locale).label}</option>
+                  <option value="investigating">{getFinanceReconciliationWorkflowStageMeta("investigating", locale).label}</option>
+                  <option value="awaiting-callback">{getFinanceReconciliationWorkflowStageMeta("awaiting-callback", locale).label}</option>
+                  <option value="awaiting-finance">{getFinanceReconciliationWorkflowStageMeta("awaiting-finance", locale).label}</option>
+                  <option value="closed">{getFinanceReconciliationWorkflowStageMeta("closed", locale).label}</option>
+                </select>
+              </label>
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.assignOwner}</span>
+                <input
+                  name="assignedToDisplayName"
+                  placeholder={copy.assignPlaceholder}
+                  className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                />
+              </label>
+            </div>
+            <label className="mt-3 block space-y-2 text-sm">
+              <span className="text-slate-400">{copy.detail}</span>
+              <textarea
+                name="reason"
+                rows={3}
+                placeholder={copy.notePlaceholder}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="submit" name="intent" value="batch-review-reconciliation-issues" className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm text-cyan-100 transition hover:bg-cyan-300/15">
+                {copy.batchReview}
+              </button>
+              <button type="submit" name="intent" value="batch-resolve-reconciliation-issues" className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:bg-lime-300/15">
+                {copy.batchResolve}
+              </button>
+              <button type="submit" name="intent" value="batch-ignore-reconciliation-issues" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                {copy.batchIgnore}
+              </button>
+              <button type="submit" name="intent" value="batch-remind-reconciliation-issues" className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15">
+                {copy.batchRemind}
+              </button>
+            </div>
+          </form>
           <div className="mt-4 grid gap-4">
             {issues.length > 0 ? (
               issues.map((issue) => {
                 const statusMeta = getFinanceReconciliationIssueStatusMeta(issue.status, locale);
                 const severityMeta = getFinanceReconciliationIssueSeverityMeta(issue.severity, locale);
                 const slaMeta = getFinanceReconciliationIssueSlaMeta(issue, locale);
+                const workflowStageMeta = getFinanceReconciliationWorkflowStageMeta(issue.workflowStage, locale);
 
                 return (
                   <div key={issue.id} className="rounded-[1.1rem] border border-white/8 bg-slate-950/40 p-4">
@@ -1431,17 +1708,22 @@ function FinanceReconciliationIssuesPanel({
                       <div className="flex flex-wrap gap-2">
                         <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(statusMeta.tone)}`}>{statusMeta.label}</span>
                         <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(severityMeta.tone)}`}>{severityMeta.label}</span>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(workflowStageMeta.tone)}`}>{workflowStageMeta.label}</span>
                         <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(slaMeta.tone)}`}>{slaMeta.label}</span>
                       </div>
                     </div>
                     {issue.detail ? <p className="mt-3 text-sm text-slate-300">{issue.detail}</p> : null}
                     {issue.resolutionNote ? <p className="mt-3 text-sm text-lime-100">{issue.resolutionNote}</p> : null}
+                    {issue.lastReminderNote ? <p className="mt-3 text-sm text-orange-100">{issue.lastReminderNote}</p> : null}
                     <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
                         {copy.createdBy} {issue.createdByDisplayName}
                       </span>
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
                         {copy.owner} {issue.assignedToDisplayName ?? "--"}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                        {copy.reminders} {issue.reminderCount}
                       </span>
                       {issue.isUnassigned ? (
                         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
@@ -1468,8 +1750,13 @@ function FinanceReconciliationIssuesPanel({
                           {copy.resolvedAt} {formatDateTime(issue.resolvedAt, locale)}
                         </span>
                       ) : null}
+                      {issue.lastRemindedAt ? (
+                        <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1 text-orange-100">
+                          {copy.lastReminder} {formatDateTime(issue.lastRemindedAt, locale)}
+                        </span>
+                      ) : null}
                     </div>
-                    <form action="/api/admin/finance/recharge-orders" method="post" className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
+                    <form action="/api/admin/finance/recharge-orders" method="post" className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,0.8fr)_auto]">
                       <input type="hidden" name="issueId" value={issue.id} />
                       <input
                         name="reason"
@@ -1482,6 +1769,17 @@ function FinanceReconciliationIssuesPanel({
                         placeholder={copy.assignPlaceholder}
                         className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-500"
                       />
+                      <select
+                        name="workflowStage"
+                        defaultValue={issue.workflowStage}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                      >
+                        <option value="triage">{getFinanceReconciliationWorkflowStageMeta("triage", locale).label}</option>
+                        <option value="investigating">{getFinanceReconciliationWorkflowStageMeta("investigating", locale).label}</option>
+                        <option value="awaiting-callback">{getFinanceReconciliationWorkflowStageMeta("awaiting-callback", locale).label}</option>
+                        <option value="awaiting-finance">{getFinanceReconciliationWorkflowStageMeta("awaiting-finance", locale).label}</option>
+                        <option value="closed">{getFinanceReconciliationWorkflowStageMeta("closed", locale).label}</option>
+                      </select>
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="submit"
@@ -1490,6 +1788,14 @@ function FinanceReconciliationIssuesPanel({
                           className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
                         >
                           {copy.assign}
+                        </button>
+                        <button
+                          type="submit"
+                          name="intent"
+                          value="remind-reconciliation-issue"
+                          className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15"
+                        >
+                          {copy.remind}
                         </button>
                         {issue.status === "open" ? (
                           <button
@@ -1734,6 +2040,122 @@ function FinanceCoinLedgerPanel({
   );
 }
 
+function ReportsTrendCardsPanel({
+  locale,
+  reportsWindow,
+  trendCards,
+}: {
+  locale: Locale;
+  reportsWindow: AdminReportsWindow;
+  trendCards: Array<{
+    key: string;
+    title: string;
+    description: string;
+    value: string;
+    tone: "good" | "warn" | "neutral";
+    points: Array<{
+      label: string;
+      value: number;
+    }>;
+  }>;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="section-label">{locale === "en" ? "Trend center" : locale === "zh-TW" ? "趨勢中心" : "趋势中心"}</p>
+          <h3 className="mt-2 text-xl font-semibold text-white">
+            {locale === "en" ? "Long-range business trends" : locale === "zh-TW" ? "長週期業務趨勢" : "长周期业务趋势"}
+          </h3>
+          <p className="mt-2 text-sm text-slate-400">
+            {locale === "en"
+              ? "Daily facts now power revenue, coin movement, conversion, and settlement trend cards."
+              : locale === "zh-TW"
+                ? "報表已按日聚合核心事實，供營收、球幣變動、轉化與結算趨勢共用。"
+                : "报表已按日聚合核心事实，供营收、球币变动、转化与结算趋势共用。"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {[7, 30, 90].map((windowValue) => {
+            const active = reportsWindow === windowValue;
+
+            return (
+              <Link
+                key={`reports-window-${windowValue}`}
+                href={`/admin?tab=reports&reportsWindow=${windowValue}`}
+                className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                  active
+                    ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
+                    : "border-white/10 text-slate-300 hover:border-white/25 hover:text-white"
+                }`}
+              >
+                {windowValue}
+                {locale === "en" ? "D" : " 天"}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-5 grid gap-4 xl:grid-cols-5">
+        {trendCards.map((card) => {
+          const maxValue = getSimpleTrendMaxValue(card.points);
+
+          return (
+            <div key={card.key} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-white">{card.title}</p>
+                  <p className="mt-2 text-sm text-slate-400">{card.description}</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs ${getExpansionToneClass(card.tone)}`}>{card.value}</span>
+              </div>
+              <div className="mt-4 flex h-24 items-end gap-1">
+                {card.points.map((point, index) => {
+                  const height = maxValue > 0 ? Math.max(10, Math.round((point.value / maxValue) * 100)) : 10;
+
+                  return (
+                    <div key={`${card.key}-${point.label}-${index}`} className="group relative flex min-w-0 flex-1 justify-center">
+                      <div
+                        className={`w-full rounded-t-full ${
+                          card.tone === "good"
+                            ? "bg-lime-300/55"
+                            : card.tone === "warn"
+                              ? "bg-orange-300/55"
+                              : "bg-sky-300/45"
+                        }`}
+                        style={{ height: `${height}%` }}
+                      />
+                      <div className="pointer-events-none absolute bottom-full mb-2 hidden rounded-xl border border-white/10 bg-slate-950/95 px-2 py-1 text-[11px] text-white shadow-2xl group-hover:block">
+                        {point.label}: {point.value}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex justify-between gap-2 text-[11px] text-slate-500">
+                <span>{card.points[0]?.label ?? "--"}</span>
+                <span>{card.points[card.points.length - 1]?.label ?? "--"}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+          POST /api/internal/reports/daily-facts
+        </span>
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+          {locale === "en"
+            ? "Bearer REPORTS_TRIGGER_TOKEN or SYNC_TRIGGER_TOKEN"
+            : locale === "zh-TW"
+              ? "Bearer REPORTS_TRIGGER_TOKEN 或 SYNC_TRIGGER_TOKEN"
+              : "Bearer REPORTS_TRIGGER_TOKEN 或 SYNC_TRIGGER_TOKEN"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function formatPercentValue(value: number) {
   return `${value.toFixed(1)}%`;
 }
@@ -1963,8 +2385,29 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const editFeaturedSlotId = pickValue(resolved.editFeaturedSlot, "");
   const editModuleId = pickValue(resolved.editModule, "");
   const editAnnouncementId = pickValue(resolved.editAnnouncement, "");
+  const editLeagueId = pickValue(resolved.editLeague, "");
+  const editMatchId = pickValue(resolved.editMatch, "");
   const editPredictionId = pickValue(resolved.editPrediction, "");
   const editKnowledgeId = pickValue(resolved.editKnowledge, "");
+  const eventsSport = normalizeAdminSportFilter(pickValue(resolved.eventsSport, "all"));
+  const eventsLeagueStatus = normalizeAdminEventsLeagueStatusFilter(
+    pickValue(resolved.eventsLeagueStatus, "all"),
+  );
+  const eventsMatchStatus = normalizeAdminEventsMatchStatusFilter(
+    pickValue(resolved.eventsMatchStatus, "all"),
+  );
+  const eventsMatchVisibility = normalizeAdminEventsMatchVisibilityFilter(
+    pickValue(resolved.eventsMatchVisibility ?? resolved.eventsVisibility, "all"),
+  );
+  const eventsAuditStatus = normalizeAdminEventsAuditStatusFilter(
+    pickValue(resolved.eventsAuditStatus, "all"),
+  );
+  const eventsAuditTargetType = normalizeAdminEventsAuditTargetTypeFilter(
+    pickValue(resolved.eventsAuditTargetType, "all"),
+  );
+  const eventsAuditAction = pickValue(resolved.eventsAuditAction, "all").trim() || "all";
+  const eventsAuditQuery = pickValue(resolved.eventsAuditQuery, "").trim();
+  const eventsQuery = pickValue(resolved.eventsQuery, "").trim();
   const contentSport = normalizeAdminSportFilter(pickValue(resolved.contentSport, "all"));
   const contentAuthorId = pickValue(resolved.contentAuthorId, "").trim();
   const contentPlanStatus = normalizeAdminPlanStatusFilter(pickValue(resolved.contentPlanStatus, "all"));
@@ -1985,6 +2428,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const financeFailed = pickPositiveInt(resolved.financeFailed, 0);
   const financeSkipped = pickPositiveInt(resolved.financeSkipped, 0);
   const financeTotal = pickPositiveInt(resolved.financeTotal, 0);
+  const financeIssueStatus = pickValue(resolved.financeIssueStatus, "all").trim();
+  const financeIssueSeverity = pickValue(resolved.financeIssueSeverity, "all").trim();
+  const financeIssueType = pickValue(resolved.financeIssueType, "all").trim();
+  const financeIssueQueue = normalizeAdminFinanceIssueQueueFilter(
+    pickValue(resolved.financeIssueQueue, "all").trim(),
+  );
+  const financeIssueQuery = pickValue(resolved.financeIssueQuery, "").trim();
   const agentProcessed = pickPositiveInt(resolved.agentProcessed, 0);
   const agentFailed = pickPositiveInt(resolved.agentFailed, 0);
   const agentSkipped = pickPositiveInt(resolved.agentSkipped, 0);
@@ -1992,6 +2442,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const reportTaskId = pickValue(resolved.reportTaskId, "");
   const reportTaskStatus = pickValue(resolved.reportTaskStatus, "");
   const reportScope = pickValue(resolved.reportScope, "");
+  const reportsWindow = normalizeAdminReportsWindow(pickValue(resolved.reportsWindow, "30"));
   const orderQuery = pickValue(resolved.q, "");
   const orderStatus = normalizeAdminOrderFilterStatus(pickValue(resolved.orderStatus, "all"));
   const orderType = normalizeAdminOrderFilterType(pickValue(resolved.orderType, "all"));
@@ -2000,7 +2451,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const membershipPage = pickPositiveInt(resolved.membershipPage, 1);
   const contentPage = pickPositiveInt(resolved.contentPage, 1);
 
-  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard, agentsDashboard, reportsDashboard, exportTasks, systemDashboard] = await Promise.all([
+  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard, agentsDashboard, reportsDashboard, exportTasks, systemDashboard, eventsDashboard] = await Promise.all([
     getMatchesBySport("football", locale),
     getMatchesBySport("basketball", locale),
     getMatchesBySport("cricket", locale),
@@ -2034,9 +2485,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     getAdminAssistantHandoffRequests(),
     getAdminFinanceDashboard(locale),
     getAdminAgentsDashboard(locale),
-    getAdminReportsDashboard(locale),
+    getAdminReportsDashboard(locale, { trendWindowDays: reportsWindow }),
     getRecentAdminExportTasks(),
     getAdminSystemDashboard(locale),
+    getAdminEventsDashboard({
+      sport: eventsSport,
+      leagueStatus: eventsLeagueStatus,
+      matchStatus: eventsMatchStatus,
+      matchVisibility: eventsMatchVisibility,
+      query: eventsQuery,
+      auditStatus: eventsAuditStatus,
+      auditAction: eventsAuditAction,
+      auditTargetType: eventsAuditTargetType,
+      auditQuery: eventsAuditQuery,
+    }),
   ]);
 
   const matches = [...footballMatches, ...basketballMatches, ...cricketMatches, ...esportsMatches];
@@ -2071,6 +2533,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     homepageModuleRuntimePreview.map((module) => [module.key ?? module.id, module.metric]),
   );
   const currentAnnouncement = siteAnnouncements.find((item) => item.id === editAnnouncementId);
+  const currentLeagueRecord = eventsDashboard.leagues.find((item) => item.id === editLeagueId);
+  const currentMatchRecord = eventsDashboard.matches.find((item) => item.id === editMatchId);
   const currentPrediction = predictionRecords.find((item) => item.id === editPredictionId);
   const currentKnowledgeItem = supportKnowledgeItems.find((item) => item.id === editKnowledgeId);
   const assistantAdminCopy = getAssistantAdminCopy(locale, Boolean(currentKnowledgeItem));
@@ -2350,6 +2814,62 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : error === "sync"
           ? opsCopy.sync.syncFailed
           : null;
+  const eventsNotice =
+    saved === "event-league"
+      ? locale === "en"
+        ? "League changes were saved."
+        : locale === "zh-TW"
+          ? "聯賽配置已保存。"
+          : "联赛配置已保存。"
+      : saved === "event-league-status"
+        ? locale === "en"
+          ? "League status was updated."
+          : locale === "zh-TW"
+            ? "聯賽狀態已更新。"
+            : "联赛状态已更新。"
+      : saved === "event-league-featured"
+        ? locale === "en"
+          ? "League featured flag was updated."
+          : locale === "zh-TW"
+            ? "聯賽熱門標記已更新。"
+            : "联赛热门标记已更新。"
+      : saved === "event-league-sort"
+        ? locale === "en"
+          ? "League sort order was updated."
+          : locale === "zh-TW"
+            ? "聯賽排序已更新。"
+            : "联赛排序已更新。"
+      : saved === "event-league-override"
+        ? locale === "en"
+          ? "League manual override was cleared."
+          : locale === "zh-TW"
+            ? "聯賽人工覆蓋已清除。"
+            : "联赛人工覆盖已清除。"
+      : saved === "event-match"
+        ? locale === "en"
+          ? "Match changes were saved."
+          : locale === "zh-TW"
+            ? "賽事配置已保存。"
+            : "赛事配置已保存。"
+      : saved === "event-match-visibility"
+        ? locale === "en"
+          ? "Match visibility was updated."
+          : locale === "zh-TW"
+            ? "賽事可見狀態已更新。"
+            : "赛事可见状态已更新。"
+      : saved === "event-match-override"
+        ? locale === "en"
+          ? "Match manual override was cleared."
+          : locale === "zh-TW"
+            ? "賽事人工覆蓋已清除。"
+            : "赛事人工覆盖已清除。"
+      : error === "events" || error === "event-admin"
+        ? locale === "en"
+          ? "Event workspace update failed."
+          : locale === "zh-TW"
+            ? "賽事工作台更新失敗。"
+            : "赛事工作台更新失败。"
+        : null;
 
   const refundNotice =
     saved === "refund"
@@ -2388,6 +2908,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           : locale === "zh-TW"
             ? `對帳掃描已完成：新增 ${financeProcessed}/${financeTotal}，跳過 ${financeSkipped}，失敗 ${financeFailed}。`
             : `对账扫描已完成：新增 ${financeProcessed}/${financeTotal}，跳过 ${financeSkipped}，失败 ${financeFailed}。`
+      : saved === "finance-reconciliation-reminder-scan"
+        ? locale === "en"
+          ? `Reminder scan completed: ${financeProcessed}/${financeTotal} issues reminded, ${financeSkipped} skipped, ${financeFailed} failed.`
+          : locale === "zh-TW"
+            ? `催辦掃描已完成：催辦 ${financeProcessed}/${financeTotal}，跳過 ${financeSkipped}，失敗 ${financeFailed}。`
+            : `催办扫描已完成：催办 ${financeProcessed}/${financeTotal}，跳过 ${financeSkipped}，失败 ${financeFailed}。`
+      : saved === "finance-reconciliation-batch"
+        ? locale === "en"
+          ? `Batch reconciliation actions completed: ${financeProcessed}/${financeTotal} processed, ${financeSkipped} skipped, ${financeFailed} failed.`
+          : locale === "zh-TW"
+            ? `批量對帳處理已完成：成功 ${financeProcessed}/${financeTotal}，跳過 ${financeSkipped}，失敗 ${financeFailed}。`
+            : `批量对账处理已完成：成功 ${financeProcessed}/${financeTotal}，跳过 ${financeSkipped}，失败 ${financeFailed}。`
       : saved === "coin-expiry"
         ? locale === "en"
           ? "Expired recharge cleanup completed."
@@ -2568,6 +3100,57 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     financeDashboard.settlementRows.length > 0
       ? financeDashboard.settlementRows
       : adminExpansion.finance.settlements.rows;
+  const filteredFinanceReconciliationIssues = financeDashboard.reconciliationIssues.filter((issue) => {
+    if (financeIssueStatus !== "all" && issue.status !== financeIssueStatus) {
+      return false;
+    }
+
+    if (financeIssueSeverity !== "all" && issue.severity !== financeIssueSeverity) {
+      return false;
+    }
+
+    if (financeIssueType !== "all" && issue.issueType !== financeIssueType) {
+      return false;
+    }
+
+    if (financeIssueQueue === "overdue" && !issue.isOverdue) {
+      return false;
+    }
+
+    if (financeIssueQueue === "unassigned" && !issue.isUnassigned) {
+      return false;
+    }
+
+    if (financeIssueQueue === "active" && issue.status !== "open" && issue.status !== "reviewing") {
+      return false;
+    }
+
+    if (financeIssueQueue === "closed" && issue.status !== "resolved" && issue.status !== "ignored") {
+      return false;
+    }
+
+    if (!financeIssueQuery) {
+      return true;
+    }
+
+    const haystack = [
+      issue.summary,
+      issue.detail ?? "",
+      issue.paymentReference ?? "",
+      issue.rechargeOrderNo ?? "",
+      issue.assignedToDisplayName ?? "",
+      issue.createdByDisplayName,
+      issue.reasonCode ?? "",
+      issue.sourceStatus ?? "",
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(financeIssueQuery.toLowerCase());
+  });
+  const financeIssueTypeOptions = Array.from(
+    new Set(financeDashboard.reconciliationIssues.map((issue) => issue.issueType)),
+  ).sort((left, right) => left.localeCompare(right));
   const sortedMatches = [...matches].sort((left, right) => new Date(left.kickoff).getTime() - new Date(right.kickoff).getTime());
   const matchLookup = new Map(sortedMatches.map((match) => [match.id, match]));
   const currentFeaturedSlotMatchValue =
@@ -2817,6 +3400,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {syncNotice}
             </div>
           ) : null}
+          {eventsNotice ? (
+            <div
+              className={`mt-6 rounded-[1.2rem] border px-4 py-3 text-sm ${
+                error === "events"
+                  ? "border-rose-300/25 bg-rose-400/10 text-rose-100"
+                  : "border-lime-300/20 bg-lime-300/10 text-lime-100"
+              }`}
+            >
+              {eventsNotice}
+            </div>
+          ) : null}
           <div className="mt-6 rounded-[1.35rem] border border-sky-300/20 bg-sky-400/10 p-5">
             <p className="text-sm font-medium text-sky-100">{opsCopy.sync.dashboardTitle}</p>
             <p className="mt-2 text-sm text-sky-100/85">{opsCopy.sync.dashboardDescription}</p>
@@ -2948,21 +3542,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             <ExpansionRowsPanel title={adminExpansion.events.manualPatches.title} rows={adminExpansion.events.manualPatches.rows} />
             <ExpansionRowsPanel title={adminExpansion.events.leagues.title} rows={adminExpansion.events.leagues.rows} />
           </div>
-          <div className="mt-6 grid gap-4">
-            {matches.map((match) => (
-              <div key={match.id} className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="font-medium text-white">
-                    {match.homeTeam} vs {match.awayTeam}
-                  </p>
-                  <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">
-                    {matchStatusLabels[match.status]}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-slate-400">{match.insight}</p>
-              </div>
-            ))}
-          </div>
+          <AdminEventsPanel
+            locale={locale}
+            displayLocale={displayLocale}
+            dashboard={eventsDashboard}
+            sportFilter={eventsSport}
+            leagueStatusFilter={eventsLeagueStatus}
+            matchStatusFilter={eventsMatchStatus}
+            matchVisibilityFilter={eventsMatchVisibility}
+            auditStatusFilter={eventsAuditStatus}
+            auditActionFilter={eventsAuditAction}
+            auditTargetTypeFilter={eventsAuditTargetType}
+            auditQueryFilter={eventsAuditQuery}
+            query={eventsQuery}
+            currentLeague={currentLeagueRecord}
+            currentMatch={currentMatchRecord}
+          />
         </section>
       ) : null}
 
@@ -5338,7 +5933,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 error === "coin-adjustment" ||
                 error === "coin-adjustment-balance" ||
                 error === "batch-coin-adjustment" ||
-                error === "batch-coin-recharge-order"
+                error === "batch-coin-recharge-order" ||
+                error === "finance-reconciliation-issue"
                   ? "border-rose-300/25 bg-rose-400/10 text-rose-100"
                   : "border-lime-300/20 bg-lime-300/10 text-lime-100"
               }`}
@@ -5586,6 +6182,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                       POST /api/internal/finance/reconciliation-scan
                     </span>
                     <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
+                      POST /api/internal/finance/reminder-scan
+                    </span>
+                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-300">
                       {locale === "en"
                         ? "Bearer FINANCE_TRIGGER_TOKEN or SYNC_TRIGGER_TOKEN"
                         : locale === "zh-TW"
@@ -5716,7 +6315,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             <FinanceReconciliationIssuesPanel
               title={locale === "en" ? "Reconciliation issue center" : locale === "zh-TW" ? "對帳問題中心" : "对账问题中心"}
               locale={locale}
-              issues={financeDashboard.reconciliationIssues}
+              issues={filteredFinanceReconciliationIssues}
+              issueTypeOptions={financeIssueTypeOptions}
+              filters={{
+                status: financeIssueStatus,
+                severity: financeIssueSeverity,
+                issueType: financeIssueType,
+                queue: financeIssueQueue,
+                query: financeIssueQuery,
+              }}
               summary={financeDashboard.reconciliationSummary}
             />
           </div>
@@ -7147,6 +7754,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           <div className="mt-6">
             <ExpansionMetricGrid items={reportsDashboard.agentBiMetrics} />
           </div>
+          <div className="mt-6">
+            <ReportsTrendCardsPanel
+              locale={locale}
+              reportsWindow={reportsWindow}
+              trendCards={reportsDashboard.trendCards}
+            />
+          </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
             <ExpansionRowsPanel
               title={locale === "en" ? "Revenue and conversion" : locale === "zh-TW" ? "營收與轉化" : "营收与转化"}
@@ -7197,6 +7811,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   </div>
                   <form action="/api/admin/reports/tasks" method="post" className="mt-4">
                     <input type="hidden" name="scope" value={item.scope} />
+                    <input type="hidden" name="reportsWindow" value={reportsWindow} />
                     <button
                       type="submit"
                       className="inline-flex items-center justify-center rounded-full border border-sky-300/25 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20"

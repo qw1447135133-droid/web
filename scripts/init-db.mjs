@@ -561,6 +561,19 @@ db.exec(`
       ON DELETE SET NULL ON UPDATE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS "AdminReportDailyFact" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "metricDate" DATETIME NOT NULL,
+    "scope" TEXT NOT NULL DEFAULT 'overview',
+    "metricKey" TEXT NOT NULL,
+    "dimensionKey" TEXT NOT NULL DEFAULT '',
+    "countValue" INTEGER NOT NULL DEFAULT 0,
+    "amountValue" INTEGER NOT NULL DEFAULT 0,
+    "extraJson" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS "FinanceReconciliationIssue" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "scope" TEXT NOT NULL DEFAULT 'coin-recharge',
@@ -607,6 +620,10 @@ db.exec(`
     "status" TEXT NOT NULL DEFAULT 'active',
     "featured" BOOLEAN NOT NULL DEFAULT false,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "adminLockedFields" TEXT,
+    "adminOverrideJson" TEXT,
+    "adminNote" TEXT,
+    "adminEditedAt" DATETIME,
     "lastSyncedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -657,6 +674,10 @@ db.exec(`
     "statLine" TEXT,
     "insight" TEXT,
     "adminVisible" BOOLEAN NOT NULL DEFAULT true,
+    "adminLockedFields" TEXT,
+    "adminOverrideJson" TEXT,
+    "adminNote" TEXT,
+    "adminEditedAt" DATETIME,
     "lastSyncedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1207,6 +1228,15 @@ ensureColumn("CoinRechargeOrder", "refundReason", "TEXT");
 ensureColumn("CoinRechargeOrder", "creditedAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "createdAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "updatedAt", "DATETIME");
+ensureColumn("AdminReportDailyFact", "metricDate", "DATETIME");
+ensureColumn("AdminReportDailyFact", "scope", "TEXT DEFAULT 'overview'");
+ensureColumn("AdminReportDailyFact", "metricKey", "TEXT");
+ensureColumn("AdminReportDailyFact", "dimensionKey", "TEXT DEFAULT ''");
+ensureColumn("AdminReportDailyFact", "countValue", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("AdminReportDailyFact", "amountValue", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("AdminReportDailyFact", "extraJson", "TEXT");
+ensureColumn("AdminReportDailyFact", "createdAt", "DATETIME");
+ensureColumn("AdminReportDailyFact", "updatedAt", "DATETIME");
 ensureColumn("FinanceReconciliationIssue", "scope", "TEXT DEFAULT 'coin-recharge'");
 ensureColumn("FinanceReconciliationIssue", "issueType", "TEXT DEFAULT 'manual_review'");
 ensureColumn("FinanceReconciliationIssue", "status", "TEXT DEFAULT 'open'");
@@ -1246,7 +1276,15 @@ ensureColumn("UserMembershipEvent", "createdByDisplayName", "TEXT");
 ensureColumn("UserMembershipEvent", "createdAt", "DATETIME");
 ensureColumn("UserMembershipEvent", "userId", "TEXT");
 ensureColumn("League", "status", "TEXT DEFAULT 'active'");
+ensureColumn("League", "adminLockedFields", "TEXT");
+ensureColumn("League", "adminOverrideJson", "TEXT");
+ensureColumn("League", "adminNote", "TEXT");
+ensureColumn("League", "adminEditedAt", "DATETIME");
 ensureColumn("Match", "adminVisible", "BOOLEAN NOT NULL DEFAULT true");
+ensureColumn("Match", "adminLockedFields", "TEXT");
+ensureColumn("Match", "adminOverrideJson", "TEXT");
+ensureColumn("Match", "adminNote", "TEXT");
+ensureColumn("Match", "adminEditedAt", "DATETIME");
 ensureColumn("AgentCommissionLedger", "rechargeAmount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("AgentCommissionLedger", "kind", "TEXT NOT NULL DEFAULT 'direct'");
 ensureColumn("AgentCommissionLedger", "commissionRate", "REAL NOT NULL DEFAULT 0");
@@ -1329,9 +1367,14 @@ ensureColumn("AssistantHandoffRequest", "status", "TEXT DEFAULT 'pending'");
 ensureColumn("AssistantHandoffRequest", "createdAt", "DATETIME");
 ensureColumn("AssistantHandoffRequest", "updatedAt", "DATETIME");
 ensureColumn("AssistantHandoffRequest", "userId", "TEXT");
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "AdminReportDailyFact_metricDate_scope_metricKey_dimensionKey_key" ON "AdminReportDailyFact"("metricDate", "scope", "metricKey", "dimensionKey");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "AdminReportDailyFact_metricDate_idx" ON "AdminReportDailyFact"("metricDate");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "AdminReportDailyFact_scope_metricKey_metricDate_idx" ON "AdminReportDailyFact"("scope", "metricKey", "metricDate");`);
 db.exec(`CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_workflowStage_updatedAt_idx" ON "FinanceReconciliationIssue"("workflowStage", "updatedAt");`);
 db.exec(`CREATE INDEX IF NOT EXISTS "League_sport_status_sortOrder_idx" ON "League"("sport", "status", "sortOrder");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "League_updatedAt_adminEditedAt_idx" ON "League"("updatedAt", "adminEditedAt");`);
 db.exec(`CREATE INDEX IF NOT EXISTS "Match_adminVisible_kickoff_idx" ON "Match"("adminVisible", "kickoff");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "Match_updatedAt_adminEditedAt_idx" ON "Match"("updatedAt", "adminEditedAt");`);
 db.exec(`CREATE INDEX IF NOT EXISTS "ArticlePlan_matchId_idx" ON "ArticlePlan"("matchId");`);
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_key_key" ON "HomepageFeaturedMatchSlot"("key");`);
 db.exec(`CREATE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_status_sortOrder_idx" ON "HomepageFeaturedMatchSlot"("status", "sortOrder");`);

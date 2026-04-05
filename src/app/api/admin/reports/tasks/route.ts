@@ -32,6 +32,10 @@ export async function POST(request: NextRequest) {
   const currentUser = await getCurrentUserRecord();
   const formData = await request.formData();
   const scope = normalizeAdminReportExportScope(String(formData.get("scope") || "orders"));
+  const reportsWindow = Number.parseInt(String(formData.get("reportsWindow") || "30"), 10);
+  const filtersJson = JSON.stringify({
+    reportsWindow: reportsWindow === 7 || reportsWindow === 90 ? reportsWindow : 30,
+  });
   const ipAddress = getRequestIp(request);
 
   try {
@@ -39,6 +43,7 @@ export async function POST(request: NextRequest) {
       scope,
       requestedByDisplayName: session.displayName,
       requestedByUserId: currentUser?.id,
+      filtersJson,
     });
 
     await recordAdminAuditLog({
@@ -49,7 +54,7 @@ export async function POST(request: NextRequest) {
       scope: "reports.export-task",
       targetType: "admin-export-task",
       targetId: task.id,
-      detail: `scope: ${task.scope} | status: ${task.status} | rows: ${task.rowCount}`,
+      detail: `scope: ${task.scope} | status: ${task.status} | rows: ${task.rowCount} | filters: ${filtersJson}`,
       ipAddress,
     });
 

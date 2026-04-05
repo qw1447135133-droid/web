@@ -518,6 +518,23 @@ model AdminExportTask {
   @@index([scope, createdAt])
 }
 
+model AdminReportDailyFact {
+  id           String   @id @default(cuid())
+  metricDate   DateTime
+  scope        String   @default("overview")
+  metricKey    String
+  dimensionKey String   @default("")
+  countValue   Int      @default(0)
+  amountValue  Int      @default(0)
+  extraJson    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([metricDate, scope, metricKey, dimensionKey])
+  @@index([metricDate])
+  @@index([scope, metricKey, metricDate])
+}
+
 model FinanceReconciliationIssue {
   id                    String             @id @default(cuid())
   scope                 String             @default("coin-recharge")
@@ -566,6 +583,10 @@ model League {
   status           String             @default("active")
   featured         Boolean            @default(false)
   sortOrder        Int                @default(0)
+  adminLockedFields String?
+  adminOverrideJson String?
+  adminNote        String?
+  adminEditedAt    DateTime?
   lastSyncedAt     DateTime?
   teams            Team[]
   matches          Match[]
@@ -579,6 +600,8 @@ model League {
 
   @@unique([source, sourceKey])
   @@index([sport, featured, sortOrder])
+  @@index([sport, status, sortOrder])
+  @@index([updatedAt, adminEditedAt])
 }
 
 model Team {
@@ -634,6 +657,10 @@ model Match {
   statLine      String?
   insight       String?
   adminVisible  Boolean            @default(true)
+  adminLockedFields String?
+  adminOverrideJson String?
+  adminNote     String?
+  adminEditedAt DateTime?
   lastSyncedAt  DateTime?
   oddsSnapshots OddsSnapshot[]
   predictions   PredictionRecord[]
@@ -646,6 +673,8 @@ model Match {
   @@index([sport, kickoff])
   @@index([leagueId, kickoff])
   @@index([status, kickoff])
+  @@index([adminVisible, kickoff])
+  @@index([updatedAt, adminEditedAt])
 }
 
 model OddsSnapshot {

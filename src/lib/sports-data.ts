@@ -241,52 +241,48 @@ function buildFallbackDatabaseSnapshot(sport: Sport, leagueSlug: string, locale:
 }
 
 export async function getSportsDataMode() {
-  return "api-sports-free-primary-with-archive-database-and-cricket-esports-fallback";
+  return "database-aggregate-primary-with-api-sports-sync-and-fallback";
 }
 
 export async function getTrackedLeagues(sport: Sport, locale: Locale = defaultLocale): Promise<League[]> {
-  if (sport === "cricket" || sport === "esports") {
-    return fallbackLeagues(sport, locale);
-  }
-
-  try {
-    const leagues = await getApiSportsTrackedLeagues(sport);
-
-    if (leagues.length > 0) {
-      return leagues.map((league) => localizeLeague(league, locale));
-    }
-  } catch {
-    // Fall through to stored and mock providers below.
-  }
-
   const storedLeagues = await getStoredLeaguesBySport(sport);
 
   if (storedLeagues.length > 0) {
     return storedLeagues.map((league) => localizeLeague(league, locale));
   }
 
+  if (sport !== "cricket" && sport !== "esports") {
+    try {
+      const leagues = await getApiSportsTrackedLeagues(sport);
+
+      if (leagues.length > 0) {
+        return leagues.map((league) => localizeLeague(league, locale));
+      }
+    } catch {
+      // Fall through to mock providers below.
+    }
+  }
+
   return fallbackLeagues(sport, locale);
 }
 
 export async function getMatchesBySport(sport: Sport, locale: Locale = defaultLocale): Promise<Match[]> {
-  if (sport === "cricket" || sport === "esports") {
-    return fallbackMatches(sport, locale);
-  }
-
-  try {
-    const matches = await getApiSportsMatchesBySport(sport);
-
-    if (matches.length > 0) {
-      return sortMatches(matches.map((match) => withLeagueName(match, locale)));
-    }
-  } catch {
-    // Fall through to stored and mock providers below.
-  }
-
   const storedMatches = await getStoredMatchesBySport(sport);
 
   if (storedMatches.length > 0) {
     return sortMatches(storedMatches.map((match) => withLeagueName(match, locale)));
+  }
+
+  if (sport !== "cricket" && sport !== "esports") {
+    try {
+      const matches = await getApiSportsMatchesBySport(sport);
+
+      if (matches.length > 0) {
+        return sortMatches(matches.map((match) => withLeagueName(match, locale)));
+      }
+    } catch {
+      // Fall through to mock providers below.
+    }
   }
 
   return fallbackMatches(sport, locale);
@@ -344,6 +340,12 @@ export async function getFeaturedMatches(locale: Locale = defaultLocale) {
 }
 
 export async function getMatchById(id: string, locale: Locale = defaultLocale) {
+  const storedMatch = await getStoredMatchById(id);
+
+  if (storedMatch) {
+    return withLeagueName(storedMatch, locale);
+  }
+
   if (id.includes(":")) {
     try {
       const apiMatch = await getApiSportsMatchById(id);
@@ -354,12 +356,6 @@ export async function getMatchById(id: string, locale: Locale = defaultLocale) {
     } catch {
       // Fall through to stored and mock providers below.
     }
-  }
-
-  const storedMatch = await getStoredMatchById(id);
-
-  if (storedMatch) {
-    return withLeagueName(storedMatch, locale);
   }
 
   const fallback = getMockMatchById(id);
@@ -376,26 +372,6 @@ export async function getPredictionByMatchId(matchId: string, locale: Locale = d
 }
 
 export async function getDatabaseSnapshot(sport: Sport, leagueSlug: string, locale: Locale = defaultLocale): Promise<DatabaseSnapshot> {
-  if (sport === "cricket" || sport === "esports") {
-    return buildFallbackDatabaseSnapshot(sport, leagueSlug, locale);
-  }
-
-  try {
-    const apiSnapshot = await getApiSportsDatabaseSnapshot(sport, leagueSlug);
-
-    if (apiSnapshot) {
-      return {
-        leagues: apiSnapshot.leagues.map((league) => localizeLeague(league, locale)),
-        standings: apiSnapshot.standings.map((row) => localizeStandingRow(row, locale)),
-        schedule: apiSnapshot.schedule.map((row) => localizeScheduleRow(row, locale)),
-        teams: apiSnapshot.teams.map((team) => localizeTeam(team, locale)),
-        h2h: apiSnapshot.h2h.map((row) => localizeHeadToHeadRow(row, locale)),
-      };
-    }
-  } catch {
-    // Fall through to stored and legacy providers below.
-  }
-
   const storedSnapshot = await getStoredDatabaseSnapshot(sport, leagueSlug);
 
   if (storedSnapshot) {
@@ -408,20 +384,40 @@ export async function getDatabaseSnapshot(sport: Sport, leagueSlug: string, loca
     };
   }
 
-  try {
-    const snapshot = await getNowscoreDatabaseSnapshot(sport, leagueSlug);
+  if (sport !== "cricket" && sport !== "esports") {
+    try {
+      const apiSnapshot = await getApiSportsDatabaseSnapshot(sport, leagueSlug);
 
-    if (snapshot) {
-      return {
-        leagues: snapshot.leagues.map((league) => localizeLeague(league, locale)),
-        standings: snapshot.standings.map((row) => localizeStandingRow(row, locale)),
-        schedule: snapshot.schedule.map((row) => localizeScheduleRow(row, locale)),
-        teams: snapshot.teams.map((team) => localizeTeam(team, locale)),
-        h2h: snapshot.h2h.map((row) => localizeHeadToHeadRow(row, locale)),
-      };
+      if (apiSnapshot) {
+        return {
+          leagues: apiSnapshot.leagues.map((league) => localizeLeague(league, locale)),
+          standings: apiSnapshot.standings.map((row) => localizeStandingRow(row, locale)),
+          schedule: apiSnapshot.schedule.map((row) => localizeScheduleRow(row, locale)),
+          teams: apiSnapshot.teams.map((team) => localizeTeam(team, locale)),
+          h2h: apiSnapshot.h2h.map((row) => localizeHeadToHeadRow(row, locale)),
+        };
+      }
+    } catch {
+      // Fall through to legacy and mock providers below.
     }
-  } catch {
-    // Fall back to mock database modules below.
+  }
+
+  if (sport !== "cricket" && sport !== "esports") {
+    try {
+      const snapshot = await getNowscoreDatabaseSnapshot(sport, leagueSlug);
+
+      if (snapshot) {
+        return {
+          leagues: snapshot.leagues.map((league) => localizeLeague(league, locale)),
+          standings: snapshot.standings.map((row) => localizeStandingRow(row, locale)),
+          schedule: snapshot.schedule.map((row) => localizeScheduleRow(row, locale)),
+          teams: snapshot.teams.map((team) => localizeTeam(team, locale)),
+          h2h: snapshot.h2h.map((row) => localizeHeadToHeadRow(row, locale)),
+        };
+      }
+    } catch {
+      // Fall back to mock database modules below.
+    }
   }
 
   return buildFallbackDatabaseSnapshot(sport, leagueSlug, locale);

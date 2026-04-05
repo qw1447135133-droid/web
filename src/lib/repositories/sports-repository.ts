@@ -344,7 +344,7 @@ async function getLatestCapturedAt(model: "standingSnapshot" | "scheduleSnapshot
 export const getStoredLeaguesBySport = cache(async (sport: Sport): Promise<League[]> => {
   try {
     const leagues = await prisma.league.findMany({
-      where: { sport },
+      where: { sport, status: "active" },
       orderBy: [{ featured: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
     });
 
@@ -357,7 +357,15 @@ export const getStoredLeaguesBySport = cache(async (sport: Sport): Promise<Leagu
 export const getStoredMatchesBySport = cache(async (sport: Sport): Promise<Match[]> => {
   try {
     const matches = await prisma.match.findMany({
-      where: { sport },
+      where: {
+        sport,
+        adminVisible: true,
+        league: {
+          is: {
+            status: "active",
+          },
+        },
+      },
       include: {
         league: true,
         oddsSnapshots: {
@@ -384,6 +392,12 @@ export const getStoredFeaturedMatches = cache(async (limit = 4): Promise<Match[]
       where: {
         sport: {
           in: HOMEPAGE_PRIMARY_SPORTS,
+        },
+        adminVisible: true,
+        league: {
+          is: {
+            status: "active",
+          },
         },
         OR: [
           { status: "live" },
@@ -451,7 +465,10 @@ export const getStoredHomepageFeaturedMatchSlots = cache(
         matchId: slot.matchId ?? undefined,
         status: slot.status,
         sortOrder: slot.sortOrder,
-        match: slot.match ? mapMatch(slot.match) : undefined,
+        match:
+          slot.match && slot.match.adminVisible && slot.match.league.status === "active"
+            ? mapMatch(slot.match)
+            : undefined,
       }));
     } catch {
       return [];
@@ -471,6 +488,12 @@ export const getStoredMatchById = cache(async (id: string): Promise<Match | unde
   try {
     const match = await prisma.match.findFirst({
       where: {
+        adminVisible: true,
+        league: {
+          is: {
+            status: "active",
+          },
+        },
         OR: [{ id }, { sourceKey: id }],
       },
       include: {
@@ -495,11 +518,11 @@ export const getStoredDatabaseSnapshot = cache(async (
   try {
     const [leagues, league] = await Promise.all([
       prisma.league.findMany({
-        where: { sport },
+        where: { sport, status: "active" },
         orderBy: [{ featured: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
       }),
       prisma.league.findFirst({
-        where: { sport, slug: leagueSlug },
+        where: { sport, slug: leagueSlug, status: "active" },
       }),
     ]);
 

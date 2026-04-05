@@ -16,6 +16,12 @@ type CoinLedgerDirection = "credit" | "debit";
 type FinanceTone = "good" | "warn" | "neutral";
 export type FinanceReconciliationIssueStatus = "open" | "reviewing" | "resolved" | "ignored";
 export type FinanceReconciliationIssueSeverity = "low" | "medium" | "high";
+export type FinanceReconciliationWorkflowStage =
+  | "triage"
+  | "investigating"
+  | "awaiting-callback"
+  | "awaiting-finance"
+  | "closed";
 
 export type AdminFinanceMetric = {
   label: string;
@@ -103,6 +109,7 @@ export type AdminFinanceReconciliationIssueRecord = {
   issueType: string;
   status: FinanceReconciliationIssueStatus;
   severity: FinanceReconciliationIssueSeverity;
+  workflowStage: FinanceReconciliationWorkflowStage;
   summary: string;
   detail?: string;
   reasonCode?: string;
@@ -111,6 +118,9 @@ export type AdminFinanceReconciliationIssueRecord = {
   sourceStatus?: string;
   resolutionNote?: string;
   assignedToDisplayName?: string;
+  reminderCount: number;
+  lastRemindedAt?: string;
+  lastReminderNote?: string;
   createdByDisplayName: string;
   resolvedAt?: string;
   createdAt: string;
@@ -420,6 +430,36 @@ function normalizeFinanceReconciliationIssueSeverity(value?: string | null): Fin
   return "medium";
 }
 
+function normalizeFinanceReconciliationWorkflowStage(value?: string | null): FinanceReconciliationWorkflowStage {
+  if (
+    value === "investigating" ||
+    value === "awaiting-callback" ||
+    value === "awaiting-finance" ||
+    value === "closed"
+  ) {
+    return value;
+  }
+
+  return "triage";
+}
+
+function inferWorkflowStageFromStatus(
+  status: FinanceReconciliationIssueStatus,
+  fallback?: string | null,
+): FinanceReconciliationWorkflowStage {
+  if (status === "resolved" || status === "ignored") {
+    return "closed";
+  }
+
+  if (status === "reviewing") {
+    const normalized = normalizeFinanceReconciliationWorkflowStage(fallback);
+    return normalized === "triage" || normalized === "closed" ? "investigating" : normalized;
+  }
+
+  const normalized = normalizeFinanceReconciliationWorkflowStage(fallback);
+  return normalized === "closed" ? "triage" : normalized;
+}
+
 function getFinanceReconciliationIssueSlaThresholdHours(severity: FinanceReconciliationIssueSeverity) {
   if (severity === "high") {
     return 4;
@@ -488,6 +528,39 @@ export function getFinanceReconciliationIssueTypeLabel(locale: Locale, issueType
     );
   }
 
+  if (issueType === "duplicate_payment_reference") {
+    return localizeText(
+      {
+        zhCn: "重复支付流水",
+        zhTw: "重複支付流水",
+        en: "Duplicate payment reference",
+      },
+      locale,
+    );
+  }
+
+  if (issueType === "callback_pending_state") {
+    return localizeText(
+      {
+        zhCn: "回调已收但订单未推进",
+        zhTw: "回調已收但訂單未推進",
+        en: "Callback received but order not advanced",
+      },
+      locale,
+    );
+  }
+
+  if (issueType === "order_status_conflict") {
+    return localizeText(
+      {
+        zhCn: "订单状态冲突",
+        zhTw: "訂單狀態衝突",
+        en: "Order status conflict",
+      },
+      locale,
+    );
+  }
+
   return localizeText(
     {
       zhCn: "人工复核",
@@ -496,6 +569,79 @@ export function getFinanceReconciliationIssueTypeLabel(locale: Locale, issueType
     },
     locale,
   );
+}
+
+export function getFinanceReconciliationWorkflowStageMeta(
+  stage: FinanceReconciliationWorkflowStage,
+  locale: Locale,
+) {
+  if (stage === "investigating") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "调查中",
+          zhTw: "調查中",
+          en: "Investigating",
+        },
+        locale,
+      ),
+      tone: "warn" as const,
+    };
+  }
+
+  if (stage === "awaiting-callback") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "等回调",
+          zhTw: "等回調",
+          en: "Awaiting callback",
+        },
+        locale,
+      ),
+      tone: "neutral" as const,
+    };
+  }
+
+  if (stage === "awaiting-finance") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "等财务确认",
+          zhTw: "等財務確認",
+          en: "Awaiting finance",
+        },
+        locale,
+      ),
+      tone: "neutral" as const,
+    };
+  }
+
+  if (stage === "closed") {
+    return {
+      label: localizeText(
+        {
+          zhCn: "已收口",
+          zhTw: "已收口",
+          en: "Closed",
+        },
+        locale,
+      ),
+      tone: "good" as const,
+    };
+  }
+
+  return {
+    label: localizeText(
+      {
+        zhCn: "待分诊",
+        zhTw: "待分診",
+        en: "Triage",
+      },
+      locale,
+    ),
+    tone: "neutral" as const,
+  };
 }
 
 export function getCoinRechargeOrderStatusMeta(
@@ -1416,6 +1562,7 @@ function toAdminFinanceReconciliationIssueRecord(issue: {
   issueType: string;
   status: string;
   severity: string;
+  workflowStage: string;
   summary: string;
   detail: string | null;
   reasonCode: string | null;
@@ -1424,6 +1571,9 @@ function toAdminFinanceReconciliationIssueRecord(issue: {
   sourceStatus: string | null;
   resolutionNote: string | null;
   assignedToDisplayName: string | null;
+  reminderCount: number;
+  lastRemindedAt: Date | null;
+  lastReminderNote: string | null;
   createdByDisplayName: string;
   resolvedAt: Date | null;
   createdAt: Date;
@@ -1435,6 +1585,7 @@ function toAdminFinanceReconciliationIssueRecord(issue: {
 }): AdminFinanceReconciliationIssueRecord {
   const status = normalizeFinanceReconciliationIssueStatus(issue.status);
   const severity = normalizeFinanceReconciliationIssueSeverity(issue.severity);
+  const workflowStage = inferWorkflowStageFromStatus(status, issue.workflowStage);
   const ageHours = Math.max(0, Math.floor((Date.now() - issue.updatedAt.getTime()) / (60 * 60 * 1000)));
   const isActive = status === "open" || status === "reviewing";
   const isOverdue = isActive && ageHours >= getFinanceReconciliationIssueSlaThresholdHours(severity);
@@ -1446,6 +1597,7 @@ function toAdminFinanceReconciliationIssueRecord(issue: {
     issueType: issue.issueType,
     status,
     severity,
+    workflowStage,
     summary: issue.summary,
     detail: issue.detail ?? undefined,
     reasonCode: issue.reasonCode ?? undefined,
@@ -1454,6 +1606,9 @@ function toAdminFinanceReconciliationIssueRecord(issue: {
     sourceStatus: issue.sourceStatus ?? undefined,
     resolutionNote: issue.resolutionNote ?? undefined,
     assignedToDisplayName: issue.assignedToDisplayName ?? undefined,
+    reminderCount: issue.reminderCount,
+    lastRemindedAt: issue.lastRemindedAt?.toISOString(),
+    lastReminderNote: issue.lastReminderNote ?? undefined,
     createdByDisplayName: issue.createdByDisplayName,
     resolvedAt: issue.resolvedAt?.toISOString(),
     createdAt: issue.createdAt.toISOString(),
@@ -1487,7 +1642,14 @@ async function findCoinRechargeOrderByRef(orderRef?: string) {
   });
 }
 
-type ManagedFinanceIssueType = "stale_pending" | "payment_failed" | "refund_review" | "credit_missing";
+type ManagedFinanceIssueType =
+  | "stale_pending"
+  | "payment_failed"
+  | "refund_review"
+  | "credit_missing"
+  | "duplicate_payment_reference"
+  | "callback_pending_state"
+  | "order_status_conflict";
 
 type RechargeOrderSignalSnapshot = {
   id: string;
@@ -1515,6 +1677,9 @@ const managedRechargeIssueTypes: ManagedFinanceIssueType[] = [
   "payment_failed",
   "refund_review",
   "credit_missing",
+  "duplicate_payment_reference",
+  "callback_pending_state",
+  "order_status_conflict",
 ];
 
 function buildRechargeOrderIssueSignals(
@@ -1686,6 +1851,7 @@ export async function createFinanceReconciliationIssue(input: {
   createdByUserId?: string | null;
   createdByDisplayName: string;
   assignedToDisplayName?: string;
+  workflowStage?: FinanceReconciliationWorkflowStage | string;
   dedupeMode?: "active" | "all";
 }) {
   const rechargeOrder = await findCoinRechargeOrderByRef(input.orderRef);
@@ -1748,6 +1914,10 @@ export async function createFinanceReconciliationIssue(input: {
       paymentReference: paymentReference ?? null,
       amount: rechargeOrder?.amount ?? null,
       sourceStatus: rechargeOrder?.status ?? null,
+      workflowStage: inferWorkflowStageFromStatus(
+        "open",
+        input.workflowStage,
+      ),
       assignedToDisplayName: input.assignedToDisplayName?.trim() || input.createdByDisplayName.trim() || null,
       createdByDisplayName: input.createdByDisplayName.trim() || "Admin",
       rechargeOrderId: rechargeOrder?.id ?? null,
@@ -1775,11 +1945,16 @@ export async function updateFinanceReconciliationIssue(input: {
   resolutionNote?: string;
   detail?: string;
   assignedToDisplayName?: string;
+  workflowStage?: FinanceReconciliationWorkflowStage | string;
+  remind?: boolean;
+  reminderNote?: string;
 }) {
   const existing = await prisma.financeReconciliationIssue.findUnique({
     where: { id: input.issueId },
     select: {
       id: true,
+      status: true,
+      workflowStage: true,
     },
   });
 
@@ -1788,10 +1963,18 @@ export async function updateFinanceReconciliationIssue(input: {
   }
 
   const nextStatus = input.status ? normalizeFinanceReconciliationIssueStatus(input.status) : undefined;
+  const nextWorkflowStage =
+    input.workflowStage || nextStatus
+      ? inferWorkflowStageFromStatus(
+          nextStatus ?? normalizeFinanceReconciliationIssueStatus(existing.status),
+          input.workflowStage ?? existing.workflowStage,
+        )
+      : undefined;
   const updated = await prisma.financeReconciliationIssue.update({
     where: { id: input.issueId },
     data: {
       status: nextStatus,
+      workflowStage: nextWorkflowStage,
       resolutionNote:
         typeof input.resolutionNote === "string"
           ? input.resolutionNote.trim() || null
@@ -1804,6 +1987,14 @@ export async function updateFinanceReconciliationIssue(input: {
         typeof input.assignedToDisplayName === "string"
           ? input.assignedToDisplayName.trim() || null
           : undefined,
+      reminderCount: input.remind ? { increment: 1 } : undefined,
+      lastRemindedAt: input.remind ? new Date() : undefined,
+      lastReminderNote:
+        typeof input.reminderNote === "string"
+          ? input.reminderNote.trim() || null
+          : input.remind
+            ? null
+            : undefined,
       resolvedAt:
         nextStatus === "resolved" || nextStatus === "ignored"
           ? new Date()
@@ -1824,6 +2015,197 @@ export async function updateFinanceReconciliationIssue(input: {
   return toAdminFinanceReconciliationIssueRecord(updated);
 }
 
+type BatchFinanceReconciliationAction =
+  | "review"
+  | "resolve"
+  | "ignore"
+  | "reopen"
+  | "remind"
+  | "assign";
+
+export async function batchUpdateFinanceReconciliationIssues(input: {
+  issueIds: string[];
+  action: BatchFinanceReconciliationAction;
+  resolutionNote?: string;
+  assignedToDisplayName?: string;
+  workflowStage?: FinanceReconciliationWorkflowStage | string;
+}) {
+  const issueIds = normalizeUniqueValues(input.issueIds);
+
+  if (issueIds.length === 0) {
+    throw new Error("FINANCE_RECONCILIATION_BATCH_EMPTY");
+  }
+
+  const issues = await prisma.financeReconciliationIssue.findMany({
+    where: {
+      id: {
+        in: issueIds,
+      },
+    },
+    select: {
+      id: true,
+      status: true,
+    },
+  });
+
+  const issueMap = new Map(issues.map((issue) => [issue.id, issue]));
+  let processedCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
+  for (const issueId of issueIds) {
+    const existing = issueMap.get(issueId);
+
+    if (!existing) {
+      failedCount += 1;
+      continue;
+    }
+
+    if (
+      input.action === "review" &&
+      existing.status !== "open"
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (
+      (input.action === "resolve" || input.action === "ignore") &&
+      existing.status !== "open" &&
+      existing.status !== "reviewing"
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (input.action === "reopen" && existing.status !== "resolved" && existing.status !== "ignored") {
+      skippedCount += 1;
+      continue;
+    }
+
+    try {
+      if (input.action === "review") {
+        await updateFinanceReconciliationIssue({
+          issueId,
+          status: "reviewing",
+          resolutionNote: input.resolutionNote,
+          assignedToDisplayName: input.assignedToDisplayName,
+          workflowStage: input.workflowStage ?? "investigating",
+        });
+      } else if (input.action === "resolve") {
+        await updateFinanceReconciliationIssue({
+          issueId,
+          status: "resolved",
+          resolutionNote: input.resolutionNote,
+          assignedToDisplayName: input.assignedToDisplayName,
+          workflowStage: "closed",
+        });
+      } else if (input.action === "ignore") {
+        await updateFinanceReconciliationIssue({
+          issueId,
+          status: "ignored",
+          resolutionNote: input.resolutionNote,
+          assignedToDisplayName: input.assignedToDisplayName,
+          workflowStage: "closed",
+        });
+      } else if (input.action === "reopen") {
+        await updateFinanceReconciliationIssue({
+          issueId,
+          status: "open",
+          resolutionNote: input.resolutionNote,
+          assignedToDisplayName: input.assignedToDisplayName,
+          workflowStage: input.workflowStage ?? "triage",
+        });
+      } else if (input.action === "assign") {
+        await updateFinanceReconciliationIssue({
+          issueId,
+          assignedToDisplayName: input.assignedToDisplayName,
+          resolutionNote: input.resolutionNote,
+          workflowStage: input.workflowStage,
+        });
+      } else {
+        await updateFinanceReconciliationIssue({
+          issueId,
+          assignedToDisplayName: input.assignedToDisplayName,
+          workflowStage: input.workflowStage,
+          remind: true,
+          reminderNote: input.resolutionNote,
+        });
+      }
+
+      processedCount += 1;
+    } catch {
+      failedCount += 1;
+    }
+  }
+
+  return {
+    totalCount: issueIds.length,
+    processedCount,
+    skippedCount,
+    failedCount,
+  };
+}
+
+export async function runFinanceReconciliationReminderScan(input?: {
+  maxCount?: number;
+  minIntervalHours?: number;
+  assignedToDisplayName?: string;
+  actorDisplayName?: string;
+}) {
+  const now = Date.now();
+  const minIntervalHours = Math.max(1, input?.minIntervalHours ?? 6);
+  const issues = await prisma.financeReconciliationIssue.findMany({
+    where: {
+      status: {
+        in: ["open", "reviewing"],
+      },
+    },
+    orderBy: [{ updatedAt: "asc" }],
+    take: Math.max(1, input?.maxCount ?? 40),
+    include: {
+      rechargeOrder: {
+        select: {
+          orderNo: true,
+        },
+      },
+    },
+  });
+
+  let processedCount = 0;
+  let skippedCount = 0;
+
+  for (const issue of issues) {
+    const record = toAdminFinanceReconciliationIssueRecord(issue);
+    const recentlyReminded =
+      issue.lastRemindedAt &&
+      issue.lastRemindedAt.getTime() > now - minIntervalHours * 60 * 60 * 1000;
+
+    if (!record.isOverdue || recentlyReminded) {
+      skippedCount += 1;
+      continue;
+    }
+
+    await updateFinanceReconciliationIssue({
+      issueId: issue.id,
+      assignedToDisplayName: input?.assignedToDisplayName,
+      remind: true,
+      reminderNote:
+        input?.actorDisplayName?.trim()
+          ? `System reminder by ${input.actorDisplayName.trim()}`
+          : "System reminder for overdue finance issue.",
+    });
+    processedCount += 1;
+  }
+
+  return {
+    totalCount: issues.length,
+    processedCount,
+    skippedCount,
+    failedCount: Math.max(0, issues.length - processedCount - skippedCount),
+  };
+}
+
 export async function scanFinanceReconciliationIssues(input?: {
   now?: Date;
   stalePendingHours?: number;
@@ -1836,7 +2218,7 @@ export async function scanFinanceReconciliationIssues(input?: {
   const actorDisplayName = input?.createdByDisplayName?.trim() || "System";
   const actorUserId = input?.createdByUserId ?? null;
 
-  const [stalePendingOrders, failedOrders, refundedOrders, paidMissingCreditOrders] = await Promise.all([
+  const [stalePendingOrders, failedOrders, refundedOrders, paidMissingCreditOrders, ordersWithPaymentRefs, callbackEvents] = await Promise.all([
     prisma.coinRechargeOrder.findMany({
       where: {
         status: "pending",
@@ -1910,6 +2292,45 @@ export async function scanFinanceReconciliationIssues(input?: {
         updatedAt: "desc",
       },
       take: 120,
+    }),
+    prisma.coinRechargeOrder.findMany({
+      where: {
+        paymentReference: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        amount: true,
+        status: true,
+        paymentReference: true,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take: 300,
+    }),
+    prisma.paymentCallbackEvent.findMany({
+      where: {
+        orderType: "coin-recharge",
+        processingStatus: {
+          in: ["received", "conflict", "failed"],
+        },
+      },
+      select: {
+        id: true,
+        orderId: true,
+        state: true,
+        processingStatus: true,
+        processingMessage: true,
+        paymentReference: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      take: 200,
     }),
   ]);
 
@@ -2004,12 +2425,137 @@ export async function scanFinanceReconciliationIssues(input?: {
     }
   }
 
+  const duplicatePaymentReferenceMap = new Map<string, RechargeOrderSignalSnapshot[]>();
+
+  for (const order of ordersWithPaymentRefs) {
+    const paymentReference = order.paymentReference?.trim();
+
+    if (!paymentReference) {
+      continue;
+    }
+
+    const existing = duplicatePaymentReferenceMap.get(paymentReference) ?? [];
+    existing.push(order);
+    duplicatePaymentReferenceMap.set(paymentReference, existing);
+  }
+
+  for (const [paymentReference, orders] of duplicatePaymentReferenceMap) {
+    if (orders.length < 2) {
+      continue;
+    }
+
+    for (const order of orders) {
+      const result = await createFinanceReconciliationIssue({
+        orderRef: order.id,
+        paymentReference,
+        issueType: "duplicate_payment_reference",
+        severity: "high",
+        summary: `充值单 ${order.orderNo} 命中重复支付流水`,
+        detail: `支付流水 ${paymentReference} 在 ${orders.length} 笔订单中重复出现，请复核是否重复补单或回调串单。`,
+        reasonCode: "duplicate_payment_reference",
+        createdByUserId: actorUserId,
+        createdByDisplayName: actorDisplayName,
+        assignedToDisplayName: actorDisplayName,
+        workflowStage: "awaiting-finance",
+        dedupeMode: "all",
+      });
+
+      if (result.created) {
+        createdCount += 1;
+      } else {
+        skippedCount += 1;
+      }
+    }
+  }
+
+  const callbackOrderIds = normalizeUniqueValues(
+    callbackEvents.map((event) => event.orderId ?? "").filter(Boolean),
+  );
+  const callbackOrders = callbackOrderIds.length
+    ? await prisma.coinRechargeOrder.findMany({
+        where: {
+          id: {
+            in: callbackOrderIds,
+          },
+        },
+        select: {
+          id: true,
+          orderNo: true,
+          status: true,
+          paymentReference: true,
+        },
+      })
+    : [];
+  const callbackOrderMap = new Map(callbackOrders.map((order) => [order.id, order]));
+
+  for (const event of callbackEvents) {
+    const order = event.orderId ? callbackOrderMap.get(event.orderId) : undefined;
+
+    if (!order) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (
+      event.processingStatus === "received" &&
+      event.state === "paid" &&
+      order.status !== "paid"
+    ) {
+      const result = await createFinanceReconciliationIssue({
+        orderRef: order.id,
+        paymentReference: event.paymentReference ?? order.paymentReference ?? undefined,
+        issueType: "callback_pending_state",
+        severity: "high",
+        summary: `充值单 ${order.orderNo} 回调已收但订单未推进`,
+        detail: `回调状态为 ${event.state}，当前订单状态仍为 ${order.status}。请检查回调重试、幂等与入账链路。`,
+        reasonCode: "callback_pending_state",
+        createdByUserId: actorUserId,
+        createdByDisplayName: actorDisplayName,
+        assignedToDisplayName: actorDisplayName,
+        workflowStage: "awaiting-callback",
+        dedupeMode: "all",
+      });
+
+      if (result.created) {
+        createdCount += 1;
+      } else {
+        skippedCount += 1;
+      }
+      continue;
+    }
+
+    if (event.processingStatus === "conflict" || event.processingStatus === "failed") {
+      const result = await createFinanceReconciliationIssue({
+        orderRef: order.id,
+        paymentReference: event.paymentReference ?? order.paymentReference ?? undefined,
+        issueType: "order_status_conflict",
+        severity: event.processingStatus === "conflict" ? "high" : "medium",
+        summary: `充值单 ${order.orderNo} 存在回调状态冲突`,
+        detail: event.processingMessage ?? `支付回调处理状态为 ${event.processingStatus}，请复核订单状态与支付流水。`,
+        reasonCode: event.processingStatus,
+        createdByUserId: actorUserId,
+        createdByDisplayName: actorDisplayName,
+        assignedToDisplayName: actorDisplayName,
+        workflowStage: "awaiting-finance",
+        dedupeMode: "all",
+      });
+
+      if (result.created) {
+        createdCount += 1;
+      } else {
+        skippedCount += 1;
+      }
+    }
+  }
+
   return {
     totalCount:
       stalePendingOrders.length +
       failedOrders.length +
       refundedOrders.length +
-      paidMissingCreditOrders.length,
+      paidMissingCreditOrders.length +
+      ordersWithPaymentRefs.length +
+      callbackEvents.length,
     createdCount,
     skippedCount,
   };
@@ -2244,7 +2790,7 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
       take: 200,
     }),
     prisma.financeReconciliationIssue.findMany({
-      take: 12,
+      take: 48,
       orderBy: [{ updatedAt: "desc" }],
       include: {
         rechargeOrder: {
