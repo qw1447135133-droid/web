@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { applyUserAgentAttribution } from "@/lib/agent-attribution";
 import { prisma } from "@/lib/prisma";
 import { setSessionCookieForUser } from "@/lib/session";
+import { recordUserLoginActivity } from "@/lib/user-activity";
 import type { UserRole } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
@@ -43,6 +44,13 @@ export async function POST(request: NextRequest) {
         inviteCode,
       });
     }
+
+    await recordUserLoginActivity(tx, {
+      userId: savedUser.id,
+      source: "passwordless-demo",
+      ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? request.headers.get("x-real-ip"),
+      userAgent: request.headers.get("user-agent"),
+    });
 
     return savedUser;
   });

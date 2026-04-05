@@ -5019,6 +5019,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         {adminPageCopy.users.userList.registeredAt} {formatDateTime(user.createdAt, displayLocale)}
                       </span>
                       <span>
+                        {locale === "en" ? "Coin balance" : locale === "zh-TW" ? "球幣餘額" : "球币余额"} {formatAdminCoinAmount(user.coinBalance, displayLocale)}
+                      </span>
+                      <span>
                         {adminPageCopy.users.userList.membershipOrders} {user.membershipOrderCount}
                       </span>
                       <span>
@@ -5050,6 +5053,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           )
                         : adminPageCopy.users.userList.noMembership}
                     </p>
+                    <div className="mt-4">
+                      <Link
+                        href={`/admin/users/${user.id}`}
+                        className="inline-flex items-center justify-center rounded-full border border-sky-300/25 bg-sky-400/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20"
+                      >
+                        {locale === "en" ? "Open workspace" : locale === "zh-TW" ? "打開工作台" : "打开工作台"}
+                      </Link>
+                    </div>
                   </div>
                 ))}
                 {usersDashboard.users.length === 0 ? (

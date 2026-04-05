@@ -1,5 +1,6 @@
 import { membershipPlans } from "@/lib/mock-data";
 import { prisma } from "@/lib/prisma";
+import { recordUserMembershipEvent } from "@/lib/user-activity";
 import type { OrderStatus, UserRole } from "@/lib/types";
 
 export type AdminOrderFilterStatus = "all" | OrderStatus;
@@ -161,8 +162,108 @@ export type AdminPaymentCallbackActivity = {
   recent: AdminPaymentCallbackRecord[];
 };
 
+export type AdminUserDetailLedgerRecord = {
+  id: string;
+  direction: "credit" | "debit";
+  reason: string;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  note?: string;
+  referenceType?: string;
+  referenceId?: string;
+  createdAt: string;
+};
+
+export type AdminUserRechargeOrderRecord = {
+  id: string;
+  orderNo: string;
+  packageTitle: string;
+  amount: number;
+  totalCoins: number;
+  status: OrderStatus;
+  provider: "mock" | "manual" | "hosted";
+  paymentReference?: string;
+  createdAt: string;
+  paidAt?: string;
+  refundedAt?: string;
+  failureReason?: string;
+  refundReason?: string;
+};
+
+export type AdminUserLoginActivityRecord = {
+  id: string;
+  source: string;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: string;
+};
+
+export type AdminUserMembershipEventRecord = {
+  id: string;
+  action: string;
+  planId?: string;
+  planName?: string;
+  previousPlanId?: string;
+  previousPlanName?: string;
+  previousExpiresAt?: string;
+  nextExpiresAt?: string;
+  note?: string;
+  createdByDisplayName?: string;
+  createdAt: string;
+};
+
+export type AdminUserSessionRecord = {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type AdminUserWorkspace = {
+  summary: {
+    id: string;
+    displayName: string;
+    email: string;
+    role: UserRole;
+    createdAt: string;
+    updatedAt: string;
+    coinBalance: number;
+    membershipPlanId?: string;
+    membershipPlanName?: string;
+    membershipExpiresAt?: string;
+    membershipStatus: "active" | "inactive";
+    referredByAgentName?: string;
+    referredByAgentCode?: string;
+    activeSessionCount: number;
+  };
+  permissions: string[];
+  sessions: AdminUserSessionRecord[];
+  loginActivities: AdminUserLoginActivityRecord[];
+  membershipEvents: AdminUserMembershipEventRecord[];
+  ledgers: AdminUserDetailLedgerRecord[];
+  rechargeOrders: AdminUserRechargeOrderRecord[];
+  membershipOrders: AdminMembershipOrderRecord[];
+  contentOrders: AdminContentOrderRecord[];
+  agentSummary: {
+    referredByAgentName?: string;
+    referredByAgentCode?: string;
+    ownAgentName?: string;
+    ownAgentCode?: string;
+    referredUsersCount: number;
+    childAgentsCount: number;
+  };
+};
+
 function resolvePlanName(planId: string) {
   return membershipPlans.find((plan) => plan.id === planId)?.name ?? planId;
+}
+
+function nextMembershipExpiry(currentExpiry: Date | null, durationDays: number) {
+  const now = new Date();
+  const base = currentExpiry && currentExpiry.getTime() > now.getTime() ? currentExpiry : now;
+  const expiresAt = new Date(base);
+  expiresAt.setDate(expiresAt.getDate() + durationDays);
+  return expiresAt;
 }
 
 function normalizeQuery(value?: string) {
@@ -850,6 +951,354 @@ export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters
   }));
 
   return [...membershipRows, ...contentRows].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWorkspace | null> {
+  const now = new Date();
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      displayName: true,
+      email: true,
+      role: true,
+      membershipPlanId: true,
+      membershipExpiresAt: true,
+      createdAt: true,
+      updatedAt: true,
+      referredByAgent: {
+        select: {
+          displayName: true,
+          inviteCode: true,
+        },
+      },
+      agentProfile: {
+        select: {
+          displayName: true,
+          inviteCode: true,
+          _count: {
+            select: {
+              referredUsers: true,
+              childAgents: true,
+            },
+          },
+        },
+      },
+      coinAccount: {
+        select: {
+          balance: true,
+          ledgers: {
+            orderBy: { createdAt: "desc" },
+            take: 18,
+            select: {
+              id: true,
+              direction: true,
+              reason: true,
+              amount: true,
+              balanceBefore: true,
+              balanceAfter: true,
+              note: true,
+              referenceType: true,
+              referenceId: true,
+              createdAt: true,
+            },
+          },
+        },
+      },
+      coinRechargeOrders: {
+        orderBy: { updatedAt: "desc" },
+        take: 12,
+        include: {
+          package: {
+            select: {
+              titleZhCn: true,
+              titleEn: true,
+            },
+          },
+        },
+      },
+      membershipOrders: {
+        orderBy: { updatedAt: "desc" },
+        take: 12,
+        select: {
+          id: true,
+          planId: true,
+          amount: true,
+          status: true,
+          provider: true,
+          providerOrderId: true,
+          expiresAt: true,
+          createdAt: true,
+          updatedAt: true,
+          paidAt: true,
+          failedAt: true,
+          failureReason: true,
+          closedAt: true,
+          refundedAt: true,
+          refundReason: true,
+          paymentReference: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+      contentOrders: {
+        orderBy: { updatedAt: "desc" },
+        take: 12,
+        select: {
+          id: true,
+          contentId: true,
+          amount: true,
+          status: true,
+          provider: true,
+          providerOrderId: true,
+          expiresAt: true,
+          createdAt: true,
+          updatedAt: true,
+          paidAt: true,
+          failedAt: true,
+          failureReason: true,
+          closedAt: true,
+          refundedAt: true,
+          refundReason: true,
+          paymentReference: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+      sessions: {
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          createdAt: true,
+          expiresAt: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  const [loginActivities, membershipEvents] = await Promise.all([
+    prisma.$queryRaw<Array<{
+      id: string;
+      source: string;
+      ipAddress: string | null;
+      userAgent: string | null;
+      createdAt: string;
+    }>>`SELECT "id", "source", "ipAddress", "userAgent", "createdAt" FROM "UserLoginActivity" WHERE "userId" = ${user.id} ORDER BY "createdAt" DESC LIMIT 16`,
+    prisma.$queryRaw<Array<{
+      id: string;
+      action: string;
+      planId: string | null;
+      previousPlanId: string | null;
+      previousExpiresAt: string | null;
+      nextExpiresAt: string | null;
+      note: string | null;
+      createdByDisplayName: string | null;
+      createdAt: string;
+    }>>`SELECT "id", "action", "planId", "previousPlanId", "previousExpiresAt", "nextExpiresAt", "note", "createdByDisplayName", "createdAt" FROM "UserMembershipEvent" WHERE "userId" = ${user.id} ORDER BY "createdAt" DESC LIMIT 16`,
+  ]);
+
+  const contentTitles = await getContentTitles(user.contentOrders.map((order) => order.contentId));
+  const permissions = [
+    user.membershipExpiresAt && user.membershipExpiresAt > now ? "membership-active" : "membership-inactive",
+    user.role === "admin" ? "admin-console" : "member-surface",
+    user.contentOrders.some((order) => order.status === "paid") ? "paid-content-access" : "no-paid-content",
+    (user.coinAccount?.balance ?? 0) > 0 ? "coin-wallet-funded" : "coin-wallet-empty",
+  ];
+
+  return {
+    summary: {
+      id: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      role: user.role as UserRole,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      coinBalance: user.coinAccount?.balance ?? 0,
+      membershipPlanId: user.membershipPlanId ?? undefined,
+      membershipPlanName: user.membershipPlanId ? resolvePlanName(user.membershipPlanId) : undefined,
+      membershipExpiresAt: user.membershipExpiresAt?.toISOString(),
+      membershipStatus: user.membershipExpiresAt && user.membershipExpiresAt > now ? "active" : "inactive",
+      referredByAgentName: user.referredByAgent?.displayName ?? undefined,
+      referredByAgentCode: user.referredByAgent?.inviteCode ?? undefined,
+      activeSessionCount: user.sessions.filter((session) => session.expiresAt > now).length,
+    },
+    permissions,
+    sessions: user.sessions.map((item) => ({
+      id: item.id,
+      createdAt: item.createdAt.toISOString(),
+      expiresAt: item.expiresAt.toISOString(),
+    })),
+    loginActivities: loginActivities.map((item) => ({
+      id: item.id,
+      source: item.source,
+      ipAddress: item.ipAddress ?? undefined,
+      userAgent: item.userAgent ?? undefined,
+      createdAt: new Date(item.createdAt).toISOString(),
+    })),
+    membershipEvents: membershipEvents.map((item) => ({
+      id: item.id,
+      action: item.action,
+      planId: item.planId ?? undefined,
+      planName: item.planId ? resolvePlanName(item.planId) : undefined,
+      previousPlanId: item.previousPlanId ?? undefined,
+      previousPlanName: item.previousPlanId ? resolvePlanName(item.previousPlanId) : undefined,
+      previousExpiresAt: item.previousExpiresAt ? new Date(item.previousExpiresAt).toISOString() : undefined,
+      nextExpiresAt: item.nextExpiresAt ? new Date(item.nextExpiresAt).toISOString() : undefined,
+      note: item.note ?? undefined,
+      createdByDisplayName: item.createdByDisplayName ?? undefined,
+      createdAt: new Date(item.createdAt).toISOString(),
+    })),
+    ledgers: (user.coinAccount?.ledgers ?? []).map((item) => ({
+      id: item.id,
+      direction: item.direction === "debit" ? "debit" : "credit",
+      reason: item.reason,
+      amount: item.amount,
+      balanceBefore: item.balanceBefore,
+      balanceAfter: item.balanceAfter,
+      note: item.note ?? undefined,
+      referenceType: item.referenceType ?? undefined,
+      referenceId: item.referenceId ?? undefined,
+      createdAt: item.createdAt.toISOString(),
+    })),
+    rechargeOrders: user.coinRechargeOrders.map((item) => ({
+      id: item.id,
+      orderNo: item.orderNo,
+      packageTitle: item.package.titleZhCn || item.package.titleEn || item.packageId,
+      amount: item.amount,
+      totalCoins: item.coinAmount + item.bonusAmount,
+      status:
+        item.status === "paid" || item.status === "failed" || item.status === "closed" || item.status === "refunded"
+          ? (item.status as OrderStatus)
+          : "pending",
+      provider: item.provider === "manual" ? "manual" : item.provider === "hosted" ? "hosted" : "mock",
+      paymentReference: item.paymentReference ?? undefined,
+      createdAt: item.createdAt.toISOString(),
+      paidAt: item.paidAt?.toISOString(),
+      refundedAt: item.refundedAt?.toISOString(),
+      failureReason: item.failureReason ?? undefined,
+      refundReason: item.refundReason ?? undefined,
+    })),
+    membershipOrders: user.membershipOrders.map((item) => toMembershipOrderRecord(item)),
+    contentOrders: user.contentOrders.map((item) => toContentOrderRecord(item, contentTitles)),
+    agentSummary: {
+      referredByAgentName: user.referredByAgent?.displayName ?? undefined,
+      referredByAgentCode: user.referredByAgent?.inviteCode ?? undefined,
+      ownAgentName: user.agentProfile?.displayName ?? undefined,
+      ownAgentCode: user.agentProfile?.inviteCode ?? undefined,
+      referredUsersCount: user.agentProfile?._count.referredUsers ?? 0,
+      childAgentsCount: user.agentProfile?._count.childAgents ?? 0,
+    },
+  };
+}
+
+export async function adminExtendUserMembership(input: {
+  userId: string;
+  planId: string;
+  durationDays: number;
+  note?: string;
+  createdByDisplayName?: string;
+}) {
+  const durationDays = Math.max(1, Math.trunc(input.durationDays || 0));
+  const planId = input.planId.trim();
+  const plan = membershipPlans.find((item) => item.id === planId);
+
+  if (!plan) {
+    throw new Error("ADMIN_USER_MEMBERSHIP_PLAN_NOT_FOUND");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: input.userId },
+      select: {
+        id: true,
+        membershipPlanId: true,
+        membershipExpiresAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error("ADMIN_USER_NOT_FOUND");
+    }
+
+    const nextExpiresAt = nextMembershipExpiry(user.membershipExpiresAt, durationDays);
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        membershipPlanId: plan.id,
+        membershipExpiresAt: nextExpiresAt,
+      },
+    });
+
+    await recordUserMembershipEvent(tx, {
+      userId: user.id,
+      action: user.membershipExpiresAt ? "manual-extended" : "manual-activated",
+      planId: plan.id,
+      previousPlanId: user.membershipPlanId,
+      previousExpiresAt: user.membershipExpiresAt,
+      nextExpiresAt,
+      note: input.note ?? null,
+      createdByDisplayName: input.createdByDisplayName ?? "Admin",
+    });
+
+    return {
+      planId: plan.id,
+      expiresAt: nextExpiresAt.toISOString(),
+    };
+  });
+}
+
+export async function adminDisableUserMembership(input: {
+  userId: string;
+  note?: string;
+  createdByDisplayName?: string;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: input.userId },
+      select: {
+        id: true,
+        membershipPlanId: true,
+        membershipExpiresAt: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error("ADMIN_USER_NOT_FOUND");
+    }
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        membershipPlanId: null,
+        membershipExpiresAt: null,
+      },
+    });
+
+    await recordUserMembershipEvent(tx, {
+      userId: user.id,
+      action: "manual-disabled",
+      planId: user.membershipPlanId,
+      previousPlanId: user.membershipPlanId,
+      previousExpiresAt: user.membershipExpiresAt,
+      nextExpiresAt: null,
+      note: input.note ?? null,
+      createdByDisplayName: input.createdByDisplayName ?? "Admin",
+    });
+  });
 }
 
 function escapeCsvValue(value: string | number | undefined) {

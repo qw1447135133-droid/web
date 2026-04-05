@@ -128,6 +128,34 @@ db.exec(`
       ON DELETE CASCADE ON UPDATE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS "UserLoginActivity" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "source" TEXT NOT NULL DEFAULT 'passwordless-demo',
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+    CONSTRAINT "UserLoginActivity_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "UserMembershipEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "action" TEXT NOT NULL,
+    "planId" TEXT,
+    "previousPlanId" TEXT,
+    "previousExpiresAt" DATETIME,
+    "nextExpiresAt" DATETIME,
+    "note" TEXT,
+    "createdByDisplayName" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+    CONSTRAINT "UserMembershipEvent_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS "MembershipOrder" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "planId" TEXT NOT NULL,
@@ -539,6 +567,7 @@ db.exec(`
     "issueType" TEXT NOT NULL DEFAULT 'manual_review',
     "status" TEXT NOT NULL DEFAULT 'open',
     "severity" TEXT NOT NULL DEFAULT 'medium',
+    "workflowStage" TEXT NOT NULL DEFAULT 'triage',
     "summary" TEXT NOT NULL,
     "detail" TEXT,
     "reasonCode" TEXT,
@@ -547,6 +576,9 @@ db.exec(`
     "sourceStatus" TEXT,
     "resolutionNote" TEXT,
     "assignedToDisplayName" TEXT,
+    "reminderCount" INTEGER NOT NULL DEFAULT 0,
+    "lastRemindedAt" DATETIME,
+    "lastReminderNote" TEXT,
     "createdByDisplayName" TEXT NOT NULL,
     "resolvedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -572,6 +604,7 @@ db.exec(`
     "displayName" TEXT,
     "region" TEXT NOT NULL,
     "season" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'active',
     "featured" BOOLEAN NOT NULL DEFAULT false,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "lastSyncedAt" DATETIME,
@@ -623,6 +656,7 @@ db.exec(`
     "scoreText" TEXT,
     "statLine" TEXT,
     "insight" TEXT,
+    "adminVisible" BOOLEAN NOT NULL DEFAULT true,
     "lastSyncedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1016,6 +1050,10 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS "SupportKnowledgeItem_key_key" ON "SupportKnowledgeItem"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "PaymentCallbackEvent_eventKey_key" ON "PaymentCallbackEvent"("eventKey");
   CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId");
+  CREATE INDEX IF NOT EXISTS "UserLoginActivity_userId_createdAt_idx" ON "UserLoginActivity"("userId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "UserLoginActivity_source_createdAt_idx" ON "UserLoginActivity"("source", "createdAt");
+  CREATE INDEX IF NOT EXISTS "UserMembershipEvent_userId_createdAt_idx" ON "UserMembershipEvent"("userId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "UserMembershipEvent_action_createdAt_idx" ON "UserMembershipEvent"("action", "createdAt");
   CREATE INDEX IF NOT EXISTS "MembershipOrder_userId_idx" ON "MembershipOrder"("userId");
   CREATE INDEX IF NOT EXISTS "ContentOrder_userId_idx" ON "ContentOrder"("userId");
   CREATE INDEX IF NOT EXISTS "CoinAccount_balance_updatedAt_idx" ON "CoinAccount"("balance", "updatedAt");
@@ -1173,6 +1211,7 @@ ensureColumn("FinanceReconciliationIssue", "scope", "TEXT DEFAULT 'coin-recharge
 ensureColumn("FinanceReconciliationIssue", "issueType", "TEXT DEFAULT 'manual_review'");
 ensureColumn("FinanceReconciliationIssue", "status", "TEXT DEFAULT 'open'");
 ensureColumn("FinanceReconciliationIssue", "severity", "TEXT DEFAULT 'medium'");
+ensureColumn("FinanceReconciliationIssue", "workflowStage", "TEXT DEFAULT 'triage'");
 ensureColumn("FinanceReconciliationIssue", "amount", "INTEGER");
 ensureColumn("FinanceReconciliationIssue", "paymentReference", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "summary", "TEXT");
@@ -1181,6 +1220,9 @@ ensureColumn("FinanceReconciliationIssue", "reasonCode", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "sourceStatus", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "resolutionNote", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "assignedToDisplayName", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "reminderCount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("FinanceReconciliationIssue", "lastRemindedAt", "DATETIME");
+ensureColumn("FinanceReconciliationIssue", "lastReminderNote", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "createdByDisplayName", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "resolvedAt", "DATETIME");
 ensureColumn("FinanceReconciliationIssue", "createdAt", "DATETIME");
@@ -1189,6 +1231,22 @@ ensureColumn("FinanceReconciliationIssue", "rechargeOrderId", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "createdByUserId", "TEXT");
 ensureColumn("User", "referredAt", "DATETIME");
 ensureColumn("User", "referredByAgentId", "TEXT");
+ensureColumn("UserLoginActivity", "source", "TEXT DEFAULT 'passwordless-demo'");
+ensureColumn("UserLoginActivity", "ipAddress", "TEXT");
+ensureColumn("UserLoginActivity", "userAgent", "TEXT");
+ensureColumn("UserLoginActivity", "createdAt", "DATETIME");
+ensureColumn("UserLoginActivity", "userId", "TEXT");
+ensureColumn("UserMembershipEvent", "action", "TEXT");
+ensureColumn("UserMembershipEvent", "planId", "TEXT");
+ensureColumn("UserMembershipEvent", "previousPlanId", "TEXT");
+ensureColumn("UserMembershipEvent", "previousExpiresAt", "DATETIME");
+ensureColumn("UserMembershipEvent", "nextExpiresAt", "DATETIME");
+ensureColumn("UserMembershipEvent", "note", "TEXT");
+ensureColumn("UserMembershipEvent", "createdByDisplayName", "TEXT");
+ensureColumn("UserMembershipEvent", "createdAt", "DATETIME");
+ensureColumn("UserMembershipEvent", "userId", "TEXT");
+ensureColumn("League", "status", "TEXT DEFAULT 'active'");
+ensureColumn("Match", "adminVisible", "BOOLEAN NOT NULL DEFAULT true");
 ensureColumn("AgentCommissionLedger", "rechargeAmount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("AgentCommissionLedger", "kind", "TEXT NOT NULL DEFAULT 'direct'");
 ensureColumn("AgentCommissionLedger", "commissionRate", "REAL NOT NULL DEFAULT 0");
@@ -1271,6 +1329,9 @@ ensureColumn("AssistantHandoffRequest", "status", "TEXT DEFAULT 'pending'");
 ensureColumn("AssistantHandoffRequest", "createdAt", "DATETIME");
 ensureColumn("AssistantHandoffRequest", "updatedAt", "DATETIME");
 ensureColumn("AssistantHandoffRequest", "userId", "TEXT");
+db.exec(`CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_workflowStage_updatedAt_idx" ON "FinanceReconciliationIssue"("workflowStage", "updatedAt");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "League_sport_status_sortOrder_idx" ON "League"("sport", "status", "sortOrder");`);
+db.exec(`CREATE INDEX IF NOT EXISTS "Match_adminVisible_kickoff_idx" ON "Match"("adminVisible", "kickoff");`);
 db.exec(`CREATE INDEX IF NOT EXISTS "ArticlePlan_matchId_idx" ON "ArticlePlan"("matchId");`);
 db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_key_key" ON "HomepageFeaturedMatchSlot"("key");`);
 db.exec(`CREATE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_status_sortOrder_idx" ON "HomepageFeaturedMatchSlot"("status", "sortOrder");`);

@@ -30,6 +30,8 @@ model User {
   assistantHandoffRequests AssistantHandoffRequest[]
   adminExportTasks    AdminExportTask[]
   financeReconciliationIssues FinanceReconciliationIssue[] @relation("FinanceIssueCreatedByUser")
+  loginActivities     UserLoginActivity[]
+  membershipEvents    UserMembershipEvent[]
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
@@ -43,6 +45,36 @@ model Session {
   createdAt DateTime @default(now())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserLoginActivity {
+  id         String   @id @default(cuid())
+  source     String   @default("passwordless-demo")
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([source, createdAt])
+}
+
+model UserMembershipEvent {
+  id                  String   @id @default(cuid())
+  action              String
+  planId              String?
+  previousPlanId      String?
+  previousExpiresAt   DateTime?
+  nextExpiresAt       DateTime?
+  note                String?
+  createdByDisplayName String?
+  createdAt           DateTime @default(now())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
 }
 
 model MembershipOrder {
@@ -492,6 +524,7 @@ model FinanceReconciliationIssue {
   issueType             String             @default("manual_review")
   status                String             @default("open")
   severity              String             @default("medium")
+  workflowStage         String             @default("triage")
   summary               String
   detail                String?
   reasonCode            String?
@@ -500,6 +533,9 @@ model FinanceReconciliationIssue {
   sourceStatus          String?
   resolutionNote        String?
   assignedToDisplayName String?
+  reminderCount         Int                @default(0)
+  lastRemindedAt        DateTime?
+  lastReminderNote      String?
   createdByDisplayName  String
   resolvedAt            DateTime?
   createdAt             DateTime           @default(now())
@@ -527,6 +563,7 @@ model League {
   displayName      String?
   region           String
   season           String
+  status           String             @default("active")
   featured         Boolean            @default(false)
   sortOrder        Int                @default(0)
   lastSyncedAt     DateTime?
@@ -596,6 +633,7 @@ model Match {
   scoreText     String?
   statLine      String?
   insight       String?
+  adminVisible  Boolean            @default(true)
   lastSyncedAt  DateTime?
   oddsSnapshots OddsSnapshot[]
   predictions   PredictionRecord[]

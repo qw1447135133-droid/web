@@ -4,6 +4,7 @@ import { ensureDefaultCoinPackages } from "@/lib/admin-finance";
 import type { Locale } from "@/lib/i18n-config";
 import { membershipPlans } from "@/lib/mock-data";
 import { prisma } from "@/lib/prisma";
+import { recordUserMembershipEvent } from "@/lib/user-activity";
 import type { MembershipPlanId } from "@/lib/types";
 
 export type CoinUnlockResult =
@@ -573,6 +574,17 @@ export async function purchaseMembershipWithCoins(input: {
         membershipPlanId: input.planId,
         membershipExpiresAt: expiresAt,
       },
+    });
+
+    await recordUserMembershipEvent(tx, {
+      userId: input.userId,
+      action: currentUser.membershipExpiresAt ? "extended" : "activated",
+      planId: input.planId,
+      previousPlanId: input.planId,
+      previousExpiresAt: currentUser.membershipExpiresAt,
+      nextExpiresAt: expiresAt,
+      note: "coin-wallet-purchase",
+      createdByDisplayName: "Coin wallet",
     });
 
     if (existingOrder) {

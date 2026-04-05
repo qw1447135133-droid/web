@@ -10,13 +10,6 @@ import { getSessionContext } from "@/lib/session";
 function redirectToAdmin(request: NextRequest, returnTo: string, feedbackKey: "saved" | "error", feedbackValue: string) {
   const safeReturnTo = sanitizeReturnTo(returnTo, "/admin?tab=users");
   const url = new URL(safeReturnTo, request.url);
-
-  if (url.pathname !== "/admin") {
-    url.pathname = "/admin";
-    url.search = "";
-  }
-
-  url.searchParams.set("tab", "users");
   url.searchParams.set(feedbackKey, feedbackValue);
 
   return NextResponse.redirect(url);

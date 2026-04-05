@@ -7,6 +7,7 @@ import {
   type PaymentProvider,
 } from "@/lib/payment-provider";
 import { prisma } from "@/lib/prisma";
+import { recordUserMembershipEvent } from "@/lib/user-activity";
 import type { MembershipPlanId, OrderStatus } from "@/lib/types";
 
 export type PaymentOrderType = "membership" | "content";
@@ -447,8 +448,8 @@ export async function confirmMockPayment(input: {
     const paidAt = new Date();
     const paymentReference = order.paymentReference ?? createMockPaymentReference("membership");
 
-    await prisma.$transaction([
-      prisma.membershipOrder.update({
+    await prisma.$transaction(async (tx) => {
+      await tx.membershipOrder.update({
         where: { id: order.id },
         data: {
           status: "paid",
@@ -460,16 +461,25 @@ export async function confirmMockPayment(input: {
           refundReason: null,
           paymentReference,
         },
-      }),
-      prisma.user.update({
+      });
+      await tx.user.update({
         where: { id: input.userId },
         data: {
           membershipPlanId: plan.id,
           membershipExpiresAt: expiresAt,
           role: order.user.role === "admin" ? "admin" : "member",
         },
-      }),
-    ]);
+      });
+      await recordUserMembershipEvent(tx, {
+        userId: input.userId,
+        action: order.user.membershipExpiresAt ? "extended" : "activated",
+        planId: plan.id,
+        previousPlanId: order.planId,
+        previousExpiresAt: order.user.membershipExpiresAt,
+        nextExpiresAt: expiresAt,
+        note: "mock-payment-confirmed",
+      });
+    });
 
     return;
   }
@@ -688,8 +698,14 @@ export async function refundOrderByAdmin(input: {
       where: { id: input.orderId },
       select: {
         id: true,
+        planId: true,
         userId: true,
         status: true,
+        user: {
+          select: {
+            membershipExpiresAt: true,
+          },
+        },
       },
     });
 
@@ -721,8 +737,8 @@ export async function refundOrderByAdmin(input: {
       throw error;
     }
 
-    await prisma.$transaction([
-      prisma.membershipOrder.update({
+    await prisma.$transaction(async (tx) => {
+      await tx.membershipOrder.update({
         where: { id: order.id },
         data: {
           status: "refunded",
@@ -732,15 +748,25 @@ export async function refundOrderByAdmin(input: {
           refundedAt,
           refundReason,
         },
-      }),
-      prisma.user.update({
+      });
+      await tx.user.update({
         where: { id: order.userId },
         data: {
           membershipPlanId: null,
           membershipExpiresAt: null,
         },
-      }),
-    ]);
+      });
+      await recordUserMembershipEvent(tx, {
+        userId: order.userId,
+        action: "refunded",
+        planId: order.planId,
+        previousPlanId: order.planId,
+        previousExpiresAt: order.user.membershipExpiresAt,
+        nextExpiresAt: null,
+        note: refundReason,
+        createdByDisplayName: "Admin refund",
+      });
+    });
 
     return;
   }
@@ -832,8 +858,8 @@ export async function markOrderPaidByAdmin(input: {
     const paymentReference = input.paymentReference?.trim() || order.paymentReference || createPaymentReference("membership");
     const expiresAt = nextMembershipExpiry(order.user.membershipExpiresAt, plan.durationDays);
 
-    await prisma.$transaction([
-      prisma.membershipOrder.update({
+    await prisma.$transaction(async (tx) => {
+      await tx.membershipOrder.update({
         where: { id: order.id },
         data: {
           status: "paid",
@@ -845,16 +871,26 @@ export async function markOrderPaidByAdmin(input: {
           refundReason: null,
           paymentReference,
         },
-      }),
-      prisma.user.update({
+      });
+      await tx.user.update({
         where: { id: order.userId },
         data: {
           membershipPlanId: plan.id,
           membershipExpiresAt: expiresAt,
           role: order.user.role === "admin" ? "admin" : "member",
         },
-      }),
-    ]);
+      });
+      await recordUserMembershipEvent(tx, {
+        userId: order.userId,
+        action: order.user.membershipExpiresAt ? "extended" : "activated",
+        planId: plan.id,
+        previousPlanId: order.planId,
+        previousExpiresAt: order.user.membershipExpiresAt,
+        nextExpiresAt: expiresAt,
+        note: "admin-paid-recovery",
+        createdByDisplayName: "Admin",
+      });
+    });
 
     return;
   }
