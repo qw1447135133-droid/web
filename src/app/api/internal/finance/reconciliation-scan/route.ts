@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { scanFinanceReconciliationIssues } from "@/lib/admin-finance";
+import { normalizeFinanceReconciliationScanScope, scanFinanceReconciliationIssues } from "@/lib/admin-finance";
 
 function isAuthorized(request: NextRequest) {
   const token =
@@ -29,8 +29,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const url = new URL(request.url);
+    const scope = normalizeFinanceReconciliationScanScope(url.searchParams.get("scope") ?? "all");
     const summary = await scanFinanceReconciliationIssues({
       createdByDisplayName: "System",
+      scope,
     });
 
     return NextResponse.json({

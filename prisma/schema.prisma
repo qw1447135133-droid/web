@@ -97,6 +97,7 @@ model MembershipOrder {
   updatedAt        DateTime @updatedAt
   userId           String
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  financeReconciliationIssues FinanceReconciliationIssue[]
 
   @@unique([provider, providerOrderId])
   @@index([status, updatedAt])
@@ -122,6 +123,7 @@ model ContentOrder {
   updatedAt        DateTime @updatedAt
   userId           String
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  financeReconciliationIssues FinanceReconciliationIssue[]
 
   @@unique([provider, providerOrderId])
   @@index([status, updatedAt])
@@ -558,14 +560,20 @@ model FinanceReconciliationIssue {
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
   rechargeOrderId       String?
+  membershipOrderId     String?
+  contentOrderId        String?
   createdByUserId       String?
   rechargeOrder         CoinRechargeOrder? @relation(fields: [rechargeOrderId], references: [id], onDelete: SetNull)
+  membershipOrder       MembershipOrder?   @relation(fields: [membershipOrderId], references: [id], onDelete: SetNull)
+  contentOrder          ContentOrder?      @relation(fields: [contentOrderId], references: [id], onDelete: SetNull)
   createdByUser         User?              @relation("FinanceIssueCreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([status, updatedAt])
   @@index([severity, updatedAt])
   @@index([scope, updatedAt])
   @@index([rechargeOrderId, updatedAt])
+  @@index([membershipOrderId, updatedAt])
+  @@index([contentOrderId, updatedAt])
   @@index([createdByUserId, updatedAt])
 }
 

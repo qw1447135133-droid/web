@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { ensureDefaultCoinPackages } from "@/lib/admin-finance";
-import type { Locale } from "@/lib/i18n-config";
+import { closePendingCoinRechargeOrder, ensureDefaultCoinPackages } from "@/lib/admin-finance";
+import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 import { membershipPlans } from "@/lib/mock-data";
 import { prisma } from "@/lib/prisma";
 import { recordUserMembershipEvent } from "@/lib/user-activity";
@@ -37,8 +37,13 @@ export type MemberCoinRechargeRecord = {
   orderNo: string;
   packageTitle: string;
   amount: number;
+  coinAmount: number;
+  bonusAmount: number;
   totalCoins: number;
   status: "pending" | "paid" | "failed" | "closed" | "refunded";
+  provider?: "mock" | "manual" | "hosted";
+  providerOrderId?: string;
+  paymentReference?: string;
   createdAt: string;
   updatedAt: string;
   creditedAt?: string;
@@ -48,6 +53,15 @@ export type MemberCoinCenter = {
   balance: number;
   recentLedgers: MemberCoinLedgerRecord[];
   rechargeOrders: MemberCoinRechargeRecord[];
+};
+
+export type MemberCoinRechargeDetail = MemberCoinRechargeRecord & {
+  failureReason?: string;
+  refundReason?: string;
+  closedAt?: string;
+  failedAt?: string;
+  paidAt?: string;
+  callbackPayload?: string;
 };
 
 export type PublicCoinPackage = {
@@ -130,7 +144,7 @@ function localizeCoinPackageText(
     zhTw: string;
     en: string;
   },
-  locale: Locale,
+  locale: DisplayLocale,
 ) {
   if (locale === "zh-TW") {
     return value.zhTw;
@@ -256,6 +270,12 @@ export async function createMemberCoinRechargeOrder(input: {
     },
     select: {
       id: true,
+      orderNo: true,
+      paymentReference: true,
+      amount: true,
+      coinAmount: true,
+      bonusAmount: true,
+      status: true,
     },
   });
 
@@ -655,7 +675,7 @@ export async function purchaseMembershipWithCoins(input: {
   };
 }
 
-export async function getMemberCoinCenter(userId: string): Promise<MemberCoinCenter> {
+export async function getMemberCoinCenter(userId: string, locale: DisplayLocale): Promise<MemberCoinCenter> {
   const [account, ledgers, rechargeOrders] = await Promise.all([
     prisma.coinAccount.findUnique({
       where: { userId },
@@ -694,6 +714,8 @@ export async function getMemberCoinCenter(userId: string): Promise<MemberCoinCen
         package: {
           select: {
             titleZhCn: true,
+            titleZhTw: true,
+            titleEn: true,
           },
         },
       },
@@ -721,8 +743,17 @@ export async function getMemberCoinCenter(userId: string): Promise<MemberCoinCen
     rechargeOrders: rechargeOrders.map((item) => ({
       id: item.id,
       orderNo: item.orderNo,
-      packageTitle: item.package.titleZhCn,
+      packageTitle: localizeCoinPackageText(
+        {
+          zhCn: item.package.titleZhCn,
+          zhTw: item.package.titleZhTw,
+          en: item.package.titleEn,
+        },
+        locale,
+      ),
       amount: item.amount,
+      coinAmount: item.coinAmount,
+      bonusAmount: item.bonusAmount,
       totalCoins: item.coinAmount + item.bonusAmount,
       status:
         item.status === "paid" ||
@@ -731,9 +762,108 @@ export async function getMemberCoinCenter(userId: string): Promise<MemberCoinCen
         item.status === "refunded"
           ? item.status
           : "pending",
+      provider: item.provider === "hosted" || item.provider === "mock" ? item.provider : "manual",
+      providerOrderId: item.providerOrderId ?? undefined,
+      paymentReference: item.paymentReference ?? undefined,
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
       creditedAt: item.creditedAt?.toISOString(),
     })),
   };
+}
+
+
+export async function getMemberCoinRechargeDetail(
+  userId: string,
+  orderId: string,
+  locale: DisplayLocale,
+): Promise<MemberCoinRechargeDetail | null> {
+  const order = await prisma.coinRechargeOrder.findFirst({
+    where: {
+      id: orderId,
+      userId,
+    },
+    include: {
+      package: {
+        select: {
+          titleZhCn: true,
+          titleZhTw: true,
+          titleEn: true,
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    return null;
+  }
+
+  return {
+    id: order.id,
+    orderNo: order.orderNo,
+    packageTitle: localizeCoinPackageText(
+      {
+        zhCn: order.package.titleZhCn,
+        zhTw: order.package.titleZhTw,
+        en: order.package.titleEn,
+      },
+      locale,
+    ),
+    amount: order.amount,
+    coinAmount: order.coinAmount,
+    bonusAmount: order.bonusAmount,
+    totalCoins: order.coinAmount + order.bonusAmount,
+    status:
+      order.status === "paid" ||
+      order.status === "failed" ||
+      order.status === "closed" ||
+      order.status === "refunded"
+        ? order.status
+        : "pending",
+    provider: order.provider === "hosted" || order.provider === "mock" ? order.provider : "manual",
+    providerOrderId: order.providerOrderId ?? undefined,
+    paymentReference: order.paymentReference ?? undefined,
+    createdAt: order.createdAt.toISOString(),
+    updatedAt: order.updatedAt.toISOString(),
+    creditedAt: order.creditedAt?.toISOString(),
+    failureReason: order.failureReason ?? undefined,
+    refundReason: order.refundReason ?? undefined,
+    closedAt: order.closedAt?.toISOString(),
+    failedAt: order.failedAt?.toISOString(),
+    paidAt: order.paidAt?.toISOString(),
+    callbackPayload: typeof order.callbackPayload === "string" ? order.callbackPayload : undefined,
+  };
+}
+
+export async function cancelMemberCoinRechargeOrder(input: {
+  userId: string;
+  orderId: string;
+  operatorDisplayName?: string;
+}) {
+  const order = await prisma.coinRechargeOrder.findFirst({
+    where: {
+      id: input.orderId,
+      userId: input.userId,
+    },
+    select: {
+      id: true,
+      status: true,
+    },
+  });
+
+  if (!order) {
+    throw new Error("COIN_RECHARGE_ORDER_NOT_FOUND");
+  }
+
+  if (order.status !== "pending") {
+    throw new Error("COIN_RECHARGE_ORDER_NOT_CANCELLABLE");
+  }
+
+  await closePendingCoinRechargeOrder({
+    orderId: order.id,
+    operatorUserId: input.userId,
+    operatorDisplayName: input.operatorDisplayName,
+  });
+
+  return { id: order.id };
 }

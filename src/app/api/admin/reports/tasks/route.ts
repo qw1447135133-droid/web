@@ -33,8 +33,20 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const scope = normalizeAdminReportExportScope(String(formData.get("scope") || "orders"));
   const reportsWindow = Number.parseInt(String(formData.get("reportsWindow") || "30"), 10);
+  const normalizedReportsWindow =
+    reportsWindow === 7 || reportsWindow === 30 || reportsWindow === 90 || reportsWindow === 180 || reportsWindow === 365
+      ? reportsWindow
+      : 30;
+  const from = String(formData.get("from") || "").trim();
+  const to = String(formData.get("to") || "").trim();
+  const orderType = String(formData.get("orderType") || "").trim();
+  const dimension = String(formData.get("dimension") || "").trim();
   const filtersJson = JSON.stringify({
-    reportsWindow: reportsWindow === 7 || reportsWindow === 90 ? reportsWindow : 30,
+    reportsWindow: normalizedReportsWindow,
+    from: from || undefined,
+    to: to || undefined,
+    orderType: orderType || undefined,
+    dimension: dimension || undefined,
   });
   const ipAddress = getRequestIp(request);
 

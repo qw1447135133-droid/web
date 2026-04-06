@@ -219,6 +219,79 @@ export type AdminUserSessionRecord = {
   expiresAt: string;
 };
 
+export type AdminUserAuditRecord = {
+  id: string;
+  actorDisplayName: string;
+  actorRole: string;
+  action: string;
+  scope: string;
+  targetType?: string;
+  targetId?: string;
+  targetLabel?: string;
+  status: string;
+  detail?: string;
+  createdAt: string;
+};
+
+export type AdminUserAgentFinanceSummary = {
+  attributedDirectCommissionNet: number;
+  attributedDownstreamCommissionNet: number;
+  attributedRechargeAmount: number;
+  attributedLedgerCount: number;
+  lastAttributedAt?: string;
+  ownAgentStatus?: string;
+  ownTotalCommission?: number;
+  ownUnsettledCommission?: number;
+  ownSettledWithdrawalAmount: number;
+  ownPendingWithdrawalAmount: number;
+  ownRejectedWithdrawalAmount: number;
+};
+
+export type AdminUserAgentCommissionLedgerRecord = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  kind: "direct" | "downstream";
+  rechargeOrderNo: string;
+  rechargeAmount: number;
+  commissionRate: number;
+  commissionAmount: number;
+  settledAmount: number;
+  reversedAmount: number;
+  availableAmount: number;
+  status: "pending" | "partial" | "settled" | "reversed";
+  createdAt: string;
+  settledAt?: string;
+  reversedAt?: string;
+};
+
+export type AdminUserReportSummary = {
+  paidMembershipAmount: number;
+  paidMembershipCount: number;
+  paidContentAmount: number;
+  paidContentCount: number;
+  paidRechargeAmount: number;
+  paidRechargeCount: number;
+  refundedAmount: number;
+  refundedCount: number;
+  lastPaidAt?: string;
+  recent30dPaidAmount: number;
+  recent30dPaidCount: number;
+  recent30dRefundAmount: number;
+  recent30dRechargeAmount: number;
+};
+
+export type AdminUserTrendPoint = {
+  label: string;
+  value: number;
+};
+
+export type AdminUserReportTrends = {
+  paidAmountPoints: AdminUserTrendPoint[];
+  rechargeAmountPoints: AdminUserTrendPoint[];
+  refundAmountPoints: AdminUserTrendPoint[];
+};
+
 export type AdminUserWorkspace = {
   summary: {
     id: string;
@@ -227,7 +300,11 @@ export type AdminUserWorkspace = {
     role: UserRole;
     createdAt: string;
     updatedAt: string;
+    referredAt?: string;
     coinBalance: number;
+    coinLifetimeCredited: number;
+    coinLifetimeDebited: number;
+    coinLastActivityAt?: string;
     membershipPlanId?: string;
     membershipPlanName?: string;
     membershipExpiresAt?: string;
@@ -236,6 +313,8 @@ export type AdminUserWorkspace = {
     referredByAgentCode?: string;
     activeSessionCount: number;
   };
+  reportSummary: AdminUserReportSummary;
+  reportTrends: AdminUserReportTrends;
   permissions: string[];
   sessions: AdminUserSessionRecord[];
   loginActivities: AdminUserLoginActivityRecord[];
@@ -244,6 +323,8 @@ export type AdminUserWorkspace = {
   rechargeOrders: AdminUserRechargeOrderRecord[];
   membershipOrders: AdminMembershipOrderRecord[];
   contentOrders: AdminContentOrderRecord[];
+  paymentCallbacks: AdminPaymentCallbackRecord[];
+  auditLogs: AdminUserAuditRecord[];
   agentSummary: {
     referredByAgentName?: string;
     referredByAgentCode?: string;
@@ -252,6 +333,8 @@ export type AdminUserWorkspace = {
     referredUsersCount: number;
     childAgentsCount: number;
   };
+  agentFinance: AdminUserAgentFinanceSummary;
+  agentCommissionLedgers: AdminUserAgentCommissionLedgerRecord[];
 };
 
 function resolvePlanName(planId: string) {
@@ -268,6 +351,25 @@ function nextMembershipExpiry(currentExpiry: Date | null, durationDays: number) 
 
 function normalizeQuery(value?: string) {
   return value?.trim() ?? "";
+}
+
+function toUserTrendDateKey(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function buildRecentTrendKeys(days: number) {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: days }, (_, index) => {
+    const current = new Date(end);
+    current.setDate(end.getDate() - (days - index - 1));
+    return toUserTrendDateKey(current);
+  });
+}
+
+function toTrendLabel(dateKey: string) {
+  return dateKey.slice(5);
 }
 
 const DEFAULT_ORDER_PAGE_SIZE = 10;
@@ -962,6 +1064,7 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       displayName: true,
       email: true,
       role: true,
+      referredAt: true,
       membershipPlanId: true,
       membershipExpiresAt: true,
       createdAt: true,
@@ -974,8 +1077,12 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       },
       agentProfile: {
         select: {
+          id: true,
           displayName: true,
+          status: true,
           inviteCode: true,
+          totalCommission: true,
+          unsettledCommission: true,
           _count: {
             select: {
               referredUsers: true,
@@ -987,6 +1094,9 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       coinAccount: {
         select: {
           balance: true,
+          lifetimeCredited: true,
+          lifetimeDebited: true,
+          lastActivityAt: true,
           ledgers: {
             orderBy: { createdAt: "desc" },
             take: 18,
@@ -1089,7 +1199,149 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
     return null;
   }
 
-  const [loginActivities, membershipEvents] = await Promise.all([
+  const recent30dThreshold = new Date(now);
+  recent30dThreshold.setDate(recent30dThreshold.getDate() - 30);
+
+  const paymentCallbackOrderIds = [...user.membershipOrders.map((item) => item.id), ...user.contentOrders.map((item) => item.id)];
+  const paymentCallbackReferences = [
+    ...user.membershipOrders.map((item) => item.paymentReference).filter((item): item is string => Boolean(item)),
+    ...user.contentOrders.map((item) => item.paymentReference).filter((item): item is string => Boolean(item)),
+  ];
+  const paymentCallbackProviderOrderIds = [
+    ...user.membershipOrders.map((item) => item.providerOrderId).filter((item): item is string => Boolean(item)),
+    ...user.contentOrders.map((item) => item.providerOrderId).filter((item): item is string => Boolean(item)),
+  ];
+
+  const paymentCallbacksPromise =
+    paymentCallbackOrderIds.length > 0 || paymentCallbackReferences.length > 0 || paymentCallbackProviderOrderIds.length > 0
+      ? prisma.paymentCallbackEvent.findMany({
+          where: {
+            OR: [
+              ...(paymentCallbackOrderIds.length > 0 ? [{ orderId: { in: paymentCallbackOrderIds } }] : []),
+              ...(paymentCallbackReferences.length > 0 ? [{ paymentReference: { in: paymentCallbackReferences } }] : []),
+              ...(paymentCallbackProviderOrderIds.length > 0 ? [{ providerOrderId: { in: paymentCallbackProviderOrderIds } }] : []),
+            ],
+          },
+          orderBy: { lastSeenAt: "desc" },
+          take: 16,
+        })
+      : Promise.resolve([]);
+  const recentAgentCommissionLedgersPromise = prisma.agentCommissionLedger.findMany({
+    where: {
+      userId: user.id,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 12,
+    select: {
+      id: true,
+      kind: true,
+      rechargeAmount: true,
+      commissionRate: true,
+      commissionAmount: true,
+      settledAmount: true,
+      reversedAmount: true,
+      status: true,
+      createdAt: true,
+      settledAt: true,
+      reversedAt: true,
+      agent: {
+        select: {
+          id: true,
+          displayName: true,
+        },
+      },
+      rechargeOrder: {
+        select: {
+          orderNo: true,
+        },
+      },
+    },
+  });
+
+  const attributedCommissionSummaryPromise = prisma.agentCommissionLedger.groupBy({
+    by: ["kind"],
+    where: {
+      userId: user.id,
+    },
+    _count: {
+      _all: true,
+    },
+    _sum: {
+      rechargeAmount: true,
+      commissionAmount: true,
+      reversedAmount: true,
+    },
+    _max: {
+      createdAt: true,
+    },
+  });
+
+  const ownAgentWithdrawalSummaryPromise = user.agentProfile?.id
+    ? prisma.agentWithdrawal.groupBy({
+        by: ["status"],
+        where: {
+          agentId: user.agentProfile.id,
+        },
+        _sum: {
+          amount: true,
+        },
+      })
+    : Promise.resolve([]);
+  const recent30dMembershipTrendOrdersPromise = prisma.membershipOrder.findMany({
+    where: {
+      userId: user.id,
+      OR: [{ createdAt: { gte: recent30dThreshold } }, { updatedAt: { gte: recent30dThreshold } }],
+    },
+    select: {
+      status: true,
+      amount: true,
+      createdAt: true,
+      updatedAt: true,
+      paidAt: true,
+      refundedAt: true,
+    },
+  });
+  const recent30dContentTrendOrdersPromise = prisma.contentOrder.findMany({
+    where: {
+      userId: user.id,
+      OR: [{ createdAt: { gte: recent30dThreshold } }, { updatedAt: { gte: recent30dThreshold } }],
+    },
+    select: {
+      status: true,
+      amount: true,
+      createdAt: true,
+      updatedAt: true,
+      paidAt: true,
+      refundedAt: true,
+    },
+  });
+  const recent30dRechargeTrendOrdersPromise = prisma.coinRechargeOrder.findMany({
+    where: {
+      userId: user.id,
+      OR: [{ createdAt: { gte: recent30dThreshold } }, { updatedAt: { gte: recent30dThreshold } }],
+    },
+    select: {
+      status: true,
+      amount: true,
+      createdAt: true,
+      updatedAt: true,
+      paidAt: true,
+      refundedAt: true,
+    },
+  });
+
+  const [
+    loginActivities,
+    membershipEvents,
+    auditLogsRaw,
+    paymentCallbacksRaw,
+    recentAgentCommissionLedgersRaw,
+    attributedCommissionSummaryRaw,
+    ownAgentWithdrawalSummaryRaw,
+    recent30dMembershipTrendOrders,
+    recent30dContentTrendOrders,
+    recent30dRechargeTrendOrders,
+  ] = await Promise.all([
     prisma.$queryRaw<Array<{
       id: string;
       source: string;
@@ -1108,15 +1360,171 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       createdByDisplayName: string | null;
       createdAt: string;
     }>>`SELECT "id", "action", "planId", "previousPlanId", "previousExpiresAt", "nextExpiresAt", "note", "createdByDisplayName", "createdAt" FROM "UserMembershipEvent" WHERE "userId" = ${user.id} ORDER BY "createdAt" DESC LIMIT 16`,
+    prisma.adminAuditLog.findMany({
+      where: {
+        OR: [
+          {
+            targetId: user.id,
+          },
+          {
+            targetId: {
+              in: [
+                ...user.coinRechargeOrders.map((item) => item.id),
+                ...user.membershipOrders.map((item) => item.id),
+                ...user.contentOrders.map((item) => item.id),
+              ],
+            },
+          },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 24,
+    }),
+    paymentCallbacksPromise,
+    recentAgentCommissionLedgersPromise,
+    attributedCommissionSummaryPromise,
+    ownAgentWithdrawalSummaryPromise,
+    recent30dMembershipTrendOrdersPromise,
+    recent30dContentTrendOrdersPromise,
+    recent30dRechargeTrendOrdersPromise,
   ]);
 
   const contentTitles = await getContentTitles(user.contentOrders.map((order) => order.contentId));
+  const targetLabelEntries: Array<[string, string]> = [
+    ...user.coinRechargeOrders.map((item) => [item.id, item.orderNo] as [string, string]),
+    ...user.membershipOrders.map((item) => [item.id, resolvePlanName(item.planId)] as [string, string]),
+    ...user.contentOrders.map((item) => [item.id, contentTitles.get(item.contentId) ?? item.contentId] as [string, string]),
+    [user.id, user.displayName],
+  ];
+  const targetLabelById = new Map<string, string>(targetLabelEntries);
   const permissions = [
     user.membershipExpiresAt && user.membershipExpiresAt > now ? "membership-active" : "membership-inactive",
     user.role === "admin" ? "admin-console" : "member-surface",
     user.contentOrders.some((order) => order.status === "paid") ? "paid-content-access" : "no-paid-content",
     (user.coinAccount?.balance ?? 0) > 0 ? "coin-wallet-funded" : "coin-wallet-empty",
   ];
+  const paidMembershipOrders = user.membershipOrders.filter((item) => item.status === "paid");
+  const paidContentOrders = user.contentOrders.filter((item) => item.status === "paid");
+  const paidRechargeOrders = user.coinRechargeOrders.filter((item) => item.status === "paid");
+  const refundedMembershipOrders = user.membershipOrders.filter((item) => item.status === "refunded");
+  const refundedContentOrders = user.contentOrders.filter((item) => item.status === "refunded");
+  const refundedRechargeOrders = user.coinRechargeOrders.filter((item) => item.status === "refunded");
+  const paidMoments = [
+    ...paidMembershipOrders.map((item) => item.paidAt ?? item.createdAt),
+    ...paidContentOrders.map((item) => item.paidAt ?? item.createdAt),
+    ...paidRechargeOrders.map((item) => item.paidAt ?? item.createdAt),
+  ].filter((item): item is Date => Boolean(item));
+  const lastPaidAt =
+    paidMoments.length > 0
+      ? paidMoments.reduce((latest, current) => (current.getTime() > latest.getTime() ? current : latest)).toISOString()
+      : undefined;
+  const recent30dPaidMembershipOrders = paidMembershipOrders.filter((item) => (item.paidAt ?? item.createdAt) >= recent30dThreshold);
+  const recent30dPaidContentOrders = paidContentOrders.filter((item) => (item.paidAt ?? item.createdAt) >= recent30dThreshold);
+  const recent30dPaidRechargeOrders = paidRechargeOrders.filter((item) => (item.paidAt ?? item.createdAt) >= recent30dThreshold);
+  const recent30dRefundedMembershipOrders = refundedMembershipOrders.filter((item) => (item.refundedAt ?? item.updatedAt) >= recent30dThreshold);
+  const recent30dRefundedContentOrders = refundedContentOrders.filter((item) => (item.refundedAt ?? item.updatedAt) >= recent30dThreshold);
+  const recent30dRefundedRechargeOrders = refundedRechargeOrders.filter((item) => (item.refundedAt ?? item.updatedAt) >= recent30dThreshold);
+  const attributedCommissionSummary = attributedCommissionSummaryRaw.reduce(
+    (acc, item) => {
+      const netCommission = Math.max(0, (item._sum.commissionAmount ?? 0) - (item._sum.reversedAmount ?? 0));
+
+      if (item.kind === "downstream") {
+        acc.attributedDownstreamCommissionNet += netCommission;
+      } else {
+        acc.attributedDirectCommissionNet += netCommission;
+      }
+
+      acc.attributedRechargeAmount += item._sum.rechargeAmount ?? 0;
+      acc.attributedLedgerCount += item._count._all;
+      const maxCreatedAt = item._max.createdAt;
+      if (maxCreatedAt && (!acc.lastAttributedAt || maxCreatedAt.getTime() > new Date(acc.lastAttributedAt).getTime())) {
+        acc.lastAttributedAt = maxCreatedAt.toISOString();
+      }
+
+      return acc;
+    },
+    {
+      attributedDirectCommissionNet: 0,
+      attributedDownstreamCommissionNet: 0,
+      attributedRechargeAmount: 0,
+      attributedLedgerCount: 0,
+      lastAttributedAt: undefined as string | undefined,
+    },
+  );
+  const ownAgentWithdrawalSummary = ownAgentWithdrawalSummaryRaw.reduce(
+    (acc, item) => {
+      const amount = item._sum.amount ?? 0;
+      if (item.status === "settled") {
+        acc.ownSettledWithdrawalAmount += amount;
+      } else if (item.status === "rejected") {
+        acc.ownRejectedWithdrawalAmount += amount;
+      } else {
+        acc.ownPendingWithdrawalAmount += amount;
+      }
+
+      return acc;
+    },
+    {
+      ownSettledWithdrawalAmount: 0,
+      ownPendingWithdrawalAmount: 0,
+      ownRejectedWithdrawalAmount: 0,
+    },
+  );
+  const trendDateKeys = buildRecentTrendKeys(30);
+  const paidAmountByDate = new Map(trendDateKeys.map((key) => [key, 0]));
+  const rechargeAmountByDate = new Map(trendDateKeys.map((key) => [key, 0]));
+  const refundAmountByDate = new Map(trendDateKeys.map((key) => [key, 0]));
+  const appendPaidTrendPoint = (dateValue: Date | null | undefined, amount: number, target: Map<string, number>) => {
+    const date = dateValue ?? undefined;
+
+    if (!date) {
+      return;
+    }
+
+    const key = toUserTrendDateKey(date);
+    if (!target.has(key)) {
+      return;
+    }
+
+    target.set(key, (target.get(key) ?? 0) + amount);
+  };
+  const appendRefundTrendPoint = (dateValue: Date | null | undefined, amount: number) => {
+    if (!dateValue) {
+      return;
+    }
+
+    const key = toUserTrendDateKey(dateValue);
+    if (!refundAmountByDate.has(key)) {
+      return;
+    }
+
+    refundAmountByDate.set(key, (refundAmountByDate.get(key) ?? 0) + amount);
+  };
+
+  for (const item of recent30dMembershipTrendOrders) {
+    if (item.status === "paid") {
+      appendPaidTrendPoint(item.paidAt ?? item.createdAt, item.amount, paidAmountByDate);
+    } else if (item.status === "refunded") {
+      appendRefundTrendPoint(item.refundedAt ?? item.updatedAt, item.amount);
+    }
+  }
+
+  for (const item of recent30dContentTrendOrders) {
+    if (item.status === "paid") {
+      appendPaidTrendPoint(item.paidAt ?? item.createdAt, item.amount, paidAmountByDate);
+    } else if (item.status === "refunded") {
+      appendRefundTrendPoint(item.refundedAt ?? item.updatedAt, item.amount);
+    }
+  }
+
+  for (const item of recent30dRechargeTrendOrders) {
+    if (item.status === "paid") {
+      appendPaidTrendPoint(item.paidAt ?? item.createdAt, item.amount, paidAmountByDate);
+      appendPaidTrendPoint(item.paidAt ?? item.createdAt, item.amount, rechargeAmountByDate);
+    } else if (item.status === "refunded") {
+      appendRefundTrendPoint(item.refundedAt ?? item.updatedAt, item.amount);
+    }
+  }
 
   return {
     summary: {
@@ -1126,7 +1534,11 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       role: user.role as UserRole,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
+      referredAt: user.referredAt?.toISOString(),
       coinBalance: user.coinAccount?.balance ?? 0,
+      coinLifetimeCredited: user.coinAccount?.lifetimeCredited ?? 0,
+      coinLifetimeDebited: user.coinAccount?.lifetimeDebited ?? 0,
+      coinLastActivityAt: user.coinAccount?.lastActivityAt?.toISOString(),
       membershipPlanId: user.membershipPlanId ?? undefined,
       membershipPlanName: user.membershipPlanId ? resolvePlanName(user.membershipPlanId) : undefined,
       membershipExpiresAt: user.membershipExpiresAt?.toISOString(),
@@ -1134,6 +1546,46 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       referredByAgentName: user.referredByAgent?.displayName ?? undefined,
       referredByAgentCode: user.referredByAgent?.inviteCode ?? undefined,
       activeSessionCount: user.sessions.filter((session) => session.expiresAt > now).length,
+    },
+    reportSummary: {
+      paidMembershipAmount: paidMembershipOrders.reduce((total, item) => total + item.amount, 0),
+      paidMembershipCount: paidMembershipOrders.length,
+      paidContentAmount: paidContentOrders.reduce((total, item) => total + item.amount, 0),
+      paidContentCount: paidContentOrders.length,
+      paidRechargeAmount: paidRechargeOrders.reduce((total, item) => total + item.amount, 0),
+      paidRechargeCount: paidRechargeOrders.length,
+      refundedAmount:
+        refundedMembershipOrders.reduce((total, item) => total + item.amount, 0) +
+        refundedContentOrders.reduce((total, item) => total + item.amount, 0) +
+        refundedRechargeOrders.reduce((total, item) => total + item.amount, 0),
+      refundedCount:
+        refundedMembershipOrders.length + refundedContentOrders.length + refundedRechargeOrders.length,
+      lastPaidAt,
+      recent30dPaidAmount:
+        recent30dPaidMembershipOrders.reduce((total, item) => total + item.amount, 0) +
+        recent30dPaidContentOrders.reduce((total, item) => total + item.amount, 0) +
+        recent30dPaidRechargeOrders.reduce((total, item) => total + item.amount, 0),
+      recent30dPaidCount:
+        recent30dPaidMembershipOrders.length + recent30dPaidContentOrders.length + recent30dPaidRechargeOrders.length,
+      recent30dRefundAmount:
+        recent30dRefundedMembershipOrders.reduce((total, item) => total + item.amount, 0) +
+        recent30dRefundedContentOrders.reduce((total, item) => total + item.amount, 0) +
+        recent30dRefundedRechargeOrders.reduce((total, item) => total + item.amount, 0),
+      recent30dRechargeAmount: recent30dPaidRechargeOrders.reduce((total, item) => total + item.amount, 0),
+    },
+    reportTrends: {
+      paidAmountPoints: trendDateKeys.map((key) => ({
+        label: toTrendLabel(key),
+        value: paidAmountByDate.get(key) ?? 0,
+      })),
+      rechargeAmountPoints: trendDateKeys.map((key) => ({
+        label: toTrendLabel(key),
+        value: rechargeAmountByDate.get(key) ?? 0,
+      })),
+      refundAmountPoints: trendDateKeys.map((key) => ({
+        label: toTrendLabel(key),
+        value: refundAmountByDate.get(key) ?? 0,
+      })),
     },
     permissions,
     sessions: user.sessions.map((item) => ({
@@ -1193,6 +1645,20 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
     })),
     membershipOrders: user.membershipOrders.map((item) => toMembershipOrderRecord(item)),
     contentOrders: user.contentOrders.map((item) => toContentOrderRecord(item, contentTitles)),
+    paymentCallbacks: paymentCallbacksRaw.map((item) => toPaymentCallbackRecord(item)),
+    auditLogs: auditLogsRaw.map((item) => ({
+      id: item.id,
+      actorDisplayName: item.actorDisplayName,
+      actorRole: item.actorRole,
+      action: item.action,
+      scope: item.scope,
+      targetType: item.targetType ?? undefined,
+      targetId: item.targetId ?? undefined,
+      targetLabel: item.targetId ? targetLabelById.get(item.targetId) : undefined,
+      status: item.status,
+      detail: item.detail ?? undefined,
+      createdAt: item.createdAt.toISOString(),
+    })),
     agentSummary: {
       referredByAgentName: user.referredByAgent?.displayName ?? undefined,
       referredByAgentCode: user.referredByAgent?.inviteCode ?? undefined,
@@ -1201,6 +1667,39 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       referredUsersCount: user.agentProfile?._count.referredUsers ?? 0,
       childAgentsCount: user.agentProfile?._count.childAgents ?? 0,
     },
+    agentFinance: {
+      attributedDirectCommissionNet: attributedCommissionSummary.attributedDirectCommissionNet,
+      attributedDownstreamCommissionNet: attributedCommissionSummary.attributedDownstreamCommissionNet,
+      attributedRechargeAmount: attributedCommissionSummary.attributedRechargeAmount,
+      attributedLedgerCount: attributedCommissionSummary.attributedLedgerCount,
+      lastAttributedAt: attributedCommissionSummary.lastAttributedAt,
+      ownAgentStatus: user.agentProfile?.status ?? undefined,
+      ownTotalCommission: user.agentProfile?.totalCommission ?? undefined,
+      ownUnsettledCommission: user.agentProfile?.unsettledCommission ?? undefined,
+      ownSettledWithdrawalAmount: ownAgentWithdrawalSummary.ownSettledWithdrawalAmount,
+      ownPendingWithdrawalAmount: ownAgentWithdrawalSummary.ownPendingWithdrawalAmount,
+      ownRejectedWithdrawalAmount: ownAgentWithdrawalSummary.ownRejectedWithdrawalAmount,
+    },
+    agentCommissionLedgers: recentAgentCommissionLedgersRaw.map((item) => ({
+      id: item.id,
+      agentId: item.agent.id,
+      agentName: item.agent.displayName,
+      kind: item.kind === "downstream" ? "downstream" : "direct",
+      rechargeOrderNo: item.rechargeOrder.orderNo,
+      rechargeAmount: item.rechargeAmount,
+      commissionRate: item.commissionRate,
+      commissionAmount: item.commissionAmount,
+      settledAmount: item.settledAmount,
+      reversedAmount: item.reversedAmount,
+      availableAmount: Math.max(0, item.commissionAmount - item.settledAmount - item.reversedAmount),
+      status:
+        item.status === "settled" || item.status === "reversed" || item.status === "partial"
+          ? item.status
+          : "pending",
+      createdAt: item.createdAt.toISOString(),
+      settledAt: item.settledAt?.toISOString(),
+      reversedAt: item.reversedAt?.toISOString(),
+    })),
   };
 }
 

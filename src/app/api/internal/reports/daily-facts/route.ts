@@ -30,9 +30,17 @@ export async function POST(request: NextRequest) {
 
   const url = new URL(request.url);
   const windowDays = Number.parseInt(url.searchParams.get("windowDays") ?? "30", 10);
+  const scopeParam = url.searchParams.get("scope") ?? "all";
+  const scope =
+    scopeParam === "overview" ||
+    scopeParam === "content-by-sport" ||
+    scopeParam === "content-by-league" ||
+    scopeParam === "content-by-author"
+      ? scopeParam
+      : "all";
 
   try {
-    const summary = await refreshAdminReportDailyFacts(windowDays);
+    const summary = await refreshAdminReportDailyFacts(windowDays, scope);
     return NextResponse.json({
       ok: true,
       summary,

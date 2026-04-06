@@ -84,6 +84,10 @@ export type AdminSystemDashboard = {
 };
 
 const adminPaths = ["/admin"];
+const globalForAdminSystem = globalThis as typeof globalThis & {
+  __signalNineAdminSystemSeedsReady?: boolean;
+  __signalNineAdminSystemSeedPromise?: Promise<void>;
+};
 
 const defaultRolePolicies: Array<PolicyRecord> = [
   {
@@ -231,22 +235,48 @@ function getDefaultRolePolicy(role: string): PolicyRecord {
 }
 
 async function ensureAdminSystemSeeds() {
-  await Promise.all([
-    ...defaultRolePolicies.map((policy) =>
-      prisma.adminRolePolicy.upsert({
-        where: { role: policy.role },
-        update: {},
-        create: policy,
-      }),
-    ),
-    ...defaultSystemParameters.map((parameter) =>
-      prisma.systemParameter.upsert({
-        where: { key: parameter.key },
-        update: {},
-        create: parameter,
-      }),
-    ),
-  ]);
+  if (globalForAdminSystem.__signalNineAdminSystemSeedsReady) {
+    return;
+  }
+
+  if (!globalForAdminSystem.__signalNineAdminSystemSeedPromise) {
+    globalForAdminSystem.__signalNineAdminSystemSeedPromise = (async () => {
+      const [policyCount, parameterCount] = await Promise.all([
+        prisma.adminRolePolicy.count(),
+        prisma.systemParameter.count(),
+      ]);
+
+      if (
+        policyCount >= defaultRolePolicies.length &&
+        parameterCount >= defaultSystemParameters.length
+      ) {
+        globalForAdminSystem.__signalNineAdminSystemSeedsReady = true;
+        return;
+      }
+
+      for (const policy of defaultRolePolicies) {
+        await prisma.adminRolePolicy.upsert({
+          where: { role: policy.role },
+          update: {},
+          create: policy,
+        });
+      }
+
+      for (const parameter of defaultSystemParameters) {
+        await prisma.systemParameter.upsert({
+          where: { key: parameter.key },
+          update: {},
+          create: parameter,
+        });
+      }
+
+      globalForAdminSystem.__signalNineAdminSystemSeedsReady = true;
+    })().finally(() => {
+      globalForAdminSystem.__signalNineAdminSystemSeedPromise = undefined;
+    });
+  }
+
+  await globalForAdminSystem.__signalNineAdminSystemSeedPromise;
 }
 
 export async function getRolePolicyEntitlements(role: UserRole | string) {

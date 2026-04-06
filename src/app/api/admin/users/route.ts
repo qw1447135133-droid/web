@@ -13,12 +13,30 @@ function getRequestIp(request: NextRequest) {
   return request.headers.get("x-real-ip") ?? undefined;
 }
 
-function redirectToPath(request: NextRequest, returnTo: string, key: "saved" | "error", value: string) {
+function redirectToPath(request: NextRequest, returnTo: string, params: Record<string, string | undefined>) {
   const safeReturnTo =
     returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/admin?tab=users";
   const url = new URL(safeReturnTo, request.url);
-  url.searchParams.set(key, value);
+
+  for (const key of Array.from(url.searchParams.keys())) {
+    if (key === "saved" || key === "error" || key.startsWith("saved") || key.startsWith("error")) {
+      url.searchParams.delete(key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(params)) {
+    if (!value) {
+      continue;
+    }
+
+    url.searchParams.set(key, value);
+  }
+
   return NextResponse.redirect(url);
+}
+
+function getErrorCode(error: unknown) {
+  return error instanceof Error ? error.message : "UNKNOWN";
 }
 
 export async function POST(request: NextRequest) {
@@ -62,7 +80,12 @@ export async function POST(request: NextRequest) {
         detail: `planId: ${result.planId} | expiresAt: ${result.expiresAt} | durationDays: ${durationDays}`,
         ipAddress,
       });
-      return redirectToPath(request, returnTo, "saved", "user-membership");
+      return redirectToPath(request, returnTo, {
+        saved: "user-membership",
+        savedAction: intent,
+        savedPlanId: result.planId,
+        savedDurationDays: String(durationDays),
+      });
     }
 
     if (intent === "disable-membership") {
@@ -83,7 +106,10 @@ export async function POST(request: NextRequest) {
         detail: `note: ${note || "--"}`,
         ipAddress,
       });
-      return redirectToPath(request, returnTo, "saved", "user-membership");
+      return redirectToPath(request, returnTo, {
+        saved: "user-membership",
+        savedAction: intent,
+      });
     }
 
     if (intent === "credit-coins" || intent === "debit-coins") {
@@ -106,11 +132,22 @@ export async function POST(request: NextRequest) {
         detail: `amount: ${amount} | note: ${note || "--"}`,
         ipAddress,
       });
-      return redirectToPath(request, returnTo, "saved", "user-coins");
+      return redirectToPath(request, returnTo, {
+        saved: "user-coins",
+        savedAction: intent,
+        savedAmount: String(amount),
+      });
     }
-  } catch {
-    return redirectToPath(request, returnTo, "error", "user-workspace");
+  } catch (error) {
+    return redirectToPath(request, returnTo, {
+      error: "user-workspace",
+      errorAction: intent,
+      errorCode: getErrorCode(error),
+    });
   }
 
-  return redirectToPath(request, returnTo, "error", "user-workspace");
+  return redirectToPath(request, returnTo, {
+    error: "user-workspace",
+    errorAction: intent,
+  });
 }

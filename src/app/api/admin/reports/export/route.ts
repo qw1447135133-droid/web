@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildAdminReportExport, normalizeAdminReportExportScope } from "@/lib/admin-reports";
+import {
+  buildAdminReportExport,
+  normalizeAdminReportExportFilters,
+  normalizeAdminReportExportScope,
+} from "@/lib/admin-reports";
 import { getSessionContext } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
@@ -14,7 +18,14 @@ export async function GET(request: NextRequest) {
   }
 
   const scope = normalizeAdminReportExportScope(request.nextUrl.searchParams.get("scope"));
-  const { filename, csv } = await buildAdminReportExport(scope);
+  const filters = normalizeAdminReportExportFilters({
+    reportsWindow: Number.parseInt(request.nextUrl.searchParams.get("reportsWindow") ?? "", 10) as 7 | 30 | 90 | 180 | 365,
+    from: request.nextUrl.searchParams.get("from") ?? undefined,
+    to: request.nextUrl.searchParams.get("to") ?? undefined,
+    orderType: (request.nextUrl.searchParams.get("orderType") ?? undefined) as "all" | "membership" | "content" | undefined,
+    dimension: request.nextUrl.searchParams.get("dimension") ?? undefined,
+  });
+  const { filename, csv } = await buildAdminReportExport(scope, filters);
   const stamp = new Date().toISOString().slice(0, 19).replaceAll(":", "-");
 
   return new NextResponse(csv, {

@@ -160,12 +160,16 @@ function getAuditActionLabel(locale: Locale | DisplayLocale, action: string) {
       return getText(locale, { zhCN: "联赛下移", zhTW: "聯賽下移", en: "Moved league down" });
     case "clear-admin-league-override":
       return getText(locale, { zhCN: "清除联赛覆盖", zhTW: "清除聯賽覆寫", en: "Cleared league override" });
+    case "delete-admin-league":
+      return getText(locale, { zhCN: "删除联赛", zhTW: "刪除聯賽", en: "Deleted league" });
     case "save-admin-match":
       return getText(locale, { zhCN: "保存赛事", zhTW: "保存賽事", en: "Saved match" });
     case "toggle-admin-match-visibility":
       return getText(locale, { zhCN: "切换赛事可见性", zhTW: "切換賽事可見性", en: "Toggled match visibility" });
     case "clear-admin-match-override":
       return getText(locale, { zhCN: "清除赛事覆盖", zhTW: "清除賽事覆寫", en: "Cleared match override" });
+    case "delete-admin-match":
+      return getText(locale, { zhCN: "删除赛事", zhTW: "刪除賽事", en: "Deleted match" });
     default:
       return action;
   }
@@ -736,6 +740,42 @@ export function AdminEventsPanel({
             {getText(locale, { zhCN: "保存联赛", zhTW: "保存聯賽", en: "Save league" })}
           </button>
         </form>
+        {currentLeague?.source === "manual" ? (
+          <form action="/api/admin/events" method="post" className="rounded-[1.5rem] border border-rose-300/15 bg-rose-400/[0.06] p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="section-label text-rose-100">{getText(locale, { zhCN: "危险区", zhTW: "危險區", en: "Danger zone" })}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {getText(locale, { zhCN: "删除当前联赛", zhTW: "刪除目前聯賽", en: "Delete current league" })}
+                </h3>
+                <p className="mt-2 text-sm text-slate-300">
+                  {getText(
+                    locale,
+                    {
+                      zhCN: `此操作仅允许删除人工创建记录。当前联赛挂接 ${currentLeague.teamCount} 支球队、${currentLeague.matchCount} 场赛事，请先确认影响范围。`,
+                      zhTW: `此操作僅允許刪除人工建立記錄。目前聯賽掛接 ${currentLeague.teamCount} 支球隊、${currentLeague.matchCount} 場賽事，請先確認影響範圍。`,
+                      en: `Only manual leagues can be removed. This league currently has ${currentLeague.teamCount} teams and ${currentLeague.matchCount} matches attached.`,
+                    },
+                  )}
+                </p>
+              </div>
+              <span className="rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-xs text-rose-100">DELETE</span>
+            </div>
+            <input type="hidden" name="intent" value="delete-league" />
+            <input type="hidden" name="id" value={currentLeague.id} />
+            <label className="mt-4 grid gap-2 text-sm text-slate-200">
+              <span>{getText(locale, { zhCN: "输入 DELETE 确认删除", zhTW: "輸入 DELETE 確認刪除", en: "Type DELETE to confirm" })}</span>
+              <input
+                name="deleteConfirmation"
+                placeholder="DELETE"
+                className="rounded-2xl border border-rose-300/20 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <button type="submit" className="mt-4 rounded-full border border-rose-300/25 bg-rose-400/10 px-4 py-2 text-sm text-rose-100 transition hover:border-rose-300/45 hover:bg-rose-400/20">
+              {getText(locale, { zhCN: "确认删除联赛", zhTW: "確認刪除聯賽", en: "Delete league" })}
+            </button>
+          </form>
+        ) : null}
 
         <form action="/api/admin/events" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
           <div className="flex items-center justify-between gap-3">
@@ -857,6 +897,42 @@ export function AdminEventsPanel({
             {getText(locale, { zhCN: "保存赛事", zhTW: "保存賽事", en: "Save match" })}
           </button>
         </form>
+        {currentMatch?.source === "manual" ? (
+          <form action="/api/admin/events" method="post" className="rounded-[1.5rem] border border-rose-300/15 bg-rose-400/[0.06] p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="section-label text-rose-100">{getText(locale, { zhCN: "危险区", zhTW: "危險區", en: "Danger zone" })}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {getText(locale, { zhCN: "删除当前赛事", zhTW: "刪除目前賽事", en: "Delete current match" })}
+                </h3>
+                <p className="mt-2 text-sm text-slate-300">
+                  {getText(
+                    locale,
+                    {
+                      zhCN: `这会移除 ${currentMatch.homeTeamName} vs ${currentMatch.awayTeamName} 这条人工赛事，并同步清掉前台可见入口。`,
+                      zhTW: `這會移除 ${currentMatch.homeTeamName} vs ${currentMatch.awayTeamName} 這條人工賽事，並同步清掉前台可見入口。`,
+                      en: `This removes the manual match ${currentMatch.homeTeamName} vs ${currentMatch.awayTeamName} and clears its site entry.`,
+                    },
+                  )}
+                </p>
+              </div>
+              <span className="rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-xs text-rose-100">DELETE</span>
+            </div>
+            <input type="hidden" name="intent" value="delete-match" />
+            <input type="hidden" name="id" value={currentMatch.id} />
+            <label className="mt-4 grid gap-2 text-sm text-slate-200">
+              <span>{getText(locale, { zhCN: "输入 DELETE 确认删除", zhTW: "輸入 DELETE 確認刪除", en: "Type DELETE to confirm" })}</span>
+              <input
+                name="deleteConfirmation"
+                placeholder="DELETE"
+                className="rounded-2xl border border-rose-300/20 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+              />
+            </label>
+            <button type="submit" className="mt-4 rounded-full border border-rose-300/25 bg-rose-400/10 px-4 py-2 text-sm text-rose-100 transition hover:border-rose-300/45 hover:bg-rose-400/20">
+              {getText(locale, { zhCN: "确认删除赛事", zhTW: "確認刪除賽事", en: "Delete match" })}
+            </button>
+          </form>
+        ) : null}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">

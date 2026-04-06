@@ -14,6 +14,7 @@ import {
   runFinanceReconciliationReminderScan,
   scanFinanceReconciliationIssues,
   updateFinanceReconciliationIssue,
+  normalizeFinanceReconciliationScanScope,
 } from "@/lib/admin-finance";
 import { recordAdminAuditLog } from "@/lib/admin-system";
 import { getCurrentUserRecord, getSessionContext } from "@/lib/session";
@@ -95,8 +96,10 @@ export async function POST(request: NextRequest) {
     .map((value) => String(value).trim())
     .filter(Boolean);
   const issueType = String(formData.get("issueType") || "").trim();
+  const issueScope = String(formData.get("issueScope") || "coin-recharge").trim();
   const severity = String(formData.get("severity") || "").trim();
   const workflowStage = String(formData.get("workflowStage") || "").trim();
+  const scanScope = normalizeFinanceReconciliationScanScope(String(formData.get("scanScope") || "all"));
   const summary = String(formData.get("summary") || "").trim();
   const detail = String(formData.get("detail") || "").trim();
   const assignedToDisplayName = String(formData.get("assignedToDisplayName") || "").trim();
@@ -214,6 +217,7 @@ export async function POST(request: NextRequest) {
       });
     } else if (intent === "flag-reconciliation-issue") {
       const result = await createFinanceReconciliationIssue({
+        scope: issueScope,
         orderRef: orderRef || orderId,
         paymentReference,
         issueType,
@@ -233,7 +237,7 @@ export async function POST(request: NextRequest) {
         scope: "finance.reconciliation-issue",
         targetType: "finance-reconciliation-issue",
         targetId: result.issue.id,
-        detail: `orderRef: ${orderRef || orderId || "--"} | severity: ${severity || "--"} | issueType: ${issueType || "--"} | created: ${result.created ? "yes" : "no"}`,
+        detail: `scope: ${issueScope} | orderRef: ${orderRef || orderId || "--"} | severity: ${severity || "--"} | issueType: ${issueType || "--"} | created: ${result.created ? "yes" : "no"}`,
         ipAddress,
       });
     } else if (
@@ -330,6 +334,7 @@ export async function POST(request: NextRequest) {
       const result = await scanFinanceReconciliationIssues({
         createdByUserId: currentUser?.id,
         createdByDisplayName: session.displayName,
+        scope: scanScope,
       });
       await recordAdminAuditLog({
         actorUserId: currentUser?.id,
@@ -338,8 +343,8 @@ export async function POST(request: NextRequest) {
         action: "scan-finance-reconciliation-issues",
         scope: "finance.reconciliation-issue",
         targetType: "scan",
-        targetId: "coin-recharge",
-        detail: `created: ${result.createdCount} | skipped: ${result.skippedCount} | total: ${result.totalCount}`,
+        targetId: scanScope,
+        detail: `scope: ${scanScope} | created: ${result.createdCount} | skipped: ${result.skippedCount} | total: ${result.totalCount}`,
         ipAddress,
       });
       return redirectWithBatchResult(

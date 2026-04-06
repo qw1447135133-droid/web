@@ -133,6 +133,19 @@ export type AdminAgentWithdrawalRecord = {
   allocationSummary: string[];
 };
 
+export type AdminAgentWithdrawalExceptionRecord = {
+  id: string;
+  agentName: string;
+  amount: number;
+  status: WithdrawalStatus;
+  exceptionType: "missing-batch" | "missing-proof" | "callback-abnormal" | "batch-without-request";
+  exceptionLabel: string;
+  payoutBatchNo?: string;
+  callbackStatus?: string;
+  proofUrl?: string;
+  updatedAt: string;
+};
+
 export type AdminAgentCommissionLedgerRecord = {
   id: string;
   agentId: string;
@@ -234,6 +247,7 @@ export type AdminAgentsDashboard = {
   campaigns: AdminAgentCampaignRecord[];
   leads: AdminRecruitmentLeadRecord[];
   withdrawals: AdminAgentWithdrawalRecord[];
+  withdrawalExceptions: AdminAgentWithdrawalExceptionRecord[];
   commissionLedgers: AdminAgentCommissionLedgerRecord[];
   agentOptions: AdminAgentOption[];
   campaignOptions: AdminAgentOption[];
@@ -949,6 +963,7 @@ export async function getAdminAgentsDashboard(locale: Locale): Promise<AdminAgen
         note: true,
         proofUrl: true,
         requestedAt: true,
+        updatedAt: true,
         reviewedAt: true,
         settledAt: true,
         rejectionReason: true,
@@ -1051,6 +1066,71 @@ export async function getAdminAgentsDashboard(locale: Locale): Promise<AdminAgen
   const totalSettledWithdrawal = allPerformanceRecords.reduce((total, item) => total + item.settledWithdrawalAmount, 0);
   const totalReferredUsers = allPerformanceRecords.reduce((total, item) => total + item.referredUsers, 0);
   const totalChildAgents = allPerformanceRecords.reduce((total, item) => total + item.childAgents, 0);
+  const withdrawalExceptions: AdminAgentWithdrawalExceptionRecord[] = withdrawalsRaw.flatMap((item) => {
+    const exceptions: AdminAgentWithdrawalExceptionRecord[] = [];
+    const status = normalizeWithdrawalStatus(item.status);
+    const callbackStatus = item.callbackStatus?.trim().toLowerCase();
+
+    const pushException = (
+      exceptionType: AdminAgentWithdrawalExceptionRecord["exceptionType"],
+      exceptionLabel: string,
+    ) => {
+      exceptions.push({
+        id: item.id,
+        agentName: item.agent.displayName,
+        amount: item.amount,
+        status,
+        exceptionType,
+        exceptionLabel,
+        payoutBatchNo: item.payoutBatchNo ?? undefined,
+        callbackStatus: item.callbackStatus ?? undefined,
+        proofUrl: item.proofUrl ?? undefined,
+        updatedAt: item.updatedAt.toISOString(),
+      });
+    };
+
+    if ((status === "reviewing" || status === "paying") && !item.payoutBatchNo?.trim()) {
+      pushException(
+        "missing-batch",
+        localizeText(
+          { zhCn: "进入打款流程但缺少批次号", zhTw: "進入打款流程但缺少批次號", en: "In payout flow without batch number" },
+          locale,
+        ),
+      );
+    }
+
+    if ((status === "paying" || status === "settled") && !item.proofUrl?.trim()) {
+      pushException(
+        "missing-proof",
+        localizeText(
+          { zhCn: "已送打款但未上传凭证", zhTw: "已送打款但未上傳憑證", en: "Payout sent without proof" },
+          locale,
+        ),
+      );
+    }
+
+    if (callbackStatus && /failed|conflict|error|mismatch|rejected/.test(callbackStatus)) {
+      pushException(
+        "callback-abnormal",
+        localizeText(
+          { zhCn: "回单状态异常待复核", zhTw: "回單狀態異常待複核", en: "Callback abnormal, review required" },
+          locale,
+        ),
+      );
+    }
+
+    if (item.payoutBatchNo?.trim() && !item.payoutRequestedAt && status !== "pending") {
+      pushException(
+        "batch-without-request",
+        localizeText(
+          { zhCn: "已有批次号但缺少送打款时间", zhTw: "已有批次號但缺少送打款時間", en: "Batch number exists without payout request time" },
+          locale,
+        ),
+      );
+    }
+
+    return exceptions;
+  });
 
   return {
     metrics: [
@@ -1256,6 +1336,7 @@ export async function getAdminAgentsDashboard(locale: Locale): Promise<AdminAgen
         return `${orderNo} / ${userName} / CNY ${formatCompactNumber(allocation.amount)}`;
       }),
     })),
+    withdrawalExceptions,
     commissionLedgers: commissionLedgersRaw.map((item) => ({
       id: item.id,
       agentId: item.agentId,

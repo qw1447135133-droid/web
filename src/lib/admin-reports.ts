@@ -41,10 +41,19 @@ export type AdminReportTrendCard = {
   points: AdminReportTrendPoint[];
 };
 
+export type AdminReportBreakdownSection = {
+  key: string;
+  title: string;
+  description: string;
+  rows: AdminReportRow[];
+};
+
 export type AdminReportsDashboard = {
   metrics: AdminReportMetric[];
   agentBiMetrics: AdminReportMetric[];
   trendCards: AdminReportTrendCard[];
+  longRangeRows: AdminReportRow[];
+  breakdownSections: AdminReportBreakdownSection[];
   revenueRows: AdminReportRow[];
   growthRows: AdminReportRow[];
   agentBiRows: AdminReportRow[];
@@ -65,6 +74,21 @@ export type AdminReportExportScope =
   | "leads"
   | "withdrawals";
 
+export type AdminReportExportFilters = {
+  reportsWindow?: 7 | 30 | 90 | 180 | 365;
+  from?: string;
+  to?: string;
+  orderType?: "all" | "membership" | "content";
+  dimension?: string;
+};
+
+export type AdminReportRefreshScope =
+  | "overview"
+  | "content-by-sport"
+  | "content-by-league"
+  | "content-by-author"
+  | "all";
+
 type AdminReportDailyMetricKey =
   | "revenue_membership"
   | "revenue_content"
@@ -75,6 +99,28 @@ type AdminReportDailyMetricKey =
   | "agent_commission_generated"
   | "agent_commission_reversed"
   | "agent_withdrawal_settled";
+
+type AdminReportBreakdownWindow = 30 | 90 | 180 | 365;
+
+type AdminReportBreakdownBucket = {
+  label: string;
+  subtitle?: string;
+  orderCount: number;
+  revenueAmount: number;
+  selectedOrderCount: number;
+  selectedRevenueAmount: number;
+  revenueByWindow: Record<AdminReportBreakdownWindow, number>;
+};
+
+const BREAKDOWN_WINDOWS: AdminReportBreakdownWindow[] = [30, 90, 180, 365];
+const CONTENT_BREAKDOWN_SCOPES: Array<Exclude<AdminReportRefreshScope, "overview" | "all">> = [
+  "content-by-sport",
+  "content-by-league",
+  "content-by-author",
+];
+const globalForAdminReports = globalThis as typeof globalThis & {
+  __signalNineAdminReportEnsurePromises?: Map<string, Promise<void>>;
+};
 
 function localizeText(
   value: {
@@ -101,6 +147,13 @@ function formatNumber(value: number, locale: Locale) {
 
 function formatCurrency(value: number, locale: Locale) {
   return `CNY ${formatNumber(value, locale)}`;
+}
+
+function formatPercent(value: number, locale: Locale) {
+  return new Intl.NumberFormat(getIntlLocale(locale), {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function formatShortDate(value: Date, locale: Locale) {
@@ -137,7 +190,7 @@ function fromMetricDateKey(value: string) {
 }
 
 function clampTrendWindow(value?: number) {
-  if (value === 7 || value === 90) {
+  if (value === 7 || value === 90 || value === 180 || value === 365) {
     return value;
   }
 
@@ -154,6 +207,199 @@ function buildDateRange(windowDays: number) {
 function buildDateKeys(windowDays: number) {
   const { start, windowDays: normalizedWindow } = buildDateRange(windowDays);
   return Array.from({ length: normalizedWindow }, (_, index) => toMetricDateKey(addDays(start, index)));
+}
+
+function buildMetricDateBounds(windowDays: number) {
+  const dateKeys = buildDateKeys(windowDays);
+  const start = fromMetricDateKey(dateKeys[0]);
+  const end = new Date(fromMetricDateKey(dateKeys[dateKeys.length - 1]).getTime() + 24 * 60 * 60 * 1000);
+  return { start, end, dateKeys };
+}
+
+function formatMonthLabel(value: Date, locale: Locale) {
+  return new Intl.DateTimeFormat(getIntlLocale(locale), {
+    year: "2-digit",
+    month: "short",
+  }).format(value);
+}
+
+function formatSportLabel(value: string, locale: Locale) {
+  switch (value) {
+    case "football":
+      return localizeText({ zhCn: "足球", zhTw: "足球", en: "Football" }, locale);
+    case "basketball":
+      return localizeText({ zhCn: "篮球", zhTw: "籃球", en: "Basketball" }, locale);
+    case "cricket":
+      return localizeText({ zhCn: "板球", zhTw: "板球", en: "Cricket" }, locale);
+    case "esports":
+      return localizeText({ zhCn: "电竞", zhTw: "電競", en: "Esports" }, locale);
+    default:
+      return value || localizeText({ zhCn: "未知运动", zhTw: "未知運動", en: "Unknown sport" }, locale);
+  }
+}
+
+function formatReportWindowLabel(windowDays: number, locale: Locale) {
+  return locale === "en" ? `${windowDays}D` : `${windowDays} 天`;
+}
+
+function buildBreakdownRows(
+  buckets: AdminReportBreakdownBucket[],
+  locale: Locale,
+  options: {
+    emptyTitle: {
+      zhCn: string;
+      zhTw: string;
+      en: string;
+    };
+    emptySubtitle: {
+      zhCn: string;
+      zhTw: string;
+      en: string;
+    };
+    selectedWindowDays: number;
+  },
+) {
+  const totalSelectedOrders = buckets.reduce((sum, bucket) => sum + bucket.selectedOrderCount, 0);
+  const totalSelectedRevenue = buckets.reduce((sum, bucket) => sum + bucket.selectedRevenueAmount, 0);
+
+  if (buckets.length === 0) {
+    return [
+      {
+        title: localizeText(options.emptyTitle, locale),
+        subtitle: localizeText(options.emptySubtitle, locale),
+        tone: "neutral" as const,
+        status: formatReportWindowLabel(options.selectedWindowDays, locale),
+      },
+    ];
+  }
+
+  return buckets.slice(0, 6).map((bucket, index) => {
+    const share = totalSelectedRevenue > 0 ? (bucket.selectedRevenueAmount / totalSelectedRevenue) * 100 : 0;
+    const averageRevenue =
+      bucket.selectedOrderCount > 0 ? bucket.selectedRevenueAmount / bucket.selectedOrderCount : 0;
+
+    return {
+      title: `${index + 1}. ${bucket.label}`,
+      subtitle: bucket.subtitle,
+      tone: bucket.selectedRevenueAmount > 0 ? ("good" as const) : ("neutral" as const),
+      status: `${formatReportWindowLabel(options.selectedWindowDays, locale)} ${formatCurrency(bucket.selectedRevenueAmount, locale)}`,
+      meta: [
+        localizeText(
+          {
+            zhCn: `${formatReportWindowLabel(options.selectedWindowDays, locale)} ${formatNumber(bucket.selectedOrderCount, locale)} 笔解锁`,
+            zhTw: `${formatReportWindowLabel(options.selectedWindowDays, locale)} ${formatNumber(bucket.selectedOrderCount, locale)} 筆解鎖`,
+            en: `${formatNumber(bucket.selectedOrderCount, locale)} unlocks in ${formatReportWindowLabel(options.selectedWindowDays, locale)}`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `营收占比 ${formatPercent(share, locale)}%`,
+            zhTw: `營收占比 ${formatPercent(share, locale)}%`,
+            en: `${formatPercent(share, locale)}% revenue share`,
+          },
+          locale,
+        ),
+        localizeText(
+          {
+            zhCn: `客单 ${formatCurrency(averageRevenue, locale)}`,
+            zhTw: `客單 ${formatCurrency(averageRevenue, locale)}`,
+            en: `Avg ${formatCurrency(averageRevenue, locale)}`,
+          },
+          locale,
+        ),
+        ...BREAKDOWN_WINDOWS.map(
+          (windowDays) => `${formatReportWindowLabel(windowDays, locale)} ${formatCurrency(bucket.revenueByWindow[windowDays], locale)}`,
+        ),
+        totalSelectedOrders > 0
+          ? localizeText(
+              {
+                zhCn: `当前窗口总单量 ${formatNumber(totalSelectedOrders, locale)}`,
+                zhTw: `目前窗口總單量 ${formatNumber(totalSelectedOrders, locale)}`,
+                en: `${formatNumber(totalSelectedOrders, locale)} total orders in current window`,
+              },
+              locale,
+            )
+          : localizeText({ zhCn: "当前窗口总单量 0", zhTw: "目前窗口總單量 0", en: "0 total orders in current window" }, locale),
+      ],
+    };
+  });
+}
+
+function compressTrendPoints(
+  points: Array<{ dateKey: string; value: number }>,
+  windowDays: number,
+  locale: Locale,
+): AdminReportTrendPoint[] {
+  if (windowDays <= 90) {
+    return points.map((point) => ({
+      label: formatShortDate(new Date(`${point.dateKey}T00:00:00.000Z`), locale),
+      value: point.value,
+    }));
+  }
+
+  if (windowDays <= 180) {
+    const buckets: AdminReportTrendPoint[] = [];
+
+    for (let index = 0; index < points.length; index += 7) {
+      const chunk = points.slice(index, index + 7);
+
+      if (chunk.length === 0) {
+        continue;
+      }
+
+      const first = new Date(`${chunk[0].dateKey}T00:00:00.000Z`);
+      const last = new Date(`${chunk[chunk.length - 1].dateKey}T00:00:00.000Z`);
+      buckets.push({
+        label: `${formatShortDate(first, locale)}-${formatShortDate(last, locale)}`,
+        value: chunk.reduce((sum, item) => sum + item.value, 0),
+      });
+    }
+
+    return buckets;
+  }
+
+  const monthly = new Map<string, { metricDate: Date; value: number }>();
+
+  for (const point of points) {
+    const metricDate = new Date(`${point.dateKey}T00:00:00.000Z`);
+    const monthKey = `${metricDate.getUTCFullYear()}-${String(metricDate.getUTCMonth() + 1).padStart(2, "0")}`;
+    const existing = monthly.get(monthKey);
+
+    if (existing) {
+      existing.value += point.value;
+      continue;
+    }
+
+    monthly.set(monthKey, {
+      metricDate,
+      value: point.value,
+    });
+  }
+
+  return Array.from(monthly.values()).map((item) => ({
+    label: formatMonthLabel(item.metricDate, locale),
+    value: item.value,
+  }));
+}
+
+function sumTrendWindow(
+  trendFacts: Awaited<ReturnType<typeof getDailyFactSeries>>,
+  metricKeys: AdminReportDailyMetricKey[],
+  valueField: "countValue" | "amountValue",
+  windowDays: number,
+) {
+  const dateKeys = trendFacts.dateKeys.slice(-windowDays);
+
+  return dateKeys.reduce(
+    (sum, dateKey) =>
+      sum +
+      metricKeys.reduce(
+        (metricSum, metricKey) => metricSum + (trendFacts.series.get(metricKey)?.get(dateKey)?.[valueField] ?? 0),
+        0,
+      ),
+    0,
+  );
 }
 
 function emptyDailyFactMap(windowDays: number) {
@@ -211,7 +457,70 @@ export function normalizeAdminReportExportScope(value?: string | null): AdminRep
   }
 }
 
-async function rebuildAdminReportDailyFacts(windowDays: number) {
+export function normalizeAdminReportExportFilters(
+  value?: Partial<AdminReportExportFilters> | string | null,
+): AdminReportExportFilters {
+  const parsed =
+    typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value) as Partial<AdminReportExportFilters>;
+          } catch {
+            return {};
+          }
+        })()
+      : value ?? {};
+  const reportsWindow =
+    parsed.reportsWindow === 7 ||
+    parsed.reportsWindow === 30 ||
+    parsed.reportsWindow === 90 ||
+    parsed.reportsWindow === 180 ||
+    parsed.reportsWindow === 365
+      ? parsed.reportsWindow
+      : undefined;
+
+  return {
+    reportsWindow,
+    from: typeof parsed.from === "string" ? parsed.from.trim() || undefined : undefined,
+    to: typeof parsed.to === "string" ? parsed.to.trim() || undefined : undefined,
+    orderType:
+      parsed.orderType === "membership" || parsed.orderType === "content" || parsed.orderType === "all"
+        ? parsed.orderType
+        : undefined,
+    dimension: typeof parsed.dimension === "string" ? parsed.dimension.trim() || undefined : undefined,
+  };
+}
+
+function resolveExportDateRange(filters?: AdminReportExportFilters) {
+  const normalized = normalizeAdminReportExportFilters(filters);
+  const fromDate = normalized.from ? new Date(normalized.from) : undefined;
+  const toDate = normalized.to ? new Date(normalized.to) : undefined;
+
+  if ((fromDate && Number.isFinite(fromDate.getTime())) || (toDate && Number.isFinite(toDate.getTime()))) {
+    return {
+      fromDate: fromDate && Number.isFinite(fromDate.getTime()) ? fromDate : undefined,
+      toDate: toDate && Number.isFinite(toDate.getTime()) ? toDate : undefined,
+      filters: normalized,
+    };
+  }
+
+  if (normalized.reportsWindow) {
+    const { start, end } = buildDateRange(normalized.reportsWindow);
+    return {
+      fromDate: start,
+      toDate: end,
+      filters: normalized,
+    };
+  }
+
+  return {
+    fromDate: undefined,
+    toDate: undefined,
+    filters: normalized,
+  };
+}
+
+async function rebuildAdminReportOverviewDailyFacts(windowDays: number) {
   const { start, end } = buildDateRange(windowDays);
   const dateKeys = buildDateKeys(windowDays);
   const dailyFacts = emptyDailyFactMap(windowDays);
@@ -391,69 +700,97 @@ async function rebuildAdminReportDailyFacts(windowDays: number) {
     incrementMetric("agent_withdrawal_settled", toMetricDateKey(item.settledAt), 1, item.amount);
   }
 
-  const operations = dateKeys.flatMap((dateKey) => {
+  const rows = dateKeys.flatMap((dateKey) => {
     const metricDate = fromMetricDateKey(dateKey);
     return (Array.from(dailyFacts.entries()) as Array<
       [AdminReportDailyMetricKey, Map<string, { countValue: number; amountValue: number }>]
     >).map(([metricKey, metricMap]) => {
       const metric = metricMap.get(dateKey) ?? { countValue: 0, amountValue: 0 };
-      return prisma.adminReportDailyFact.upsert({
-        where: {
-          metricDate_scope_metricKey_dimensionKey: {
-            metricDate,
-            scope: "overview",
-            metricKey,
-            dimensionKey: "",
-          },
-        },
-        update: {
-          countValue: metric.countValue,
-          amountValue: metric.amountValue,
-          extraJson: null,
-        },
-        create: {
-          metricDate,
-          scope: "overview",
-          metricKey,
-          dimensionKey: "",
-          countValue: metric.countValue,
-          amountValue: metric.amountValue,
-        },
-      });
+      return {
+        metricDate,
+        scope: "overview",
+        metricKey,
+        dimensionKey: "",
+        countValue: metric.countValue,
+        amountValue: metric.amountValue,
+        extraJson: null,
+      };
     });
   });
+  const dedupedRows = Array.from(
+    new Map(
+      rows.map((row) => [
+        `${row.metricDate.toISOString()}::${row.scope}::${row.metricKey}::${row.dimensionKey}`,
+        row,
+      ]),
+    ).values(),
+  );
 
-  await prisma.$transaction(operations);
+  const { deletedCount, insertedCount } = await prisma.$transaction(async (tx) => {
+    const deleted = await tx.adminReportDailyFact.deleteMany({
+      where: {
+        scope: "overview",
+      },
+    });
+
+    if (dedupedRows.length === 0) {
+      return {
+        deletedCount: deleted.count,
+        insertedCount: 0,
+      };
+    }
+
+    const inserted = await tx.adminReportDailyFact.createMany({
+      data: dedupedRows,
+    });
+
+    return {
+      deletedCount: deleted.count,
+      insertedCount: inserted.count,
+    };
+  });
 
   return {
     startDate: start.toISOString(),
     endDate: end.toISOString(),
     dayCount: dateKeys.length,
-    recordCount: operations.length,
+    recordCount: insertedCount,
+    deletedCount,
   };
 }
 
 async function ensureAdminReportDailyFacts(windowDays: number) {
-  const { start, end } = buildDateRange(windowDays);
-  const existingCount = await prisma.adminReportDailyFact.count({
-    where: {
-      scope: "overview",
-      metricDate: {
-        gte: start,
-        lt: end,
-      },
-    },
-  });
-  const expectedMinimum = buildDateKeys(windowDays).length * 9;
+  const normalizedWindow = Math.max(365, clampTrendWindow(windowDays));
+  const key = `overview:${normalizedWindow}`;
+  const cache = globalForAdminReports.__signalNineAdminReportEnsurePromises ?? new Map<string, Promise<void>>();
+  globalForAdminReports.__signalNineAdminReportEnsurePromises = cache;
 
-  if (existingCount < expectedMinimum) {
-    await rebuildAdminReportDailyFacts(windowDays);
+  if (!cache.has(key)) {
+    cache.set(
+      key,
+      (async () => {
+        const existingCount = await prisma.adminReportDailyFact.count({
+          where: {
+            scope: "overview",
+          },
+        });
+        const expectedMinimum = buildDateKeys(normalizedWindow).length * 9;
+
+        if (existingCount < expectedMinimum) {
+          await rebuildAdminReportOverviewDailyFacts(normalizedWindow);
+        }
+      })().finally(() => {
+        cache.delete(key);
+      }),
+    );
   }
+
+  await cache.get(key);
 }
 
 async function getDailyFactSeries(windowDays: number) {
   await ensureAdminReportDailyFacts(windowDays);
-  const { start, end } = buildDateRange(windowDays);
+  const { start, end } = buildMetricDateBounds(windowDays);
   const rows = await prisma.adminReportDailyFact.findMany({
     where: {
       scope: "overview",
@@ -490,8 +827,366 @@ async function getDailyFactSeries(windowDays: number) {
   return { series, dateKeys: buildDateKeys(windowDays) };
 }
 
-export async function refreshAdminReportDailyFacts(windowDays = 30) {
-  return rebuildAdminReportDailyFacts(windowDays);
+function parseBreakdownExtraJson(
+  value: string | null,
+): {
+  label?: string;
+  subtitle?: string;
+  sportKey?: string;
+} {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    return {
+      label: typeof (parsed as { label?: unknown }).label === "string" ? String((parsed as { label?: unknown }).label) : undefined,
+      subtitle:
+        typeof (parsed as { subtitle?: unknown }).subtitle === "string"
+          ? String((parsed as { subtitle?: unknown }).subtitle)
+          : undefined,
+      sportKey:
+        typeof (parsed as { sportKey?: unknown }).sportKey === "string"
+          ? String((parsed as { sportKey?: unknown }).sportKey)
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function ensureAdminReportBreakdownFacts(
+  scope: Exclude<AdminReportRefreshScope, "overview" | "all">,
+) {
+  const key = `${scope}:365`;
+  const cache = globalForAdminReports.__signalNineAdminReportEnsurePromises ?? new Map<string, Promise<void>>();
+  globalForAdminReports.__signalNineAdminReportEnsurePromises = cache;
+
+  if (!cache.has(key)) {
+    cache.set(
+      key,
+      (async () => {
+        const existingCount = await prisma.adminReportDailyFact.count({
+          where: {
+            scope,
+          },
+        });
+
+        if (existingCount > 0) {
+          return;
+        }
+
+        const { start, end } = buildDateRange(365);
+        const paidOrderCount = await prisma.contentOrder.count({
+          where: {
+            status: "paid",
+            paidAt: {
+              gte: start,
+              lt: end,
+            },
+          },
+        });
+
+        if (paidOrderCount === 0) {
+          return;
+        }
+
+        await rebuildAdminReportContentBreakdownFacts(365, scope);
+      })().finally(() => {
+        cache.delete(key);
+      }),
+    );
+  }
+
+  await cache.get(key);
+}
+
+async function getAdminReportBreakdownBuckets(
+  scope: Exclude<AdminReportRefreshScope, "overview" | "all">,
+  selectedWindowDays: number,
+  locale: Locale,
+) {
+  await ensureAdminReportBreakdownFacts(scope);
+
+  const { start, end } = buildMetricDateBounds(365);
+  const selectedWindowStart = buildMetricDateBounds(selectedWindowDays).start;
+  const rows = await prisma.adminReportDailyFact.findMany({
+    where: {
+      scope,
+      metricDate: {
+        gte: start,
+        lt: end,
+      },
+    },
+    orderBy: [{ metricDate: "asc" }, { amountValue: "desc" }],
+    select: {
+      metricDate: true,
+      dimensionKey: true,
+      countValue: true,
+      amountValue: true,
+      extraJson: true,
+    },
+  });
+
+  const bucketMap = new Map<string, AdminReportBreakdownBucket>();
+  const breakdownWindowStarts = new Map(
+    BREAKDOWN_WINDOWS.map((windowDays) => [windowDays, buildMetricDateBounds(windowDays).start]),
+  );
+
+  for (const row of rows) {
+    const extra = parseBreakdownExtraJson(row.extraJson);
+    const sportKey = extra.sportKey?.trim() || extra.subtitle?.trim() || extra.label?.trim() || row.dimensionKey;
+    const label =
+      scope === "content-by-sport"
+        ? formatSportLabel(extra.sportKey?.trim() || extra.label?.trim() || row.dimensionKey, locale)
+        : extra.label?.trim() || row.dimensionKey;
+    const subtitle =
+      scope === "content-by-league"
+        ? formatSportLabel(extra.sportKey?.trim() || extra.subtitle?.trim() || "unknown", locale)
+        : extra.subtitle?.trim() || undefined;
+    const existing = bucketMap.get(row.dimensionKey);
+    const isSelected = row.metricDate >= selectedWindowStart;
+    const matchedWindows = BREAKDOWN_WINDOWS.filter((windowDays) => {
+      const windowStart = breakdownWindowStarts.get(windowDays);
+      return Boolean(windowStart && row.metricDate >= windowStart);
+    });
+
+    if (existing) {
+      existing.orderCount += row.countValue;
+      existing.revenueAmount += row.amountValue;
+      if (isSelected) {
+        existing.selectedOrderCount += row.countValue;
+        existing.selectedRevenueAmount += row.amountValue;
+      }
+      for (const windowDays of matchedWindows) {
+        existing.revenueByWindow[windowDays] += row.amountValue;
+      }
+      continue;
+    }
+
+    bucketMap.set(row.dimensionKey, {
+      label,
+      subtitle: scope === "content-by-sport" ? undefined : subtitle,
+      orderCount: row.countValue,
+      revenueAmount: row.amountValue,
+      selectedOrderCount: isSelected ? row.countValue : 0,
+      selectedRevenueAmount: isSelected ? row.amountValue : 0,
+      revenueByWindow: {
+        30: matchedWindows.includes(30) ? row.amountValue : 0,
+        90: matchedWindows.includes(90) ? row.amountValue : 0,
+        180: matchedWindows.includes(180) ? row.amountValue : 0,
+        365: matchedWindows.includes(365) ? row.amountValue : 0,
+      },
+    });
+  }
+
+  return Array.from(bucketMap.values()).sort(
+    (left, right) =>
+      right.selectedRevenueAmount - left.selectedRevenueAmount ||
+      right.revenueByWindow[365] - left.revenueByWindow[365] ||
+      right.selectedOrderCount - left.selectedOrderCount ||
+      left.label.localeCompare(right.label),
+  );
+}
+
+async function rebuildAdminReportContentBreakdownFacts(
+  windowDays: number,
+  scope: Exclude<AdminReportRefreshScope, "overview" | "all">,
+) {
+  const { start, end, windowDays: normalizedWindow } = buildDateRange(windowDays);
+  const paidOrders = await prisma.contentOrder.findMany({
+    where: {
+      status: "paid",
+      paidAt: {
+        gte: start,
+        lt: end,
+      },
+    },
+    select: {
+      contentId: true,
+      amount: true,
+      paidAt: true,
+    },
+  });
+
+  const contentPlanIds = Array.from(
+    new Set(paidOrders.map((item) => item.contentId).filter((item) => item.trim().length > 0)),
+  );
+  const contentPlans =
+    contentPlanIds.length > 0
+      ? await prisma.articlePlan.findMany({
+          where: {
+            id: {
+              in: contentPlanIds,
+            },
+          },
+          select: {
+            id: true,
+            sport: true,
+            leagueLabel: true,
+            author: {
+              select: {
+                id: true,
+                name: true,
+                focus: true,
+              },
+            },
+          },
+        })
+      : [];
+  const contentPlanMap = new Map(contentPlans.map((item) => [item.id, item]));
+  const aggregated = new Map<
+    string,
+    {
+      metricDate: Date;
+      dimensionKey: string;
+      countValue: number;
+      amountValue: number;
+      extraJson: string | null;
+    }
+  >();
+
+  for (const order of paidOrders) {
+    if (!order.paidAt) {
+      continue;
+    }
+
+    const plan = contentPlanMap.get(order.contentId);
+    const sportKey = plan?.sport?.trim() || "unknown";
+    const leagueLabel = plan?.leagueLabel?.trim() || "unassigned";
+    const authorId = plan?.author.id?.trim() || `unknown:${order.contentId}`;
+    const authorName = plan?.author.name?.trim() || "Unknown author";
+    const authorFocus = plan?.author.focus?.trim() || sportKey;
+    const metricDate = fromMetricDateKey(toMetricDateKey(order.paidAt));
+
+    const breakdown =
+      scope === "content-by-sport"
+        ? {
+            dimensionKey: sportKey,
+            extraJson: JSON.stringify({
+              label: sportKey,
+              sportKey,
+            }),
+          }
+        : scope === "content-by-league"
+          ? {
+              dimensionKey: `${sportKey}:${leagueLabel}`,
+              extraJson: JSON.stringify({
+                label: leagueLabel,
+                subtitle: sportKey,
+                sportKey,
+              }),
+            }
+          : {
+              dimensionKey: authorId,
+              extraJson: JSON.stringify({
+                label: authorName,
+                subtitle: authorFocus,
+                sportKey,
+              }),
+            };
+
+    const aggregateKey = `${metricDate.toISOString()}::${breakdown.dimensionKey}`;
+    const existing = aggregated.get(aggregateKey);
+
+    if (existing) {
+      existing.countValue += 1;
+      existing.amountValue += order.amount;
+      continue;
+    }
+
+    aggregated.set(aggregateKey, {
+      metricDate,
+      dimensionKey: breakdown.dimensionKey,
+      countValue: 1,
+      amountValue: order.amount,
+      extraJson: breakdown.extraJson,
+    });
+  }
+
+  const rows = Array.from(aggregated.values());
+  const { deletedCount, insertedCount } = await prisma.$transaction(async (tx) => {
+    const deleted = await tx.adminReportDailyFact.deleteMany({
+      where: {
+        scope,
+      },
+    });
+
+    if (rows.length === 0) {
+      return {
+        deletedCount: deleted.count,
+        insertedCount: 0,
+      };
+    }
+
+    const inserted = await tx.adminReportDailyFact.createMany({
+      data: rows.map((row) => ({
+        metricDate: row.metricDate,
+        scope,
+        metricKey: "content_paid",
+        dimensionKey: row.dimensionKey,
+        countValue: row.countValue,
+        amountValue: row.amountValue,
+        extraJson: row.extraJson,
+      })),
+    });
+
+    return {
+      deletedCount: deleted.count,
+      insertedCount: inserted.count,
+    };
+  });
+
+  return {
+    scope,
+    startDate: start.toISOString(),
+    endDate: end.toISOString(),
+    dayCount: buildDateKeys(normalizedWindow).length,
+    recordCount: insertedCount,
+    deletedCount,
+  };
+}
+
+export async function refreshAdminReportDailyFacts(
+  windowDays = 30,
+  scope: AdminReportRefreshScope = "all",
+) {
+  const normalizedWindow = clampTrendWindow(windowDays);
+  const scopes: Array<Exclude<AdminReportRefreshScope, "all">> =
+    scope === "all" ? ["overview", ...CONTENT_BREAKDOWN_SCOPES] : [scope];
+  const processedScopes = [];
+
+  for (const currentScope of scopes) {
+    if (currentScope === "overview") {
+      processedScopes.push(
+        await rebuildAdminReportOverviewDailyFacts(normalizedWindow),
+      );
+      continue;
+    }
+
+    processedScopes.push(
+      await rebuildAdminReportContentBreakdownFacts(normalizedWindow, currentScope),
+    );
+  }
+
+  return {
+    scope,
+    windowDays: normalizedWindow,
+    processedScopes,
+    recordCount: processedScopes.reduce((sum, item) => sum + item.recordCount, 0),
+    deletedCount: processedScopes.reduce(
+      (sum, item) => sum + ("deletedCount" in item ? Number(item.deletedCount ?? 0) : 0),
+      0,
+    ),
+    startDate: processedScopes[0]?.startDate,
+    endDate: processedScopes[0]?.endDate,
+  };
 }
 
 type CsvRow = Record<string, string | number | null | undefined>;
@@ -554,6 +1249,7 @@ export async function getAdminReportsDashboard(
 ): Promise<AdminReportsDashboard> {
   const now = new Date();
   const trendWindowDays = clampTrendWindow(options?.trendWindowDays);
+  const reportWindowRange = buildDateRange(trendWindowDays);
 
   const [
     membershipPaid,
@@ -582,6 +1278,10 @@ export async function getAdminReportsDashboard(
     pendingRechargeOrders,
     agentPerformanceSnapshot,
     trendFacts,
+    longRangeTrendFacts,
+    sportBreakdownBuckets,
+    leagueBreakdownBuckets,
+    authorBreakdownBuckets,
   ] = await Promise.all([
     prisma.membershipOrder.aggregate({
       _count: { id: true },
@@ -709,6 +1409,10 @@ export async function getAdminReportsDashboard(
     }),
     getAgentPerformanceSnapshot(),
     getDailyFactSeries(trendWindowDays),
+    getDailyFactSeries(365),
+    getAdminReportBreakdownBuckets("content-by-sport", trendWindowDays, locale),
+    getAdminReportBreakdownBuckets("content-by-league", trendWindowDays, locale),
+    getAdminReportBreakdownBuckets("content-by-author", trendWindowDays, locale),
   ]);
 
   const membershipRevenue = membershipPaid._sum.amount ?? 0;
@@ -725,17 +1429,95 @@ export async function getAdminReportsDashboard(
   const totalSettledWithdrawal = agentPerformanceSnapshot.reduce((total, item) => total + item.settledWithdrawalAmount, 0);
   const totalReferredUsers = agentPerformanceSnapshot.reduce((total, item) => total + item.referredUsers, 0);
   const totalChildAgents = agentPerformanceSnapshot.reduce((total, item) => total + item.childAgents, 0);
+  const breakdownSections: AdminReportBreakdownSection[] = [
+    {
+      key: "sport",
+      title: localizeText(
+        { zhCn: "内容营收按运动拆分", zhTw: "內容營收按運動拆分", en: "Content revenue by sport" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: `按最近 ${trendWindowDays} 天已支付内容订单拆分各运动表现。`,
+          zhTw: `按最近 ${trendWindowDays} 天已支付內容訂單拆分各運動表現。`,
+          en: `Break down paid content performance by sport in the last ${trendWindowDays} days.`,
+        },
+        locale,
+      ),
+      rows: buildBreakdownRows(sportBreakdownBuckets, locale, {
+        emptyTitle: { zhCn: "暂无内容订单", zhTw: "暫無內容訂單", en: "No content orders yet" },
+        emptySubtitle: {
+          zhCn: "当前周期内还没有已支付的内容解锁订单。",
+          zhTw: "當前週期內還沒有已支付的內容解鎖訂單。",
+          en: "There are no paid content unlock orders in the current window.",
+        },
+        selectedWindowDays: trendWindowDays,
+      }),
+    },
+    {
+      key: "league",
+      title: localizeText(
+        { zhCn: "内容营收按联赛拆分", zhTw: "內容營收按聯賽拆分", en: "Content revenue by league" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: "帮助运营识别最能带来付费解锁的联赛主题。",
+          zhTw: "幫助運營識別最能帶來付費解鎖的聯賽主題。",
+          en: "Identify which league themes generate the strongest paid unlock demand.",
+        },
+        locale,
+      ),
+      rows: buildBreakdownRows(leagueBreakdownBuckets, locale, {
+        emptyTitle: { zhCn: "暂无联赛拆分", zhTw: "暫無聯賽拆分", en: "No league breakdown yet" },
+        emptySubtitle: {
+          zhCn: "待内容订单进入后，这里会显示联赛维度的解锁营收排行。",
+          zhTw: "待內容訂單進入後，這裡會顯示聯賽維度的解鎖營收排行。",
+          en: "League-level unlock revenue rankings will appear once paid orders arrive.",
+        },
+        selectedWindowDays: trendWindowDays,
+      }),
+    },
+    {
+      key: "author",
+      title: localizeText(
+        { zhCn: "内容营收按作者拆分", zhTw: "內容營收按作者拆分", en: "Content revenue by author" },
+        locale,
+      ),
+      description: localizeText(
+        {
+          zhCn: "用于观察专家团队的带单能力与内容变现效率。",
+          zhTw: "用於觀察專家團隊的帶單能力與內容變現效率。",
+          en: "Track author monetization strength and paid conversion efficiency.",
+        },
+        locale,
+      ),
+      rows: buildBreakdownRows(authorBreakdownBuckets, locale, {
+        emptyTitle: { zhCn: "暂无作者拆分", zhTw: "暫無作者拆分", en: "No author breakdown yet" },
+        emptySubtitle: {
+          zhCn: "当前周期内还没有可归因到作者的已支付内容订单。",
+          zhTw: "當前週期內還沒有可歸因到作者的已支付內容訂單。",
+          en: "There are no author-attributed paid content orders in the current window.",
+        },
+        selectedWindowDays: trendWindowDays,
+      }),
+    },
+  ];
   const buildTrendPoints = (
     metricKeys: AdminReportDailyMetricKey[],
     valueField: "countValue" | "amountValue",
   ) =>
-    trendFacts.dateKeys.map((dateKey) => ({
-      label: formatShortDate(new Date(`${dateKey}T00:00:00.000Z`), locale),
-      value: metricKeys.reduce(
-        (sum, metricKey) => sum + (trendFacts.series.get(metricKey)?.get(dateKey)?.[valueField] ?? 0),
-        0,
-      ),
-    }));
+    compressTrendPoints(
+      trendFacts.dateKeys.map((dateKey) => ({
+        dateKey,
+        value: metricKeys.reduce(
+          (sum, metricKey) => sum + (trendFacts.series.get(metricKey)?.get(dateKey)?.[valueField] ?? 0),
+          0,
+        ),
+      })),
+      trendWindowDays,
+      locale,
+    );
   const totalTrendValue = (points: AdminReportTrendPoint[]) =>
     points.reduce((sum, point) => sum + point.value, 0);
   const revenueTrendPoints = buildTrendPoints(
@@ -752,6 +1534,88 @@ export async function getAdminReportsDashboard(
     ["agent_withdrawal_settled"],
     "amountValue",
   );
+  const longRangeRows: AdminReportRow[] = [
+    {
+      title: localizeText({ zhCn: "营收累计阶梯", zhTw: "營收累計階梯", en: "Revenue ladder" }, locale),
+      subtitle: localizeText(
+        {
+          zhCn: "比较 30 / 90 / 180 / 365 天已实现营收，观察收入斜率变化。",
+          zhTw: "比較 30 / 90 / 180 / 365 天已實現營收，觀察收入斜率變化。",
+          en: "Compare realized revenue across 30 / 90 / 180 / 365 day windows.",
+        },
+        locale,
+      ),
+      status: `365D ${formatCurrency(
+        sumTrendWindow(longRangeTrendFacts, ["revenue_membership", "revenue_content", "revenue_recharge"], "amountValue", 365),
+        locale,
+      )}`,
+      tone: "good",
+      meta: [30, 90, 180].map((windowDays) => `${windowDays}D ${formatCurrency(
+        sumTrendWindow(longRangeTrendFacts, ["revenue_membership", "revenue_content", "revenue_recharge"], "amountValue", windowDays),
+        locale,
+      )}`),
+    },
+    {
+      title: localizeText({ zhCn: "充值入金阶梯", zhTw: "充值入金階梯", en: "Recharge ladder" }, locale),
+      subtitle: localizeText(
+        {
+          zhCn: "用长周期观察充值强度是否持续抬升或回落。",
+          zhTw: "用長週期觀察充值強度是否持續抬升或回落。",
+          en: "Track whether recharge intensity is accelerating or cooling off.",
+        },
+        locale,
+      ),
+      status: `365D ${formatCurrency(
+        sumTrendWindow(longRangeTrendFacts, ["revenue_recharge"], "amountValue", 365),
+        locale,
+      )}`,
+      tone: "neutral",
+      meta: [30, 90, 180].map((windowDays) => `${windowDays}D ${formatCurrency(
+        sumTrendWindow(longRangeTrendFacts, ["revenue_recharge"], "amountValue", windowDays),
+        locale,
+      )}`),
+    },
+    {
+      title: localizeText({ zhCn: "会员转化阶梯", zhTw: "會員轉化階梯", en: "Membership conversion ladder" }, locale),
+      subtitle: localizeText(
+        {
+          zhCn: "对比不同周期的会员转化单量，判断增长稳定度。",
+          zhTw: "對比不同週期的會員轉化單量，判斷增長穩定度。",
+          en: "Compare paid membership conversion volume across longer windows.",
+        },
+        locale,
+      ),
+      status: `365D ${formatNumber(
+        sumTrendWindow(longRangeTrendFacts, ["membership_conversions"], "countValue", 365),
+        locale,
+      )}`,
+      tone: "good",
+      meta: [30, 90, 180].map((windowDays) => `${windowDays}D ${formatNumber(
+        sumTrendWindow(longRangeTrendFacts, ["membership_conversions"], "countValue", windowDays),
+        locale,
+      )}`),
+    },
+    {
+      title: localizeText({ zhCn: "代理结算阶梯", zhTw: "代理結算階梯", en: "Agent settlement ladder" }, locale),
+      subtitle: localizeText(
+        {
+          zhCn: "同时看佣金生成与已结算提现，判断代理现金流压力。",
+          zhTw: "同時看佣金生成與已結算提現，判斷代理現金流壓力。",
+          en: "View commission generation and settled withdrawals together.",
+        },
+        locale,
+      ),
+      status: `365D ${formatCurrency(
+        sumTrendWindow(longRangeTrendFacts, ["agent_commission_generated"], "amountValue", 365),
+        locale,
+      )}`,
+      tone: totalPendingPayout > 0 ? "warn" : "neutral",
+      meta: [30, 90, 180].map((windowDays) => `${windowDays}D ${formatCurrency(
+        sumTrendWindow(longRangeTrendFacts, ["agent_withdrawal_settled"], "amountValue", windowDays),
+        locale,
+      )}`),
+    },
+  ];
   const trendCards: AdminReportTrendCard[] = [
     {
       key: "revenue",
@@ -971,6 +1835,8 @@ export async function getAdminReportsDashboard(
       },
     ],
     trendCards,
+    longRangeRows,
+    breakdownSections,
     revenueRows: [
       {
         title: localizeText({ zhCn: "会员订单营收", zhTw: "會員訂單營收", en: "Membership revenue" }, locale),
@@ -1387,9 +2253,15 @@ export async function getAdminReportsDashboard(
   };
 }
 
-export async function buildAdminReportExport(scope: AdminReportExportScope) {
+export async function buildAdminReportExport(scope: AdminReportExportScope, filters?: AdminReportExportFilters) {
+  const { fromDate, toDate, filters: normalizedFilters } = resolveExportDateRange(filters);
+
   if (scope === "orders") {
-    const rows = await getAdminOrdersExportRows();
+    const rows = await getAdminOrdersExportRows({
+      orderType: normalizedFilters.orderType ?? "all",
+      from: fromDate?.toISOString(),
+      to: toDate?.toISOString(),
+    });
     return {
       filename: "admin-orders",
       csv: buildAdminOrdersCsv(rows),
@@ -1398,8 +2270,21 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
 
   if (scope === "finance-reconciliation") {
     const [orderRows, rechargeOrders] = await Promise.all([
-      getAdminOrdersExportRows(),
+      getAdminOrdersExportRows({
+        orderType: normalizedFilters.orderType ?? "all",
+        from: fromDate?.toISOString(),
+        to: toDate?.toISOString(),
+      }),
       prisma.coinRechargeOrder.findMany({
+        where:
+          fromDate || toDate
+            ? {
+                updatedAt: {
+                  ...(fromDate ? { gte: fromDate } : {}),
+                  ...(toDate ? { lte: toDate } : {}),
+                },
+              }
+            : undefined,
         orderBy: { updatedAt: "desc" },
         include: {
           user: {
@@ -1483,6 +2368,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
 
   if (scope === "coin-recharges") {
     const records = await prisma.coinRechargeOrder.findMany({
+      where:
+        fromDate || toDate
+          ? {
+              updatedAt: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : undefined,
       orderBy: { updatedAt: "desc" },
       include: {
         user: {
@@ -1526,6 +2420,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
 
   if (scope === "coin-ledgers") {
     const records = await prisma.coinLedger.findMany({
+      where:
+        fromDate || toDate
+          ? {
+              createdAt: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : undefined,
       orderBy: { createdAt: "desc" },
       include: {
         account: {
@@ -1563,6 +2466,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
 
   if (scope === "agent-applications") {
     const records = await prisma.agentApplication.findMany({
+      where:
+        fromDate || toDate
+          ? {
+              updatedAt: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : undefined,
       orderBy: { updatedAt: "desc" },
     });
 
@@ -1587,6 +2499,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
 
   if (scope === "agents") {
     const records = await prisma.agentProfile.findMany({
+      where:
+        fromDate || toDate
+          ? {
+              updatedAt: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : undefined,
       orderBy: { updatedAt: "desc" },
       include: {
         parentAgent: {
@@ -1621,6 +2542,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
 
   if (scope === "leads") {
     const records = await prisma.recruitmentLead.findMany({
+      where:
+        fromDate || toDate
+          ? {
+              updatedAt: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : undefined,
       orderBy: { updatedAt: "desc" },
       include: {
         campaign: {
@@ -1658,6 +2588,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
 
   if (scope === "agent-commissions") {
     const recordsUntyped = await prisma.agentCommissionLedger.findMany({
+      where:
+        fromDate || toDate
+          ? {
+              createdAt: {
+                ...(fromDate ? { gte: fromDate } : {}),
+                ...(toDate ? { lte: toDate } : {}),
+              },
+            }
+          : undefined,
       orderBy: { createdAt: "desc" },
       include: {
         agent: {
@@ -1713,6 +2652,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
   if (scope === "agent-performance") {
     const [agents, withdrawals] = await Promise.all([
       prisma.agentProfile.findMany({
+        where:
+          fromDate || toDate
+            ? {
+                updatedAt: {
+                  ...(fromDate ? { gte: fromDate } : {}),
+                  ...(toDate ? { lte: toDate } : {}),
+                },
+              }
+            : undefined,
         orderBy: { updatedAt: "desc" },
         include: {
           parentAgent: {
@@ -1724,6 +2672,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
       }),
       prisma.agentWithdrawal.groupBy({
         by: ["agentId", "status"],
+        where:
+          fromDate || toDate
+            ? {
+                updatedAt: {
+                  ...(fromDate ? { gte: fromDate } : {}),
+                  ...(toDate ? { lte: toDate } : {}),
+                },
+              }
+            : undefined,
         _count: {
           _all: true,
         },
@@ -1804,6 +2761,15 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
   }
 
   const records = await prisma.agentWithdrawal.findMany({
+    where:
+      fromDate || toDate
+        ? {
+            updatedAt: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          }
+        : undefined,
     orderBy: { updatedAt: "desc" },
     select: {
       amount: true,
@@ -1864,3 +2830,4 @@ export async function buildAdminReportExport(scope: AdminReportExportScope) {
     ),
   };
 }
+

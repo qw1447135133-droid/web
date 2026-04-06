@@ -7,6 +7,10 @@ export const assistantCookieName = "signal-nine-assistant";
 const assistantCookieMaxAge = 60 * 60 * 24 * 30;
 const defaultAssistantModel = process.env.OPENAI_MODEL?.trim() || "gpt-4.1-mini";
 const defaultOpenAiBaseUrl = process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1";
+const globalForSupportKnowledge = globalThis as typeof globalThis & {
+  __signalNineSupportKnowledgeReady?: boolean;
+  __signalNineSupportKnowledgeSeedPromise?: Promise<void>;
+};
 
 type AssistantRole = "assistant" | "user";
 
@@ -649,15 +653,29 @@ export async function bootstrapSupportKnowledgeBase() {
 }
 
 async function ensureSupportKnowledgeBase() {
-  const count = await prisma.supportKnowledgeItem.count({
-    where: { status: "active" },
-  });
-
-  if (count > 0) {
+  if (globalForSupportKnowledge.__signalNineSupportKnowledgeReady) {
     return;
   }
 
-  await bootstrapSupportKnowledgeBase();
+  if (!globalForSupportKnowledge.__signalNineSupportKnowledgeSeedPromise) {
+    globalForSupportKnowledge.__signalNineSupportKnowledgeSeedPromise = (async () => {
+      const count = await prisma.supportKnowledgeItem.count({
+        where: { status: "active" },
+      });
+
+      if (count > 0) {
+        globalForSupportKnowledge.__signalNineSupportKnowledgeReady = true;
+        return;
+      }
+
+      await bootstrapSupportKnowledgeBase();
+      globalForSupportKnowledge.__signalNineSupportKnowledgeReady = true;
+    })().finally(() => {
+      globalForSupportKnowledge.__signalNineSupportKnowledgeSeedPromise = undefined;
+    });
+  }
+
+  await globalForSupportKnowledge.__signalNineSupportKnowledgeSeedPromise;
 }
 
 async function getRelevantKnowledgeItems(question: string, locale: Locale | DisplayLocale) {

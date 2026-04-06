@@ -3,6 +3,7 @@ import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import {
   buildAdminReportExport,
+  normalizeAdminReportExportFilters,
   normalizeAdminReportExportScope,
   type AdminReportExportScope,
 } from "@/lib/admin-reports";
@@ -102,6 +103,7 @@ export async function getRecentAdminExportTasks(limit = 12): Promise<AdminExport
       rowCount: true,
       sizeBytes: true,
       errorText: true,
+      filtersJson: true,
       downloadCount: true,
       startedAt: true,
       finishedAt: true,
@@ -142,6 +144,7 @@ export async function createAdminExportTask(input: {
       rowCount: true,
       sizeBytes: true,
       errorText: true,
+      filtersJson: true,
       downloadCount: true,
       startedAt: true,
       finishedAt: true,
@@ -165,6 +168,7 @@ export async function runAdminExportTask(taskId: string): Promise<AdminExportTas
       rowCount: true,
       sizeBytes: true,
       errorText: true,
+      filtersJson: true,
       downloadCount: true,
       startedAt: true,
       finishedAt: true,
@@ -190,7 +194,11 @@ export async function runAdminExportTask(taskId: string): Promise<AdminExportTas
   });
 
   try {
-    const { filename, csv } = await buildAdminReportExport(normalizeAdminReportExportScope(existing.scope));
+    const filters = normalizeAdminReportExportFilters(existing.filtersJson);
+    const { filename, csv } = await buildAdminReportExport(
+      normalizeAdminReportExportScope(existing.scope),
+      filters,
+    );
     await mkdir(exportArtifactsDir, { recursive: true });
     const storageKey = buildTaskStorageKey(taskId, filename);
     const targetPath = path.join(exportArtifactsDir, storageKey);

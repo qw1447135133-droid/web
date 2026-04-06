@@ -14,6 +14,8 @@ type CoinOrderProvider = "mock" | "manual" | "hosted";
 type CoinPackageStatus = "active" | "inactive";
 type CoinLedgerDirection = "credit" | "debit";
 type FinanceTone = "good" | "warn" | "neutral";
+export type FinanceReconciliationIssueScope = "coin-recharge" | "membership" | "content";
+export type FinanceReconciliationScanScope = FinanceReconciliationIssueScope | "all";
 export type FinanceReconciliationIssueStatus = "open" | "reviewing" | "resolved" | "ignored";
 export type FinanceReconciliationIssueSeverity = "low" | "medium" | "high";
 export type FinanceReconciliationWorkflowStage =
@@ -105,7 +107,7 @@ export type AdminFinanceRowCard = {
 
 export type AdminFinanceReconciliationIssueRecord = {
   id: string;
-  scope: string;
+  scope: FinanceReconciliationIssueScope;
   issueType: string;
   status: FinanceReconciliationIssueStatus;
   severity: FinanceReconciliationIssueSeverity;
@@ -126,7 +128,13 @@ export type AdminFinanceReconciliationIssueRecord = {
   createdAt: string;
   updatedAt: string;
   rechargeOrderId?: string;
+  membershipOrderId?: string;
+  contentOrderId?: string;
   rechargeOrderNo?: string;
+  orderRefLabel?: string;
+  subjectTitle?: string;
+  userDisplayName?: string;
+  userEmail?: string;
   ageHours: number;
   isOverdue: boolean;
   isUnassigned: boolean;
@@ -430,6 +438,22 @@ function normalizeFinanceReconciliationIssueSeverity(value?: string | null): Fin
   return "medium";
 }
 
+function normalizeFinanceReconciliationIssueScope(value?: string | null): FinanceReconciliationIssueScope {
+  if (value === "membership" || value === "content") {
+    return value;
+  }
+
+  return "coin-recharge";
+}
+
+export function normalizeFinanceReconciliationScanScope(value?: string | null): FinanceReconciliationScanScope {
+  if (value === "all" || value === "membership" || value === "content") {
+    return value;
+  }
+
+  return "coin-recharge";
+}
+
 function normalizeFinanceReconciliationWorkflowStage(value?: string | null): FinanceReconciliationWorkflowStage {
   if (
     value === "investigating" ||
@@ -506,6 +530,28 @@ export function getFinanceReconciliationIssueTypeLabel(locale: Locale, issueType
     );
   }
 
+  if (issueType === "entitlement_missing") {
+    return localizeText(
+      {
+        zhCn: "已支付未生效",
+        zhTw: "已支付未生效",
+        en: "Paid but entitlement inactive",
+      },
+      locale,
+    );
+  }
+
+  if (issueType === "refund_reversal_missing") {
+    return localizeText(
+      {
+        zhCn: "退款后仍有效",
+        zhTw: "退款後仍有效",
+        en: "Active after refund",
+      },
+      locale,
+    );
+  }
+
   if (issueType === "stale_pending") {
     return localizeText(
       {
@@ -566,6 +612,53 @@ export function getFinanceReconciliationIssueTypeLabel(locale: Locale, issueType
       zhCn: "人工复核",
       zhTw: "人工複核",
       en: "Manual review",
+    },
+    locale,
+  );
+}
+
+export function getFinanceReconciliationScopeLabel(
+  locale: Locale,
+  scope: FinanceReconciliationIssueScope | FinanceReconciliationScanScope | string,
+) {
+  if (scope === "membership") {
+    return localizeText(
+      {
+        zhCn: "会员订单",
+        zhTw: "會員訂單",
+        en: "Membership",
+      },
+      locale,
+    );
+  }
+
+  if (scope === "content") {
+    return localizeText(
+      {
+        zhCn: "内容订单",
+        zhTw: "內容訂單",
+        en: "Content",
+      },
+      locale,
+    );
+  }
+
+  if (scope === "all") {
+    return localizeText(
+      {
+        zhCn: "全部范围",
+        zhTw: "全部範圍",
+        en: "All scopes",
+      },
+      locale,
+    );
+  }
+
+  return localizeText(
+    {
+      zhCn: "充值订单",
+      zhTw: "充值訂單",
+      en: "Coin recharge",
     },
     locale,
   );
@@ -972,7 +1065,7 @@ async function applyCoinAccountAdjustment(
   return updatedAccount;
 }
 
-export async function ensureDefaultCoinPackages() {
+export async function ensureDefaultCoinPackages(options?: { revalidate?: boolean }) {
   for (const seed of defaultCoinPackages) {
     await prisma.coinPackage.upsert({
       where: { key: seed.key },
@@ -1010,7 +1103,9 @@ export async function ensureDefaultCoinPackages() {
     });
   }
 
-  safeRevalidate(siteSurfacePaths);
+  if (options?.revalidate) {
+    safeRevalidate(siteSurfacePaths);
+  }
 }
 
 export async function createManualCoinRechargeOrder(input: {
@@ -1578,22 +1673,69 @@ function toAdminFinanceReconciliationIssueRecord(issue: {
   resolvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  rechargeOrderId: string | null;
+  rechargeOrderId?: string | null;
+  membershipOrderId?: string | null;
+  contentOrderId?: string | null;
   rechargeOrder?: {
     orderNo: string;
+    user?: {
+      displayName: string;
+      email: string;
+    } | null;
+  } | null;
+  membershipOrder?: {
+    id: string;
+    planId: string;
+    user: {
+      displayName: string;
+      email: string;
+    };
+  } | null;
+  contentOrder?: {
+    id: string;
+    contentId: string;
+    user: {
+      displayName: string;
+      email: string;
+    };
   } | null;
 }): AdminFinanceReconciliationIssueRecord {
   const status = normalizeFinanceReconciliationIssueStatus(issue.status);
   const severity = normalizeFinanceReconciliationIssueSeverity(issue.severity);
+  const scope = normalizeFinanceReconciliationIssueScope(issue.scope);
   const workflowStage = inferWorkflowStageFromStatus(status, issue.workflowStage);
   const ageHours = Math.max(0, Math.floor((Date.now() - issue.updatedAt.getTime()) / (60 * 60 * 1000)));
   const isActive = status === "open" || status === "reviewing";
   const isOverdue = isActive && ageHours >= getFinanceReconciliationIssueSlaThresholdHours(severity);
   const isUnassigned = isActive && !(issue.assignedToDisplayName ?? "").trim();
+  const membershipOrderRef = issue.membershipOrder ? `MEM-${issue.membershipOrder.id.slice(-8).toUpperCase()}` : undefined;
+  const contentOrderRef = issue.contentOrder ? `CNT-${issue.contentOrder.id.slice(-8).toUpperCase()}` : undefined;
+  const orderRefLabel =
+    scope === "membership"
+      ? membershipOrderRef
+      : scope === "content"
+        ? contentOrderRef
+        : issue.rechargeOrder?.orderNo;
+  const subjectTitle =
+    scope === "membership"
+      ? issue.membershipOrder?.planId
+      : scope === "content"
+        ? issue.contentOrder?.contentId
+        : undefined;
+  const userDisplayName =
+    issue.rechargeOrder?.user?.displayName ??
+    issue.membershipOrder?.user.displayName ??
+    issue.contentOrder?.user.displayName ??
+    undefined;
+  const userEmail =
+    issue.rechargeOrder?.user?.email ??
+    issue.membershipOrder?.user.email ??
+    issue.contentOrder?.user.email ??
+    undefined;
 
   return {
     id: issue.id,
-    scope: issue.scope,
+    scope,
     issueType: issue.issueType,
     status,
     severity,
@@ -1614,7 +1756,13 @@ function toAdminFinanceReconciliationIssueRecord(issue: {
     createdAt: issue.createdAt.toISOString(),
     updatedAt: issue.updatedAt.toISOString(),
     rechargeOrderId: issue.rechargeOrderId ?? undefined,
+    membershipOrderId: issue.membershipOrderId ?? undefined,
+    contentOrderId: issue.contentOrderId ?? undefined,
     rechargeOrderNo: issue.rechargeOrder?.orderNo ?? undefined,
+    orderRefLabel,
+    subjectTitle,
+    userDisplayName,
+    userEmail,
     ageHours,
     isOverdue,
     isUnassigned,
@@ -1638,8 +1786,145 @@ async function findCoinRechargeOrderByRef(orderRef?: string) {
       amount: true,
       status: true,
       paymentReference: true,
+      user: {
+        select: {
+          displayName: true,
+          email: true,
+        },
+      },
     },
   });
+}
+
+async function findMembershipOrderByRef(orderRef?: string, paymentReference?: string) {
+  const normalizedRef = orderRef?.trim();
+  const normalizedPaymentReference = paymentReference?.trim();
+
+  if (!normalizedRef && !normalizedPaymentReference) {
+    return null;
+  }
+
+  return prisma.membershipOrder.findFirst({
+    where: {
+      OR: [
+        ...(normalizedRef
+          ? [{ id: normalizedRef }, { providerOrderId: normalizedRef }, { paymentReference: normalizedRef }]
+          : []),
+        ...(normalizedPaymentReference ? [{ paymentReference: normalizedPaymentReference }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      planId: true,
+      amount: true,
+      status: true,
+      paymentReference: true,
+      user: {
+        select: {
+          displayName: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+  });
+}
+
+async function findContentOrderByRef(orderRef?: string, paymentReference?: string) {
+  const normalizedRef = orderRef?.trim();
+  const normalizedPaymentReference = paymentReference?.trim();
+
+  if (!normalizedRef && !normalizedPaymentReference) {
+    return null;
+  }
+
+  return prisma.contentOrder.findFirst({
+    where: {
+      OR: [
+        ...(normalizedRef
+          ? [{ id: normalizedRef }, { providerOrderId: normalizedRef }, { paymentReference: normalizedRef }]
+          : []),
+        ...(normalizedPaymentReference ? [{ paymentReference: normalizedPaymentReference }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      contentId: true,
+      amount: true,
+      status: true,
+      paymentReference: true,
+      user: {
+        select: {
+          displayName: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+  });
+}
+
+type FinanceIssueTarget =
+  | {
+      scope: "coin-recharge";
+      rechargeOrder: Awaited<ReturnType<typeof findCoinRechargeOrderByRef>>;
+      membershipOrder: null;
+      contentOrder: null;
+    }
+  | {
+      scope: "membership";
+      rechargeOrder: null;
+      membershipOrder: Awaited<ReturnType<typeof findMembershipOrderByRef>>;
+      contentOrder: null;
+    }
+  | {
+      scope: "content";
+      rechargeOrder: null;
+      membershipOrder: null;
+      contentOrder: Awaited<ReturnType<typeof findContentOrderByRef>>;
+    }
+  | {
+      scope: FinanceReconciliationIssueScope;
+      rechargeOrder: null;
+      membershipOrder: null;
+      contentOrder: null;
+    };
+
+async function resolveFinanceIssueTarget(input: {
+  scope?: string;
+  orderRef?: string;
+  paymentReference?: string;
+}): Promise<FinanceIssueTarget> {
+  const scope = normalizeFinanceReconciliationIssueScope(input.scope);
+
+  if (scope === "membership") {
+    return {
+      scope,
+      rechargeOrder: null,
+      membershipOrder: await findMembershipOrderByRef(input.orderRef, input.paymentReference),
+      contentOrder: null,
+    };
+  }
+
+  if (scope === "content") {
+    return {
+      scope,
+      rechargeOrder: null,
+      membershipOrder: null,
+      contentOrder: await findContentOrderByRef(input.orderRef, input.paymentReference),
+    };
+  }
+
+  return {
+    scope,
+    rechargeOrder: await findCoinRechargeOrderByRef(input.orderRef),
+    membershipOrder: null,
+    contentOrder: null,
+  };
 }
 
 type ManagedFinanceIssueType =
@@ -1841,6 +2126,7 @@ async function syncRechargeOrderReconciliationIssues(input: {
 }
 
 export async function createFinanceReconciliationIssue(input: {
+  scope?: FinanceReconciliationIssueScope | string;
   orderRef?: string;
   paymentReference?: string;
   issueType?: string;
@@ -1854,25 +2140,44 @@ export async function createFinanceReconciliationIssue(input: {
   workflowStage?: FinanceReconciliationWorkflowStage | string;
   dedupeMode?: "active" | "all";
 }) {
-  const rechargeOrder = await findCoinRechargeOrderByRef(input.orderRef);
+  const target = await resolveFinanceIssueTarget({
+    scope: input.scope,
+    orderRef: input.orderRef,
+    paymentReference: input.paymentReference,
+  });
+  const scope = target.scope;
+  const rechargeOrder = target.rechargeOrder;
+  const membershipOrder = target.membershipOrder;
+  const contentOrder = target.contentOrder;
   const issueType = input.issueType?.trim() || "manual_review";
   const severity = normalizeFinanceReconciliationIssueSeverity(input.severity);
   const dedupeMode = input.dedupeMode ?? "active";
+  const resolvedOrderRef =
+    rechargeOrder?.orderNo ??
+    (membershipOrder ? `MEM-${membershipOrder.id.slice(-8).toUpperCase()}` : undefined) ??
+    (contentOrder ? `CNT-${contentOrder.id.slice(-8).toUpperCase()}` : undefined);
   const summary =
     input.summary?.trim() ||
-    (rechargeOrder ? `充值单 ${rechargeOrder.orderNo} 待人工复核` : "财务对账问题待复核");
+    (resolvedOrderRef ? `${resolvedOrderRef} 待人工复核` : "财务对账问题待复核");
 
   const detail = input.detail?.trim() || undefined;
-  const paymentReference = input.paymentReference?.trim() || rechargeOrder?.paymentReference || undefined;
+  const paymentReference =
+    input.paymentReference?.trim() ||
+    rechargeOrder?.paymentReference ||
+    membershipOrder?.paymentReference ||
+    contentOrder?.paymentReference ||
+    undefined;
 
   if (!summary) {
     throw new Error("FINANCE_RECONCILIATION_SUMMARY_REQUIRED");
   }
 
-  if (rechargeOrder) {
+  if (rechargeOrder || membershipOrder || contentOrder) {
     const existing = await prisma.financeReconciliationIssue.findFirst({
-      where: {
-        rechargeOrderId: rechargeOrder.id,
+      where: ({
+        rechargeOrderId: rechargeOrder?.id,
+        membershipOrderId: membershipOrder?.id,
+        contentOrderId: contentOrder?.id,
         issueType,
         ...(dedupeMode === "active"
           ? {
@@ -1881,14 +2186,44 @@ export async function createFinanceReconciliationIssue(input: {
               },
             }
           : {}),
-      },
+      }) as any,
       include: {
         rechargeOrder: {
           select: {
             orderNo: true,
+            user: {
+              select: {
+                displayName: true,
+                email: true,
+              },
+            },
           },
         },
-      },
+        membershipOrder: {
+          select: {
+            id: true,
+            planId: true,
+            user: {
+              select: {
+                displayName: true,
+                email: true,
+              },
+            },
+          },
+        },
+        contentOrder: {
+          select: {
+            id: true,
+            contentId: true,
+            user: {
+              select: {
+                displayName: true,
+                email: true,
+              },
+            },
+          },
+        },
+      } as any,
       orderBy: {
         updatedAt: "desc",
       },
@@ -1903,8 +2238,8 @@ export async function createFinanceReconciliationIssue(input: {
   }
 
   const created = await prisma.financeReconciliationIssue.create({
-    data: {
-      scope: "coin-recharge",
+    data: ({
+      scope,
       issueType,
       status: "open",
       severity,
@@ -1912,8 +2247,8 @@ export async function createFinanceReconciliationIssue(input: {
       detail: detail ?? null,
       reasonCode: input.reasonCode?.trim() || null,
       paymentReference: paymentReference ?? null,
-      amount: rechargeOrder?.amount ?? null,
-      sourceStatus: rechargeOrder?.status ?? null,
+      amount: rechargeOrder?.amount ?? membershipOrder?.amount ?? contentOrder?.amount ?? null,
+      sourceStatus: rechargeOrder?.status ?? membershipOrder?.status ?? contentOrder?.status ?? null,
       workflowStage: inferWorkflowStageFromStatus(
         "open",
         input.workflowStage,
@@ -1921,15 +2256,47 @@ export async function createFinanceReconciliationIssue(input: {
       assignedToDisplayName: input.assignedToDisplayName?.trim() || input.createdByDisplayName.trim() || null,
       createdByDisplayName: input.createdByDisplayName.trim() || "Admin",
       rechargeOrderId: rechargeOrder?.id ?? null,
+      membershipOrderId: membershipOrder?.id ?? null,
+      contentOrderId: contentOrder?.id ?? null,
       createdByUserId: input.createdByUserId ?? null,
-    },
-    include: {
+    }) as any,
+    include: ({
       rechargeOrder: {
         select: {
           orderNo: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
         },
       },
-    },
+      membershipOrder: {
+        select: {
+          id: true,
+          planId: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+      contentOrder: {
+        select: {
+          id: true,
+          contentId: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+    }) as any,
   });
 
   safeRevalidate(siteSurfacePaths);
@@ -2002,13 +2369,43 @@ export async function updateFinanceReconciliationIssue(input: {
             ? null
             : undefined,
     },
-    include: {
+    include: ({
       rechargeOrder: {
         select: {
           orderNo: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
         },
       },
-    },
+      membershipOrder: {
+        select: {
+          id: true,
+          planId: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+      contentOrder: {
+        select: {
+          id: true,
+          contentId: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+    }) as any,
   });
 
   safeRevalidate(siteSurfacePaths);
@@ -2163,13 +2560,43 @@ export async function runFinanceReconciliationReminderScan(input?: {
     },
     orderBy: [{ updatedAt: "asc" }],
     take: Math.max(1, input?.maxCount ?? 40),
-    include: {
+    include: ({
       rechargeOrder: {
         select: {
           orderNo: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
         },
       },
-    },
+      membershipOrder: {
+        select: {
+          id: true,
+          planId: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+      contentOrder: {
+        select: {
+          id: true,
+          contentId: true,
+          user: {
+            select: {
+              displayName: true,
+              email: true,
+            },
+          },
+        },
+      },
+    }) as any,
   });
 
   let processedCount = 0;
@@ -2211,12 +2638,25 @@ export async function scanFinanceReconciliationIssues(input?: {
   stalePendingHours?: number;
   createdByUserId?: string | null;
   createdByDisplayName?: string;
+  scope?: FinanceReconciliationScanScope | string;
 }) {
   const now = input?.now ?? new Date();
   const stalePendingHours = Math.max(1, input?.stalePendingHours ?? 24);
   const stalePendingThreshold = new Date(now.getTime() - stalePendingHours * 60 * 60 * 1000);
   const actorDisplayName = input?.createdByDisplayName?.trim() || "System";
   const actorUserId = input?.createdByUserId ?? null;
+  const scanScope = normalizeFinanceReconciliationScanScope(input?.scope ?? "all");
+
+  if (scanScope !== "all" && scanScope !== "coin-recharge") {
+    return scanAdditionalFinanceReconciliationScopes({
+      now,
+      stalePendingHours,
+      stalePendingThreshold,
+      actorDisplayName,
+      actorUserId,
+      scope: scanScope,
+    });
+  }
 
   const [stalePendingOrders, failedOrders, refundedOrders, paidMissingCreditOrders, ordersWithPaymentRefs, callbackEvents] = await Promise.all([
     prisma.coinRechargeOrder.findMany({
@@ -2548,12 +2988,640 @@ export async function scanFinanceReconciliationIssues(input?: {
     }
   }
 
-  return {
+  const baseSummary = {
+    scope: scanScope,
     totalCount:
       stalePendingOrders.length +
       failedOrders.length +
       refundedOrders.length +
       paidMissingCreditOrders.length +
+      ordersWithPaymentRefs.length +
+      callbackEvents.length,
+    createdCount,
+    skippedCount,
+  };
+
+  if (scanScope !== "all") {
+    return baseSummary;
+  }
+
+  const extraSummary = await scanAdditionalFinanceReconciliationScopes({
+    now,
+    stalePendingHours,
+    stalePendingThreshold,
+    actorDisplayName,
+    actorUserId,
+    scope: "all",
+  });
+
+  return {
+    scope: "all" as const,
+    totalCount: baseSummary.totalCount + extraSummary.totalCount,
+    createdCount: baseSummary.createdCount + extraSummary.createdCount,
+    skippedCount: baseSummary.skippedCount + extraSummary.skippedCount,
+  };
+}
+
+async function scanAdditionalFinanceReconciliationScopes(input: {
+  now: Date;
+  stalePendingHours: number;
+  stalePendingThreshold: Date;
+  actorDisplayName: string;
+  actorUserId: string | null;
+  scope: "membership" | "content" | "all";
+}) {
+  let totalCount = 0;
+  let createdCount = 0;
+  let skippedCount = 0;
+
+  if (input.scope === "all" || input.scope === "membership") {
+    const summary = await scanMembershipFinanceReconciliationIssues(input);
+    totalCount += summary.totalCount;
+    createdCount += summary.createdCount;
+    skippedCount += summary.skippedCount;
+  }
+
+  if (input.scope === "all" || input.scope === "content") {
+    const summary = await scanContentFinanceReconciliationIssues(input);
+    totalCount += summary.totalCount;
+    createdCount += summary.createdCount;
+    skippedCount += summary.skippedCount;
+  }
+
+  return {
+    scope: input.scope,
+    totalCount,
+    createdCount,
+    skippedCount,
+  };
+}
+
+async function scanMembershipFinanceReconciliationIssues(input: {
+  now: Date;
+  stalePendingHours: number;
+  stalePendingThreshold: Date;
+  actorDisplayName: string;
+  actorUserId: string | null;
+}) {
+  const [stalePendingOrders, failedOrders, refundedOrders, paidOrders, ordersWithPaymentRefs, callbackEvents] =
+    await Promise.all([
+      prisma.membershipOrder.findMany({
+        where: {
+          status: "pending",
+          createdAt: {
+            lt: input.stalePendingThreshold,
+          },
+        },
+        select: {
+          id: true,
+          planId: true,
+          paymentReference: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "asc" },
+        take: 120,
+      }),
+      prisma.membershipOrder.findMany({
+        where: {
+          status: "failed",
+        },
+        select: {
+          id: true,
+          planId: true,
+          paymentReference: true,
+          failureReason: true,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 120,
+      }),
+      prisma.membershipOrder.findMany({
+        where: {
+          status: "refunded",
+        },
+        select: {
+          id: true,
+          planId: true,
+          paymentReference: true,
+          refundReason: true,
+          user: {
+            select: {
+              membershipExpiresAt: true,
+            },
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 120,
+      }),
+      prisma.membershipOrder.findMany({
+        where: {
+          status: "paid",
+        },
+        select: {
+          id: true,
+          planId: true,
+          paymentReference: true,
+          paidAt: true,
+          user: {
+            select: {
+              membershipExpiresAt: true,
+            },
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 180,
+      }),
+      prisma.membershipOrder.findMany({
+        where: {
+          paymentReference: {
+            not: null,
+          },
+        },
+        select: {
+          id: true,
+          planId: true,
+          paymentReference: true,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 300,
+      }),
+      prisma.paymentCallbackEvent.findMany({
+        where: {
+          orderType: "membership",
+          processingStatus: {
+            in: ["received", "conflict", "failed"],
+          },
+        },
+        select: {
+          orderId: true,
+          state: true,
+          processingStatus: true,
+          processingMessage: true,
+          paymentReference: true,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 200,
+      }),
+    ]);
+
+  let createdCount = 0;
+  let skippedCount = 0;
+  const track = (created: boolean) => {
+    if (created) {
+      createdCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  };
+
+  for (const order of stalePendingOrders) {
+    const result = await createFinanceReconciliationIssue({
+      scope: "membership",
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "stale_pending",
+      severity: "high",
+      summary: `会员订单 MEM-${order.id.slice(-8).toUpperCase()} 超过 ${input.stalePendingHours} 小时未完成支付`,
+      detail: `订单创建于 ${order.createdAt.toISOString()}，方案 ${order.planId} 仍处于待支付状态。`,
+      reasonCode: "stale_pending",
+      createdByUserId: input.actorUserId,
+      createdByDisplayName: input.actorDisplayName,
+      assignedToDisplayName: input.actorDisplayName,
+      dedupeMode: "all",
+    });
+    track(result.created);
+  }
+
+  for (const order of failedOrders) {
+    const result = await createFinanceReconciliationIssue({
+      scope: "membership",
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "payment_failed",
+      severity: "high",
+      summary: `会员订单 MEM-${order.id.slice(-8).toUpperCase()} 已标记支付失败`,
+      detail: order.failureReason ?? `会员方案 ${order.planId} 的支付失败订单需要复核补单或关闭。`,
+      reasonCode: "payment_failed",
+      createdByUserId: input.actorUserId,
+      createdByDisplayName: input.actorDisplayName,
+      assignedToDisplayName: input.actorDisplayName,
+      dedupeMode: "all",
+    });
+    track(result.created);
+  }
+
+  for (const order of refundedOrders) {
+    if (!(order.user.membershipExpiresAt && order.user.membershipExpiresAt > input.now)) {
+      continue;
+    }
+
+    const result = await createFinanceReconciliationIssue({
+      scope: "membership",
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "refund_reversal_missing",
+      severity: "medium",
+      summary: `会员订单 MEM-${order.id.slice(-8).toUpperCase()} 已退款但权益仍有效`,
+      detail:
+        order.refundReason ??
+        `订单已退款，但用户会员仍有效至 ${order.user.membershipExpiresAt.toISOString()}，请确认是否存在覆盖订单或回退遗漏。`,
+      reasonCode: "refund_reversal_missing",
+      createdByUserId: input.actorUserId,
+      createdByDisplayName: input.actorDisplayName,
+      assignedToDisplayName: input.actorDisplayName,
+      dedupeMode: "all",
+    });
+    track(result.created);
+  }
+
+  for (const order of paidOrders) {
+    if (order.user.membershipExpiresAt && order.user.membershipExpiresAt > input.now) {
+      continue;
+    }
+
+    const result = await createFinanceReconciliationIssue({
+      scope: "membership",
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "entitlement_missing",
+      severity: "high",
+      summary: `会员订单 MEM-${order.id.slice(-8).toUpperCase()} 已支付但会员仍未生效`,
+      detail: `支付时间 ${order.paidAt?.toISOString() ?? "--"}，当前到期 ${order.user.membershipExpiresAt?.toISOString() ?? "--"}，请核对会员生效链路。`,
+      reasonCode: "entitlement_missing",
+      createdByUserId: input.actorUserId,
+      createdByDisplayName: input.actorDisplayName,
+      assignedToDisplayName: input.actorDisplayName,
+      dedupeMode: "all",
+    });
+    track(result.created);
+  }
+
+  const duplicatePaymentReferenceMap = new Map<string, typeof ordersWithPaymentRefs>();
+  for (const order of ordersWithPaymentRefs) {
+    const paymentReference = order.paymentReference?.trim();
+    if (!paymentReference) {
+      continue;
+    }
+
+    const existing = duplicatePaymentReferenceMap.get(paymentReference) ?? [];
+    existing.push(order);
+    duplicatePaymentReferenceMap.set(paymentReference, existing);
+  }
+
+  for (const [paymentReference, orders] of duplicatePaymentReferenceMap) {
+    if (orders.length < 2) {
+      continue;
+    }
+
+    for (const order of orders) {
+      const result = await createFinanceReconciliationIssue({
+        scope: "membership",
+        orderRef: order.id,
+        paymentReference,
+        issueType: "duplicate_payment_reference",
+        severity: "high",
+        summary: `会员订单 MEM-${order.id.slice(-8).toUpperCase()} 命中重复支付流水`,
+        detail: `支付流水 ${paymentReference} 在 ${orders.length} 笔会员订单中重复出现，请复核回调串单或补单逻辑。`,
+        reasonCode: "duplicate_payment_reference",
+        createdByUserId: input.actorUserId,
+        createdByDisplayName: input.actorDisplayName,
+        assignedToDisplayName: input.actorDisplayName,
+        workflowStage: "awaiting-finance",
+        dedupeMode: "all",
+      });
+      track(result.created);
+    }
+  }
+
+  const callbackOrderIds = normalizeUniqueValues(callbackEvents.map((event) => event.orderId ?? "").filter(Boolean));
+  const callbackOrders = callbackOrderIds.length
+    ? await prisma.membershipOrder.findMany({
+        where: {
+          id: {
+            in: callbackOrderIds,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+          paymentReference: true,
+        },
+      })
+    : [];
+  const callbackOrderMap = new Map(callbackOrders.map((order) => [order.id, order]));
+
+  for (const event of callbackEvents) {
+    const order = event.orderId ? callbackOrderMap.get(event.orderId) : undefined;
+    if (!order) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (event.processingStatus === "received" && event.state === "paid" && order.status !== "paid") {
+      const result = await createFinanceReconciliationIssue({
+        scope: "membership",
+        orderRef: order.id,
+        paymentReference: event.paymentReference ?? order.paymentReference ?? undefined,
+        issueType: "callback_pending_state",
+        severity: "high",
+        summary: `会员订单 MEM-${order.id.slice(-8).toUpperCase()} 回调已收但订单未推进`,
+        detail: `回调状态为 ${event.state}，当前订单状态仍为 ${order.status}，请检查会员生效链路。`,
+        reasonCode: "callback_pending_state",
+        createdByUserId: input.actorUserId,
+        createdByDisplayName: input.actorDisplayName,
+        assignedToDisplayName: input.actorDisplayName,
+        workflowStage: "awaiting-callback",
+        dedupeMode: "all",
+      });
+      track(result.created);
+      continue;
+    }
+
+    if (event.processingStatus === "conflict" || event.processingStatus === "failed") {
+      const result = await createFinanceReconciliationIssue({
+        scope: "membership",
+        orderRef: order.id,
+        paymentReference: event.paymentReference ?? order.paymentReference ?? undefined,
+        issueType: "order_status_conflict",
+        severity: event.processingStatus === "conflict" ? "high" : "medium",
+        summary: `会员订单 MEM-${order.id.slice(-8).toUpperCase()} 存在回调状态冲突`,
+        detail: event.processingMessage ?? `支付回调处理状态为 ${event.processingStatus}，请复核会员订单状态。`,
+        reasonCode: event.processingStatus,
+        createdByUserId: input.actorUserId,
+        createdByDisplayName: input.actorDisplayName,
+        assignedToDisplayName: input.actorDisplayName,
+        workflowStage: "awaiting-finance",
+        dedupeMode: "all",
+      });
+      track(result.created);
+    }
+  }
+
+  return {
+    totalCount:
+      stalePendingOrders.length +
+      failedOrders.length +
+      refundedOrders.length +
+      paidOrders.length +
+      ordersWithPaymentRefs.length +
+      callbackEvents.length,
+    createdCount,
+    skippedCount,
+  };
+}
+
+async function scanContentFinanceReconciliationIssues(input: {
+  now: Date;
+  stalePendingHours: number;
+  stalePendingThreshold: Date;
+  actorDisplayName: string;
+  actorUserId: string | null;
+}) {
+  const [stalePendingOrders, failedOrders, refundedOrders, ordersWithPaymentRefs, callbackEvents] = await Promise.all([
+    prisma.contentOrder.findMany({
+      where: {
+        status: "pending",
+        createdAt: {
+          lt: input.stalePendingThreshold,
+        },
+      },
+      select: {
+        id: true,
+        contentId: true,
+        paymentReference: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "asc" },
+      take: 120,
+    }),
+    prisma.contentOrder.findMany({
+      where: {
+        status: "failed",
+      },
+      select: {
+        id: true,
+        contentId: true,
+        paymentReference: true,
+        failureReason: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 120,
+    }),
+    prisma.contentOrder.findMany({
+      where: {
+        status: "refunded",
+      },
+      select: {
+        id: true,
+        contentId: true,
+        paymentReference: true,
+        refundReason: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 120,
+    }),
+    prisma.contentOrder.findMany({
+      where: {
+        paymentReference: {
+          not: null,
+        },
+      },
+      select: {
+        id: true,
+        contentId: true,
+        paymentReference: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 300,
+    }),
+    prisma.paymentCallbackEvent.findMany({
+      where: {
+        orderType: "content",
+        processingStatus: {
+          in: ["received", "conflict", "failed"],
+        },
+      },
+      select: {
+        orderId: true,
+        state: true,
+        processingStatus: true,
+        processingMessage: true,
+        paymentReference: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+    }),
+  ]);
+
+  let createdCount = 0;
+  let skippedCount = 0;
+  const track = (created: boolean) => {
+    if (created) {
+      createdCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  };
+
+  for (const order of stalePendingOrders) {
+    const result = await createFinanceReconciliationIssue({
+      scope: "content",
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "stale_pending",
+      severity: "high",
+      summary: `内容订单 CNT-${order.id.slice(-8).toUpperCase()} 超过 ${input.stalePendingHours} 小时未完成支付`,
+      detail: `订单创建于 ${order.createdAt.toISOString()}，内容 ${order.contentId} 仍处于待支付状态。`,
+      reasonCode: "stale_pending",
+      createdByUserId: input.actorUserId,
+      createdByDisplayName: input.actorDisplayName,
+      assignedToDisplayName: input.actorDisplayName,
+      dedupeMode: "all",
+    });
+    track(result.created);
+  }
+
+  for (const order of failedOrders) {
+    const result = await createFinanceReconciliationIssue({
+      scope: "content",
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "payment_failed",
+      severity: "high",
+      summary: `内容订单 CNT-${order.id.slice(-8).toUpperCase()} 已标记支付失败`,
+      detail: order.failureReason ?? `内容 ${order.contentId} 的支付失败订单需要复核补单或关闭。`,
+      reasonCode: "payment_failed",
+      createdByUserId: input.actorUserId,
+      createdByDisplayName: input.actorDisplayName,
+      assignedToDisplayName: input.actorDisplayName,
+      dedupeMode: "all",
+    });
+    track(result.created);
+  }
+
+  for (const order of refundedOrders) {
+    const result = await createFinanceReconciliationIssue({
+      scope: "content",
+      orderRef: order.id,
+      paymentReference: order.paymentReference ?? undefined,
+      issueType: "refund_review",
+      severity: "medium",
+      summary: `内容订单 CNT-${order.id.slice(-8).toUpperCase()} 已退款，待复核回退链路`,
+      detail: order.refundReason ?? `请确认内容 ${order.contentId} 的退款、球币回退或人工补偿记录是否一致。`,
+      reasonCode: "refund_review",
+      createdByUserId: input.actorUserId,
+      createdByDisplayName: input.actorDisplayName,
+      assignedToDisplayName: input.actorDisplayName,
+      dedupeMode: "all",
+    });
+    track(result.created);
+  }
+
+  const duplicatePaymentReferenceMap = new Map<string, typeof ordersWithPaymentRefs>();
+  for (const order of ordersWithPaymentRefs) {
+    const paymentReference = order.paymentReference?.trim();
+    if (!paymentReference) {
+      continue;
+    }
+
+    const existing = duplicatePaymentReferenceMap.get(paymentReference) ?? [];
+    existing.push(order);
+    duplicatePaymentReferenceMap.set(paymentReference, existing);
+  }
+
+  for (const [paymentReference, orders] of duplicatePaymentReferenceMap) {
+    if (orders.length < 2) {
+      continue;
+    }
+
+    for (const order of orders) {
+      const result = await createFinanceReconciliationIssue({
+        scope: "content",
+        orderRef: order.id,
+        paymentReference,
+        issueType: "duplicate_payment_reference",
+        severity: "high",
+        summary: `内容订单 CNT-${order.id.slice(-8).toUpperCase()} 命中重复支付流水`,
+        detail: `支付流水 ${paymentReference} 在 ${orders.length} 笔内容订单中重复出现，请复核回调串单或补单逻辑。`,
+        reasonCode: "duplicate_payment_reference",
+        createdByUserId: input.actorUserId,
+        createdByDisplayName: input.actorDisplayName,
+        assignedToDisplayName: input.actorDisplayName,
+        workflowStage: "awaiting-finance",
+        dedupeMode: "all",
+      });
+      track(result.created);
+    }
+  }
+
+  const callbackOrderIds = normalizeUniqueValues(callbackEvents.map((event) => event.orderId ?? "").filter(Boolean));
+  const callbackOrders = callbackOrderIds.length
+    ? await prisma.contentOrder.findMany({
+        where: {
+          id: {
+            in: callbackOrderIds,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+          paymentReference: true,
+        },
+      })
+    : [];
+  const callbackOrderMap = new Map(callbackOrders.map((order) => [order.id, order]));
+
+  for (const event of callbackEvents) {
+    const order = event.orderId ? callbackOrderMap.get(event.orderId) : undefined;
+    if (!order) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (event.processingStatus === "received" && event.state === "paid" && order.status !== "paid") {
+      const result = await createFinanceReconciliationIssue({
+        scope: "content",
+        orderRef: order.id,
+        paymentReference: event.paymentReference ?? order.paymentReference ?? undefined,
+        issueType: "callback_pending_state",
+        severity: "high",
+        summary: `内容订单 CNT-${order.id.slice(-8).toUpperCase()} 回调已收但订单未推进`,
+        detail: `回调状态为 ${event.state}，当前订单状态仍为 ${order.status}，请检查内容解锁链路。`,
+        reasonCode: "callback_pending_state",
+        createdByUserId: input.actorUserId,
+        createdByDisplayName: input.actorDisplayName,
+        assignedToDisplayName: input.actorDisplayName,
+        workflowStage: "awaiting-callback",
+        dedupeMode: "all",
+      });
+      track(result.created);
+      continue;
+    }
+
+    if (event.processingStatus === "conflict" || event.processingStatus === "failed") {
+      const result = await createFinanceReconciliationIssue({
+        scope: "content",
+        orderRef: order.id,
+        paymentReference: event.paymentReference ?? order.paymentReference ?? undefined,
+        issueType: "order_status_conflict",
+        severity: event.processingStatus === "conflict" ? "high" : "medium",
+        summary: `内容订单 CNT-${order.id.slice(-8).toUpperCase()} 存在回调状态冲突`,
+        detail: event.processingMessage ?? `支付回调处理状态为 ${event.processingStatus}，请复核内容订单状态。`,
+        reasonCode: event.processingStatus,
+        createdByUserId: input.actorUserId,
+        createdByDisplayName: input.actorDisplayName,
+        assignedToDisplayName: input.actorDisplayName,
+        workflowStage: "awaiting-finance",
+        dedupeMode: "all",
+      });
+      track(result.created);
+    }
+  }
+
+  return {
+    totalCount:
+      stalePendingOrders.length +
+      failedOrders.length +
+      refundedOrders.length +
       ordersWithPaymentRefs.length +
       callbackEvents.length,
     createdCount,
@@ -2792,13 +3860,43 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
     prisma.financeReconciliationIssue.findMany({
       take: 48,
       orderBy: [{ updatedAt: "desc" }],
-      include: {
+      include: ({
         rechargeOrder: {
           select: {
             orderNo: true,
+            user: {
+              select: {
+                displayName: true,
+                email: true,
+              },
+            },
           },
         },
-      },
+        membershipOrder: {
+          select: {
+            id: true,
+            planId: true,
+            user: {
+              select: {
+                displayName: true,
+                email: true,
+              },
+            },
+          },
+        },
+        contentOrder: {
+          select: {
+            id: true,
+            contentId: true,
+            user: {
+              select: {
+                displayName: true,
+                email: true,
+              },
+            },
+          },
+        },
+      }) as any,
     }),
   ]);
 

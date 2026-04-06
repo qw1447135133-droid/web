@@ -133,9 +133,11 @@ const ADMIN_EVENT_AUDIT_ACTIONS = [
   "move-admin-league-up",
   "move-admin-league-down",
   "clear-admin-league-override",
+  "delete-admin-league",
   "save-admin-match",
   "toggle-admin-match-visibility",
   "clear-admin-match-override",
+  "delete-admin-match",
 ] as const;
 
 function safeRevalidate(paths: string[]) {
@@ -797,6 +799,30 @@ export async function clearAdminLeagueOverride(id: string) {
   safeRevalidate(sitePaths);
 }
 
+export async function deleteAdminLeague(id: string) {
+  const current = await prisma.league.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      source: true,
+    },
+  });
+
+  if (!current) {
+    throw new Error("LEAGUE_NOT_FOUND");
+  }
+
+  if (current.source !== "manual") {
+    throw new Error("LEAGUE_DELETE_FORBIDDEN");
+  }
+
+  await prisma.league.delete({
+    where: { id },
+  });
+
+  safeRevalidate(sitePaths);
+}
+
 export async function saveAdminMatch(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   const leagueId = String(formData.get("leagueId") ?? "").trim();
@@ -1041,6 +1067,30 @@ export async function clearAdminMatchOverride(id: string) {
       },
     });
   }
+
+  safeRevalidate(sitePaths);
+}
+
+export async function deleteAdminMatch(id: string) {
+  const current = await prisma.match.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      source: true,
+    },
+  });
+
+  if (!current) {
+    throw new Error("MATCH_NOT_FOUND");
+  }
+
+  if (current.source !== "manual") {
+    throw new Error("MATCH_DELETE_FORBIDDEN");
+  }
+
+  await prisma.match.delete({
+    where: { id },
+  });
 
   safeRevalidate(sitePaths);
 }

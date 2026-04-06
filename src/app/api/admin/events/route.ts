@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   clearAdminLeagueOverride,
   clearAdminMatchOverride,
+  deleteAdminLeague,
+  deleteAdminMatch,
   moveAdminLeague,
   saveAdminLeague,
   saveAdminMatch,
@@ -73,6 +75,22 @@ function redirectToEvents(
   }
 
   return NextResponse.redirect(url);
+}
+
+function mapEventsErrorCode(error: unknown) {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+
+  if (error.message === "LEAGUE_DELETE_FORBIDDEN") {
+    return "event-league-delete-forbidden";
+  }
+
+  if (error.message === "MATCH_DELETE_FORBIDDEN") {
+    return "event-match-delete-forbidden";
+  }
+
+  return undefined;
 }
 
 export async function POST(request: NextRequest) {
@@ -249,6 +267,53 @@ export async function POST(request: NextRequest) {
       return redirectToEvents(request, "saved", "event-league-override");
     }
 
+    if (intent === "delete-league") {
+      const id = String(formData.get("id") || "").trim();
+      const deleteConfirmation = String(formData.get("deleteConfirmation") || "").trim().toUpperCase();
+
+      if (deleteConfirmation !== "DELETE") {
+        return redirectToEvents(request, "error", "event-admin", {
+          eventsCode: "event-delete-confirm",
+          editLeague: id,
+        });
+      }
+
+      const currentLeague = await prisma.league.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          displayName: true,
+          source: true,
+          _count: {
+            select: {
+              teams: true,
+              matches: true,
+            },
+          },
+        },
+      });
+      await deleteAdminLeague(id);
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: "delete-admin-league",
+        scope: "events.leagues",
+        targetType: "league",
+        targetId: id,
+        detail: formatAuditDetail([
+          ["op", "delete-league"],
+          ["name", currentLeague?.displayName ?? currentLeague?.name ?? id],
+          ["source", currentLeague?.source],
+          ["teams", currentLeague?._count.teams],
+          ["matches", currentLeague?._count.matches],
+        ]),
+        ipAddress,
+      });
+      return redirectToEvents(request, "saved", "event-league-delete");
+    }
+
     if (intent === "save-match") {
       const result = await saveAdminMatch(formData);
       await recordAdminAuditLog({
@@ -343,6 +408,53 @@ export async function POST(request: NextRequest) {
       });
       return redirectToEvents(request, "saved", "event-match-override");
     }
+
+    if (intent === "delete-match") {
+      const id = String(formData.get("id") || "").trim();
+      const deleteConfirmation = String(formData.get("deleteConfirmation") || "").trim().toUpperCase();
+
+      if (deleteConfirmation !== "DELETE") {
+        return redirectToEvents(request, "error", "event-admin", {
+          eventsCode: "event-delete-confirm",
+          editMatch: id,
+        });
+      }
+
+      const currentMatch = await prisma.match.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          source: true,
+          homeTeamName: true,
+          awayTeamName: true,
+          league: {
+            select: {
+              displayName: true,
+              name: true,
+            },
+          },
+        },
+      });
+      await deleteAdminMatch(id);
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: "delete-admin-match",
+        scope: "events.matches",
+        targetType: "match",
+        targetId: id,
+        detail: formatAuditDetail([
+          ["op", "delete-match"],
+          ["home", currentMatch?.homeTeamName],
+          ["away", currentMatch?.awayTeamName],
+          ["league", currentMatch?.league.displayName ?? currentMatch?.league.name],
+          ["source", currentMatch?.source],
+        ]),
+        ipAddress,
+      });
+      return redirectToEvents(request, "saved", "event-match-delete");
+    }
   } catch (error) {
     try {
       await recordAdminAuditLog({
@@ -365,7 +477,35 @@ export async function POST(request: NextRequest) {
       // Ignore secondary audit failures so the redirect still completes.
     }
 
-    return redirectToEvents(request, "error", "event-admin");
+    const errorExtras: Record<string, string> = {};
+    const mappedError = mapEventsErrorCode(error);
+
+    if (mappedError) {
+      errorExtras.eventsCode = mappedError;
+    }
+
+    if (intent === "delete-league") {
+      const id = String(formData.get("id") || "").trim();
+
+      if (id) {
+        errorExtras.editLeague = id;
+      }
+    }
+
+    if (intent === "delete-match") {
+      const id = String(formData.get("id") || "").trim();
+
+      if (id) {
+        errorExtras.editMatch = id;
+      }
+    }
+
+    return redirectToEvents(
+      request,
+      "error",
+      "event-admin",
+      Object.keys(errorExtras).length > 0 ? errorExtras : undefined,
+    );
   }
 
   return redirectToEvents(request, "error", "event-admin");

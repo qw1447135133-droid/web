@@ -21,6 +21,7 @@ import {
   getAdminFinanceDashboard,
   getCoinRechargeOrderStatusMeta,
   getFinanceReconciliationIssueSeverityMeta,
+  getFinanceReconciliationScopeLabel,
   getFinanceReconciliationIssueSlaMeta,
   getFinanceReconciliationIssueStatusMeta,
   getFinanceReconciliationIssueTypeLabel,
@@ -79,7 +80,7 @@ type AdminAiScope = "recent" | "all";
 type AdminAssistantKnowledgeStatusFilter = "all" | "active" | "inactive";
 type AdminAssistantHandoffStatusFilter = "all" | "pending" | "resolved";
 type AdminFinanceIssueQueueFilter = "all" | "overdue" | "unassigned" | "active" | "closed";
-type AdminReportsWindow = 7 | 30 | 90;
+type AdminReportsWindow = 7 | 30 | 90 | 180 | 365;
 type AdminEventsLeagueStatusFilter = "all" | "active" | "inactive";
 type AdminEventsMatchStatusFilter = "all" | "live" | "upcoming" | "finished";
 type AdminEventsMatchVisibilityFilter = "all" | "visible" | "hidden";
@@ -115,6 +116,14 @@ function normalizeAdminReportsWindow(value: string): AdminReportsWindow {
 
   if (value === "90") {
     return 90;
+  }
+
+  if (value === "180") {
+    return 180;
+  }
+
+  if (value === "365") {
+    return 365;
   }
 
   return 30;
@@ -898,11 +907,22 @@ function ExpansionMetricGrid({ items }: { items: Array<{ label: string; value: s
   );
 }
 
-function ExpansionRowsPanel({ title, rows }: { title: string; rows: Array<{ title: string; subtitle?: string; status?: string; tone?: "good" | "warn" | "neutral"; meta?: string[] }> }) {
+function ExpansionRowsPanel({
+  title,
+  description,
+  rows,
+}: {
+  title: string;
+  description?: string;
+  rows: Array<{ title: string; subtitle?: string; status?: string; tone?: "good" | "warn" | "neutral"; meta?: string[] }>;
+}) {
   return (
     <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-xl font-semibold text-white">{title}</h3>
+        <div>
+          <h3 className="text-xl font-semibold text-white">{title}</h3>
+          {description ? <p className="mt-2 text-sm text-slate-400">{description}</p> : null}
+        </div>
         <span className="text-sm text-slate-500">{rows.length}</span>
       </div>
       <div className="mt-5 grid gap-4">
@@ -1234,6 +1254,7 @@ function FinanceReconciliationIssuesPanel({
   locale: Locale;
   issues: Array<{
     id: string;
+    scope: "coin-recharge" | "membership" | "content";
     issueType: string;
     status: "open" | "reviewing" | "resolved" | "ignored";
     severity: "low" | "medium" | "high";
@@ -1253,13 +1274,20 @@ function FinanceReconciliationIssuesPanel({
     createdAt: string;
     updatedAt: string;
     rechargeOrderId?: string;
+    membershipOrderId?: string;
+    contentOrderId?: string;
     rechargeOrderNo?: string;
+    orderRefLabel?: string;
+    subjectTitle?: string;
+    userDisplayName?: string;
+    userEmail?: string;
     ageHours: number;
     isOverdue: boolean;
     isUnassigned: boolean;
   }>;
   issueTypeOptions: string[];
   filters: {
+    scope: string;
     status: string;
     severity: string;
     issueType: string;
@@ -1286,6 +1314,8 @@ function FinanceReconciliationIssuesPanel({
           ? "把充值異常、到帳核驗與人工財務複核統一沉澱到對帳問題隊列。"
           : "把充值异常、到账核验与人工财务复核统一沉淀到对账问题队列。",
     issueType: locale === "en" ? "Issue type" : locale === "zh-TW" ? "問題類型" : "问题类型",
+    issueScope: locale === "en" ? "Order scope" : locale === "zh-TW" ? "訂單範圍" : "订单范围",
+    scanScope: locale === "en" ? "Scan scope" : locale === "zh-TW" ? "掃描範圍" : "扫描范围",
     severity: locale === "en" ? "Priority" : locale === "zh-TW" ? "優先級" : "优先级",
     orderRef: locale === "en" ? "Order ref" : locale === "zh-TW" ? "訂單標識" : "订单标识",
     paymentReference: locale === "en" ? "Payment reference" : locale === "zh-TW" ? "支付流水" : "支付流水",
@@ -1382,6 +1412,8 @@ function FinanceReconciliationIssuesPanel({
           : "催办扫描会为逾时且近期未催办的问题补一次系统催办。",
     filterTitle:
       locale === "en" ? "Queue filters" : locale === "zh-TW" ? "隊列篩選" : "队列筛选",
+    filterScope:
+      locale === "en" ? "Scope" : locale === "zh-TW" ? "範圍" : "范围",
     filterStatus:
       locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态",
     filterQueue:
@@ -1469,26 +1501,24 @@ function FinanceReconciliationIssuesPanel({
                 {copy.highPriority} {summary.highSeverityOpenCount}
               </span>
               <div className="flex flex-wrap justify-end gap-2">
-                <form action="/api/admin/finance/recharge-orders" method="post">
-                  <button
-                    type="submit"
-                    name="intent"
-                    value="scan-reconciliation-reminders"
-                    className="rounded-full border border-white/12 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-white/25 hover:text-white"
-                  >
-                    {copy.reminderScan}
-                  </button>
-                </form>
-                <form action="/api/admin/finance/recharge-orders" method="post">
                 <button
                   type="submit"
                   name="intent"
+                  formNoValidate
+                  value="scan-reconciliation-reminders"
+                  className="rounded-full border border-white/12 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-white/25 hover:text-white"
+                >
+                  {copy.reminderScan}
+                </button>
+                <button
+                  type="submit"
+                  name="intent"
+                  formNoValidate
                   value="scan-reconciliation-issues"
                   className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-300/15"
                 >
                   {copy.scan}
                 </button>
-                </form>
               </div>
             </div>
           </div>
@@ -1498,11 +1528,21 @@ function FinanceReconciliationIssuesPanel({
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{copy.issueScope}</span>
+              <select name="issueScope" defaultValue="coin-recharge" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                <option value="coin-recharge">{getFinanceReconciliationScopeLabel(locale, "coin-recharge")}</option>
+                <option value="membership">{getFinanceReconciliationScopeLabel(locale, "membership")}</option>
+                <option value="content">{getFinanceReconciliationScopeLabel(locale, "content")}</option>
+              </select>
+            </label>
+            <label className="space-y-2 text-sm">
               <span className="text-slate-400">{copy.issueType}</span>
               <select name="issueType" defaultValue="manual_review" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
                 <option value="manual_review">{getFinanceReconciliationIssueTypeLabel(locale, "manual_review")}</option>
                 <option value="missing_payment">{getFinanceReconciliationIssueTypeLabel(locale, "missing_payment")}</option>
                 <option value="refund_review">{getFinanceReconciliationIssueTypeLabel(locale, "refund_review")}</option>
+                <option value="entitlement_missing">{getFinanceReconciliationIssueTypeLabel(locale, "entitlement_missing")}</option>
+                <option value="refund_reversal_missing">{getFinanceReconciliationIssueTypeLabel(locale, "refund_reversal_missing")}</option>
                 <option value="stale_pending">{getFinanceReconciliationIssueTypeLabel(locale, "stale_pending")}</option>
                 <option value="duplicate_payment_reference">{getFinanceReconciliationIssueTypeLabel(locale, "duplicate_payment_reference")}</option>
                 <option value="callback_pending_state">{getFinanceReconciliationIssueTypeLabel(locale, "callback_pending_state")}</option>
@@ -1515,6 +1555,15 @@ function FinanceReconciliationIssuesPanel({
                 <option value="high">{getFinanceReconciliationIssueSeverityMeta("high", locale).label}</option>
                 <option value="medium">{getFinanceReconciliationIssueSeverityMeta("medium", locale).label}</option>
                 <option value="low">{getFinanceReconciliationIssueSeverityMeta("low", locale).label}</option>
+              </select>
+            </label>
+            <label className="space-y-2 text-sm">
+              <span className="text-slate-400">{copy.scanScope}</span>
+              <select name="scanScope" defaultValue="all" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                <option value="all">{getFinanceReconciliationScopeLabel(locale, "all")}</option>
+                <option value="coin-recharge">{getFinanceReconciliationScopeLabel(locale, "coin-recharge")}</option>
+                <option value="membership">{getFinanceReconciliationScopeLabel(locale, "membership")}</option>
+                <option value="content">{getFinanceReconciliationScopeLabel(locale, "content")}</option>
               </select>
             </label>
             <label className="space-y-2 text-sm">
@@ -1564,7 +1613,16 @@ function FinanceReconciliationIssuesPanel({
           <form method="get" action="/admin" className="mt-4 rounded-[1rem] border border-white/8 bg-white/[0.02] p-4">
             <input type="hidden" name="tab" value="finance" />
             <p className="text-sm font-medium text-white">{copy.filterTitle}</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+              <label className="space-y-2 text-sm">
+                <span className="text-slate-400">{copy.filterScope}</span>
+                <select name="financeIssueScope" defaultValue={filters.scope} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                  <option value="all">{copy.all}</option>
+                  <option value="coin-recharge">{getFinanceReconciliationScopeLabel(locale, "coin-recharge")}</option>
+                  <option value="membership">{getFinanceReconciliationScopeLabel(locale, "membership")}</option>
+                  <option value="content">{getFinanceReconciliationScopeLabel(locale, "content")}</option>
+                </select>
+              </label>
               <label className="space-y-2 text-sm">
                 <span className="text-slate-400">{copy.filterStatus}</span>
                 <select name="financeIssueStatus" defaultValue={filters.status} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
@@ -1638,7 +1696,7 @@ function FinanceReconciliationIssuesPanel({
                 >
                   {issues.map((issue) => (
                     <option key={`finance-batch-issue-${issue.id}`} value={issue.id}>
-                      {issue.rechargeOrderNo ? `${issue.rechargeOrderNo} / ` : ""}{issue.summary}
+                      {issue.orderRefLabel ? `${issue.orderRefLabel} / ` : ""}{issue.summary}
                     </option>
                   ))}
                 </select>
@@ -1701,8 +1759,8 @@ function FinanceReconciliationIssuesPanel({
                       <div>
                         <p className="font-medium text-white">{issue.summary}</p>
                         <p className="mt-2 text-sm text-slate-400">
-                          {getFinanceReconciliationIssueTypeLabel(locale, issue.issueType)}
-                          {issue.rechargeOrderNo ? ` / ${issue.rechargeOrderNo}` : ""}
+                          {getFinanceReconciliationScopeLabel(locale, issue.scope)} / {getFinanceReconciliationIssueTypeLabel(locale, issue.issueType)}
+                          {issue.orderRefLabel ? ` / ${issue.orderRefLabel}` : ""}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -1738,6 +1796,12 @@ function FinanceReconciliationIssuesPanel({
                       <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatDateTime(issue.updatedAt, locale)}</span>
                       {issue.paymentReference ? (
                         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{issue.paymentReference}</span>
+                      ) : null}
+                      {issue.subjectTitle ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{issue.subjectTitle}</span>
+                      ) : null}
+                      {issue.userDisplayName ? (
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{issue.userDisplayName}</span>
                       ) : null}
                       {typeof issue.amount === "number" ? (
                         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{formatPrice(issue.amount, locale)}</span>
@@ -2076,7 +2140,7 @@ function ReportsTrendCardsPanel({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {[7, 30, 90].map((windowValue) => {
+          {[7, 30, 90, 180, 365].map((windowValue) => {
             const active = reportsWindow === windowValue;
 
             return (
@@ -2423,11 +2487,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const handoffStatus = normalizeAssistantHandoffStatusFilter(pickValue(resolved.handoffStatus, "all"));
   const saved = pickValue(resolved.saved, "");
   const error = pickValue(resolved.error, "");
+  const eventsCode = pickValue(resolved.eventsCode, "");
   const seeded = pickValue(resolved.seeded, "");
   const financeProcessed = pickPositiveInt(resolved.financeProcessed, 0);
   const financeFailed = pickPositiveInt(resolved.financeFailed, 0);
   const financeSkipped = pickPositiveInt(resolved.financeSkipped, 0);
   const financeTotal = pickPositiveInt(resolved.financeTotal, 0);
+  const financeIssueScope = pickValue(resolved.financeIssueScope, "all").trim();
   const financeIssueStatus = pickValue(resolved.financeIssueStatus, "all").trim();
   const financeIssueSeverity = pickValue(resolved.financeIssueSeverity, "all").trim();
   const financeIssueType = pickValue(resolved.financeIssueType, "all").trim();
@@ -2443,6 +2509,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const reportTaskStatus = pickValue(resolved.reportTaskStatus, "");
   const reportScope = pickValue(resolved.reportScope, "");
   const reportsWindow = normalizeAdminReportsWindow(pickValue(resolved.reportsWindow, "30"));
+  const reportsFrom = pickValue(resolved.reportsFrom, "").trim();
+  const reportsTo = pickValue(resolved.reportsTo, "").trim();
+  const reportsOrderType = pickValue(resolved.reportsOrderType, "all").trim();
+  const reportsDimension = pickValue(resolved.reportsDimension, "").trim();
   const orderQuery = pickValue(resolved.q, "");
   const orderStatus = normalizeAdminOrderFilterStatus(pickValue(resolved.orderStatus, "all"));
   const orderType = normalizeAdminOrderFilterType(pickValue(resolved.orderType, "all"));
@@ -2845,6 +2915,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           : locale === "zh-TW"
             ? "聯賽人工覆蓋已清除。"
             : "联赛人工覆盖已清除。"
+      : saved === "event-league-delete"
+        ? locale === "en"
+          ? "League record was deleted."
+          : locale === "zh-TW"
+            ? "聯賽記錄已刪除。"
+            : "联赛记录已删除。"
       : saved === "event-match"
         ? locale === "en"
           ? "Match changes were saved."
@@ -2863,6 +2939,30 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           : locale === "zh-TW"
             ? "賽事人工覆蓋已清除。"
             : "赛事人工覆盖已清除。"
+      : saved === "event-match-delete"
+        ? locale === "en"
+          ? "Match record was deleted."
+          : locale === "zh-TW"
+            ? "賽事記錄已刪除。"
+            : "赛事记录已删除。"
+      : error === "event-admin" && eventsCode === "event-delete-confirm"
+        ? locale === "en"
+          ? "Type DELETE in the confirmation field before removing a record."
+          : locale === "zh-TW"
+            ? "刪除前請先在確認欄位輸入 DELETE。"
+            : "删除前请先在确认栏位输入 DELETE。"
+      : error === "event-admin" && eventsCode === "event-league-delete-forbidden"
+        ? locale === "en"
+          ? "Only manually created leagues can be deleted."
+          : locale === "zh-TW"
+            ? "只有人工建立的聯賽才可刪除。"
+            : "只有人工创建的联赛才可删除。"
+      : error === "event-admin" && eventsCode === "event-match-delete-forbidden"
+        ? locale === "en"
+          ? "Only manually created matches can be deleted."
+          : locale === "zh-TW"
+            ? "只有人工建立的賽事才可刪除。"
+            : "只有人工创建的赛事才可删除。"
       : error === "events" || error === "event-admin"
         ? locale === "en"
           ? "Event workspace update failed."
@@ -3101,6 +3201,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       ? financeDashboard.settlementRows
       : adminExpansion.finance.settlements.rows;
   const filteredFinanceReconciliationIssues = financeDashboard.reconciliationIssues.filter((issue) => {
+    if (financeIssueScope !== "all" && issue.scope !== financeIssueScope) {
+      return false;
+    }
+
     if (financeIssueStatus !== "all" && issue.status !== financeIssueStatus) {
       return false;
     }
@@ -3134,10 +3238,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     }
 
     const haystack = [
+      issue.scope,
       issue.summary,
       issue.detail ?? "",
       issue.paymentReference ?? "",
       issue.rechargeOrderNo ?? "",
+      issue.orderRefLabel ?? "",
+      issue.subjectTitle ?? "",
+      issue.userDisplayName ?? "",
+      issue.userEmail ?? "",
       issue.assignedToDisplayName ?? "",
       issue.createdByDisplayName,
       issue.reasonCode ?? "",
@@ -6318,6 +6427,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               issues={filteredFinanceReconciliationIssues}
               issueTypeOptions={financeIssueTypeOptions}
               filters={{
+                scope: financeIssueScope,
                 status: financeIssueStatus,
                 severity: financeIssueSeverity,
                 issueType: financeIssueType,
@@ -7294,6 +7404,53 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   {locale === "en" ? "Run batch writeback" : locale === "zh-TW" ? "執行批量回寫" : "执行批量回写"}
                 </button>
               </form>
+              <div className="mt-4 rounded-[1.2rem] border border-amber-300/15 bg-amber-300/10 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="section-label">{locale === "en" ? "Exception queue" : locale === "zh-TW" ? "異常復核隊列" : "异常复核队列"}</p>
+                    <p className="mt-2 text-sm text-amber-50/85">
+                      {locale === "en"
+                        ? "Use this queue to quickly spot withdrawals missing batch data, proofs, or callback confirmation."
+                        : locale === "zh-TW"
+                          ? "集中查看缺少批次號、憑證或回單異常的提現申請。"
+                          : "集中查看缺少批次号、凭证或回单异常的提现申请。"}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-amber-200/20 bg-amber-200/10 px-3 py-1 text-xs text-amber-50">
+                    {agentsDashboard.withdrawalExceptions.length}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {agentsDashboard.withdrawalExceptions.slice(0, 8).map((item) => (
+                    <div key={`withdrawal-exception-${item.exceptionType}-${item.id}`} className="rounded-2xl border border-white/10 bg-slate-950/35 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{item.agentName}</p>
+                          <p className="mt-1 text-sm text-amber-100">{item.exceptionLabel}</p>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs text-slate-100">
+                          {getWithdrawalStatusMeta(item.status, locale).label}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          CNY {formatAdminCoinAmount(item.amount, displayLocale)}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                          {formatDateTime(item.updatedAt, displayLocale)}
+                        </span>
+                        {item.payoutBatchNo ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{item.payoutBatchNo}</span> : null}
+                        {item.callbackStatus ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{item.callbackStatus}</span> : null}
+                      </div>
+                    </div>
+                  ))}
+                  {agentsDashboard.withdrawalExceptions.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.02] p-4 text-sm text-slate-300">
+                      {locale === "en" ? "No payout exceptions in the current queue." : locale === "zh-TW" ? "目前沒有待復核的打款異常。" : "当前没有待复核的打款异常。"}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
               <div className="mt-4 rounded-[1.2rem] border border-sky-300/15 bg-sky-400/10 p-4 text-sm text-sky-50">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -7763,6 +7920,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
             <ExpansionRowsPanel
+              title={locale === "en" ? "Long-range aggregates" : locale === "zh-TW" ? "長週期聚合" : "长周期聚合"}
+              rows={reportsDashboard.longRangeRows}
+            />
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            {reportsDashboard.breakdownSections.map((section) => (
+              <ExpansionRowsPanel
+                key={section.key}
+                title={section.title}
+                description={section.description}
+                rows={section.rows}
+              />
+            ))}
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <ExpansionRowsPanel
               title={locale === "en" ? "Revenue and conversion" : locale === "zh-TW" ? "營收與轉化" : "营收与转化"}
               rows={reportsDashboard.revenueRows}
             />
@@ -7794,9 +7967,76 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 <h3 className="mt-2 text-xl font-semibold text-white">
                   {locale === "en" ? "Export center" : locale === "zh-TW" ? "匯出中心" : "导出中心"}
                 </h3>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">
+                  {locale === "en"
+                    ? "Apply one set of date and dimension filters, then reuse it across report export tasks."
+                    : locale === "zh-TW"
+                      ? "先設定一組日期與維度條件，再在不同報表匯出任務中重複使用。"
+                      : "先设定一组日期与维度条件，再在不同报表导出任务中复用。"}
+                </p>
               </div>
               <span className="text-sm text-slate-500">{reportsDashboard.exportCards.length}</span>
             </div>
+            <form method="get" action="/admin" className="mt-5 rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+              <input type="hidden" name="tab" value="reports" />
+              <input type="hidden" name="reportsWindow" value={reportsWindow} />
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "From" : locale === "zh-TW" ? "開始日期" : "开始日期"}</span>
+                  <input
+                    type="date"
+                    name="reportsFrom"
+                    defaultValue={reportsFrom}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "To" : locale === "zh-TW" ? "結束日期" : "结束日期"}</span>
+                  <input
+                    type="date"
+                    name="reportsTo"
+                    defaultValue={reportsTo}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Order type" : locale === "zh-TW" ? "訂單類型" : "订单类型"}</span>
+                  <select
+                    name="reportsOrderType"
+                    defaultValue={reportsOrderType}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  >
+                    <option value="all">{locale === "en" ? "All" : locale === "zh-TW" ? "全部" : "全部"}</option>
+                    <option value="membership">{locale === "en" ? "Membership" : locale === "zh-TW" ? "會員" : "会员"}</option>
+                    <option value="content">{locale === "en" ? "Content" : locale === "zh-TW" ? "內容" : "内容"}</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Dimension" : locale === "zh-TW" ? "維度標記" : "维度标记"}</span>
+                  <input
+                    type="text"
+                    name="reportsDimension"
+                    defaultValue={reportsDimension}
+                    placeholder={locale === "en" ? "league / author / campaign..." : locale === "zh-TW" ? "聯賽 / 作者 / 活動..." : "联赛 / 作者 / 活动..."}
+                    className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
+                >
+                  {locale === "en" ? "Apply export filters" : locale === "zh-TW" ? "套用匯出篩選" : "应用导出筛选"}
+                </button>
+                <Link
+                  href={`/admin?tab=reports&reportsWindow=${reportsWindow}`}
+                  className="inline-flex items-center justify-center rounded-full border border-white/8 bg-white/[0.04] px-4 py-2 text-sm text-slate-300 transition hover:border-white/20 hover:text-white"
+                >
+                  {locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置"}
+                </Link>
+              </div>
+            </form>
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {reportsDashboard.exportCards.map((item) => (
                 <div key={item.scope} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
@@ -7812,6 +8052,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   <form action="/api/admin/reports/tasks" method="post" className="mt-4">
                     <input type="hidden" name="scope" value={item.scope} />
                     <input type="hidden" name="reportsWindow" value={reportsWindow} />
+                    <input type="hidden" name="from" value={reportsFrom} />
+                    <input type="hidden" name="to" value={reportsTo} />
+                    <input type="hidden" name="orderType" value={reportsOrderType} />
+                    <input type="hidden" name="dimension" value={reportsDimension} />
                     <button
                       type="submit"
                       className="inline-flex items-center justify-center rounded-full border border-sky-300/25 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20"

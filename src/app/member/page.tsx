@@ -28,6 +28,122 @@ function readValue(value: string | string[] | undefined, fallback = "") {
   return value ?? fallback;
 }
 
+function readNumber(value: string | string[] | undefined) {
+  const parsed = Number(readValue(value));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function tMember(
+  locale: DisplayLocale,
+  zhCn: string,
+  zhTw: string,
+  en: string,
+  th?: string,
+  vi?: string,
+  hi?: string,
+) {
+  if (locale === "zh-TW") {
+    return zhTw;
+  }
+
+  if (locale === "en") {
+    return en;
+  }
+
+  if (locale === "th") {
+    return th ?? en;
+  }
+
+  if (locale === "vi") {
+    return vi ?? en;
+  }
+
+  if (locale === "hi") {
+    return hi ?? en;
+  }
+
+  return zhCn;
+}
+
+function formatValidityDays(days: number, locale: DisplayLocale) {
+  if (locale === "en") {
+    return `${days} days`;
+  }
+
+  if (locale === "zh-TW") {
+    return `${days} 天`;
+  }
+
+  if (locale === "th") {
+    return `${days} วัน`;
+  }
+
+  if (locale === "vi") {
+    return `${days} ngay`;
+  }
+
+  if (locale === "hi") {
+    return `${days} days`;
+  }
+
+  return `${days} 天`;
+}
+
+function getRechargeOrderHint(status: "pending" | "paid" | "failed" | "closed" | "refunded", locale: DisplayLocale) {
+  switch (status) {
+    case "paid":
+      return tMember(
+        locale,
+        "财务已完成入账，可直接用球币解锁内容或开通会员。",
+        "財務已完成入帳，可直接用球幣解鎖內容或開通會員。",
+        "Credited successfully. You can now use the coins to unlock content or activate membership.",
+        "เติมยอดสำเร็จแล้ว สามารถใช้เหรียญปลดล็อกคอนเทนต์หรือเปิดสมาชิกได้",
+        "Da ghi co thanh cong. Ban co the dung coin de mo khoa noi dung hoac kich hoat goi thanh vien.",
+        "Credit ho chuka hai. Ab aap coins se content unlock ya membership activate kar sakte hain.",
+      );
+    case "failed":
+      return tMember(
+        locale,
+        "该充值单处理失败，请重新提交或联系运营协助补单。",
+        "該充值單處理失敗，請重新提交或聯繫運營協助補單。",
+        "This recharge request failed. Submit a new one or contact support for manual repair.",
+        "คำขอเติมเงินล้มเหลว กรุณาส่งใหม่หรือติดต่อทีมงาน",
+        "Don nap nay that bai. Hay tao lai hoac lien he ho tro de xu ly thu cong.",
+        "Yeh recharge request fail ho gayi. Dobara submit karein ya support se sampark karein.",
+      );
+    case "closed":
+      return tMember(
+        locale,
+        "该充值单已关闭，不会继续入账。",
+        "該充值單已關閉，不會繼續入帳。",
+        "This recharge request has been closed and will not be credited.",
+        "คำขอนี้ถูกปิดแล้วและจะไม่ถูกเติมยอด",
+        "Don nap nay da dong va se khong duoc ghi co.",
+        "Yeh recharge request band ho chuki hai aur credit nahi hoga.",
+      );
+    case "refunded":
+      return tMember(
+        locale,
+        "该充值单已退款，如球币已入账会同步回退。",
+        "該充值單已退款，如球幣已入帳會同步回退。",
+        "This recharge was refunded. Any credited coins should be rolled back accordingly.",
+        "ออเดอร์นี้คืนเงินแล้ว หากเคยเข้ายอดเหรียญจะถูกปรับกลับ",
+        "Don nap nay da hoan tien. Neu da ghi coin thi se duoc hoan lai tuong ung.",
+        "Is recharge ka refund ho chuka hai. Agar coins credit hue the to rollback hoga.",
+      );
+    default:
+      return tMember(
+        locale,
+        "已提交待处理，财务核对收款后会完成入账。",
+        "已提交待處理，財務核對收款後會完成入帳。",
+        "Submitted and awaiting review. Finance will credit the order after payment verification.",
+        "ส่งคำขอแล้ว รอทีมการเงินตรวจสอบก่อนเติมยอด",
+        "Da gui yeu cau va dang cho duyet. Bo phan tai chinh se ghi co sau khi doi chieu thanh toan.",
+        "Request submit ho gayi hai. Payment verify hone ke baad finance credit karegi.",
+      );
+  }
+}
+
 function formatCoinAmount(amount: number, locale: DisplayLocale) {
   const formatted = new Intl.NumberFormat(locale).format(amount);
 
@@ -131,21 +247,51 @@ function getRechargeRequestMessage(recharge: string, locale: DisplayLocale) {
     };
   }
 
-  if (recharge === "error") {
+  if (recharge === "cancelled") {
+    return {
+      className: "mt-6 rounded-[1.25rem] border border-slate-300/20 bg-slate-400/10 px-5 py-4 text-sm text-slate-100",
+      message:
+        locale === "en"
+          ? "Recharge request cancelled. This order will not be credited."
+          : locale === "zh-TW"
+            ? "充值申請已撤銷，該訂單不會再入帳。"
+            : locale === "th"
+              ? "ยกเลิกคำขอเติมเงินแล้ว ออเดอร์นี้จะไม่เข้ายอด"
+              : locale === "vi"
+                ? "Da huy yeu cau nap coin. Don nay se khong duoc ghi co."
+                : locale === "hi"
+                  ? "Recharge request cancel ho gayi hai. Yeh order ab credit nahi hoga."
+                  : "充值申请已撤销，该订单不会再入账。",
+    };
+  }
+
+  if (recharge === "error" || recharge === "cancel-error") {
     return {
       className: "mt-6 rounded-[1.25rem] border border-rose-300/20 bg-rose-400/10 px-5 py-4 text-sm text-rose-100",
       message:
-        locale === "en"
-          ? "Recharge request failed. Please try again."
-          : locale === "zh-TW"
-            ? "充值申請失敗，請稍後重試。"
-            : locale === "th"
-              ? "ส่งคำขอเติมเงินไม่สำเร็จ กรุณาลองใหม่"
-              : locale === "vi"
-                ? "Gui yeu cau nap coin that bai, vui long thu lai."
-                : locale === "hi"
-                  ? "Recharge request fail ho gayi, kripya dobara koshish karein."
-                  : "充值申请失败，请稍后重试。",
+        recharge === "cancel-error"
+          ? locale === "en"
+            ? "This recharge request could not be cancelled."
+            : locale === "zh-TW"
+              ? "這筆充值申請目前無法撤銷。"
+              : locale === "th"
+                ? "คำขอนี้ยังไม่สามารถยกเลิกได้"
+                : locale === "vi"
+                  ? "Yeu cau nap coin nay hien khong the huy."
+                  : locale === "hi"
+                    ? "Yeh recharge request abhi cancel nahi ho sakti."
+                    : "这笔充值申请当前无法撤销。"
+          : locale === "en"
+            ? "Recharge request failed. Please try again."
+            : locale === "zh-TW"
+              ? "充值申請失敗，請稍後重試。"
+              : locale === "th"
+                ? "ส่งคำขอเติมเงินไม่สำเร็จ กรุณาลองใหม่"
+                : locale === "vi"
+                  ? "Gui yeu cau nap coin that bai, vui long thu lai."
+                  : locale === "hi"
+                    ? "Recharge request fail ho gayi, kripya dobara koshish karein."
+                    : "充值申请失败，请稍后重试。",
     };
   }
 
@@ -168,8 +314,10 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       loginHint: "Log in with a member account to view coin balance and recharge records.",
       balanceAfterLabel: "Balance after",
       createdAtLabel: "Created",
+      updatedAtLabel: "Updated",
       creditedAtLabel: "Credited",
       totalCoinsLabel: "Coins",
+      amountLabel: "Amount due",
       walletSettlementProvider: "Coin wallet",
       manualRechargeReason: "Manual recharge",
       contentUnlockReason: "Content unlock",
@@ -180,12 +328,26 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       packageEyebrow: "Package Store",
       packageTitle: "Coin recharge packages",
       packageDescription: "Submit a recharge request from the member center and let finance credit coins after review.",
-      packagePriceLabel: "Recharge request",
+      packagePriceLabel: "Price",
+      packageTotalLabel: "Total coins",
       packageValidityLabel: "Validity",
       packageBonusLabel: "Bonus",
       packageSubmitLabel: "Create request",
       packageEmpty: "No active coin packages are available right now.",
       packageReviewHint: "Recharge requests stay pending until finance confirms the payment and credits the coins.",
+      rechargeFlowTitle: "How recharge works",
+      rechargeFlowSteps: [
+        "Choose a package and create a recharge request.",
+        "Keep the request reference for finance verification.",
+        "Coins are credited after finance review and the order status changes to credited.",
+      ],
+      providerOrderIdLabel: "Gateway order ID",
+      paymentReferenceLabel: "Payment reference",
+      pendingStatusLabel: "Awaiting review",
+      paidStatusLabel: "Credited",
+      failedStatusLabel: "Failed",
+      refundedStatusLabel: "Refunded",
+      closedStatusLabel: "Closed",
     };
   }
 
@@ -204,8 +366,10 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       loginHint: "登入會員帳號後可查看球幣餘額與充值記錄。",
       balanceAfterLabel: "變動後餘額",
       createdAtLabel: "建立時間",
+      updatedAtLabel: "更新時間",
       creditedAtLabel: "入帳時間",
       totalCoinsLabel: "入帳球幣",
+      amountLabel: "應付金額",
       walletSettlementProvider: "球幣錢包",
       manualRechargeReason: "人工充值",
       contentUnlockReason: "球幣解鎖內容",
@@ -216,12 +380,26 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       packageEyebrow: "Package Store",
       packageTitle: "球幣充值套餐",
       packageDescription: "在會員中心提交充值申請，等待財務審核後完成球幣入帳。",
-      packagePriceLabel: "充值申請",
+      packagePriceLabel: "支付金額",
+      packageTotalLabel: "總球幣",
       packageValidityLabel: "有效期",
       packageBonusLabel: "贈送",
       packageSubmitLabel: "建立申請",
       packageEmpty: "目前沒有可用的球幣套餐。",
       packageReviewHint: "充值單建立後會保持待處理，待財務核對收款後再入帳。",
+      rechargeFlowTitle: "充值流程",
+      rechargeFlowSteps: [
+        "選擇套餐並建立充值申請。",
+        "保留訂單流水，方便財務核對。",
+        "財務確認後入帳，訂單狀態會變成已入帳。",
+      ],
+      providerOrderIdLabel: "通道單號",
+      paymentReferenceLabel: "支付流水",
+      pendingStatusLabel: "待審核",
+      paidStatusLabel: "已入帳",
+      failedStatusLabel: "失敗",
+      refundedStatusLabel: "已退款",
+      closedStatusLabel: "已關閉",
     };
   }
 
@@ -240,8 +418,10 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       loginHint: "เข้าสู่ระบบสมาชิกเพื่อดูยอดเหรียญและประวัติการเติมเงิน",
       balanceAfterLabel: "ยอดหลังรายการ",
       createdAtLabel: "สร้างเมื่อ",
+      updatedAtLabel: "อัปเดตเมื่อ",
       creditedAtLabel: "เข้ายอดเมื่อ",
-      totalCoinsLabel: "จำนวนเหรียญ",
+      totalCoinsLabel: "เหรียญทั้งหมด",
+      amountLabel: "ยอดชำระ",
       walletSettlementProvider: "กระเป๋าเหรียญ",
       manualRechargeReason: "เติมเงินด้วยตนเอง",
       contentUnlockReason: "ปลดล็อกคอนเทนต์",
@@ -252,12 +432,26 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       packageEyebrow: "Package Store",
       packageTitle: "แพ็กเกจเติมเหรียญ",
       packageDescription: "ส่งคำขอเติมเหรียญจากศูนย์สมาชิก แล้วรอทีมการเงินตรวจสอบและเติมยอด",
-      packagePriceLabel: "คำขอเติมเงิน",
+      packagePriceLabel: "ราคา",
+      packageTotalLabel: "เหรียญรวม",
       packageValidityLabel: "อายุแพ็กเกจ",
       packageBonusLabel: "โบนัส",
       packageSubmitLabel: "สร้างคำขอ",
       packageEmpty: "ยังไม่มีแพ็กเกจเหรียญที่พร้อมใช้งาน",
       packageReviewHint: "คำขอเติมเงินจะอยู่ในสถานะรอตรวจสอบจนกว่าทีมการเงินจะยืนยันและเติมยอด",
+      rechargeFlowTitle: "ขั้นตอนการเติมเงิน",
+      rechargeFlowSteps: [
+        "เลือกแพ็กเกจและสร้างคำขอเติมเงิน",
+        "เก็บเลขอ้างอิงคำขอไว้เพื่อตรวจสอบ",
+        "เมื่อการเงินยืนยันแล้ว ระบบจะเติมเหรียญและอัปเดตสถานะคำสั่งซื้อ",
+      ],
+      providerOrderIdLabel: "เลขคำสั่งจากช่องทาง",
+      paymentReferenceLabel: "เลขอ้างอิงการชำระ",
+      pendingStatusLabel: "รอตรวจสอบ",
+      paidStatusLabel: "เข้ายอดแล้ว",
+      failedStatusLabel: "ไม่สำเร็จ",
+      refundedStatusLabel: "คืนเงินแล้ว",
+      closedStatusLabel: "ปิดแล้ว",
     };
   }
 
@@ -276,8 +470,10 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       loginHint: "Dang nhap tai khoan thanh vien de xem so du coin va lich su nap.",
       balanceAfterLabel: "So du sau giao dich",
       createdAtLabel: "Tao luc",
+      updatedAtLabel: "Cap nhat luc",
       creditedAtLabel: "Ghi co luc",
-      totalCoinsLabel: "Coin nhan duoc",
+      totalCoinsLabel: "Tong coin",
+      amountLabel: "So tien",
       walletSettlementProvider: "Vi coin",
       manualRechargeReason: "Nap coin thu cong",
       contentUnlockReason: "Mo khoa noi dung",
@@ -288,12 +484,26 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       packageEyebrow: "Package Store",
       packageTitle: "Goi nap coin",
       packageDescription: "Gui yeu cau nap coin trong trung tam hoi vien va doi bo phan tai chinh duyet ghi co.",
-      packagePriceLabel: "Yeu cau nap",
+      packagePriceLabel: "Gia",
+      packageTotalLabel: "Tong coin",
       packageValidityLabel: "Hieu luc",
       packageBonusLabel: "Thuong",
       packageSubmitLabel: "Tao yeu cau",
       packageEmpty: "Hien chua co goi coin nao dang mo.",
       packageReviewHint: "Don nap coin se o trang thai cho xu ly cho den khi bo phan tai chinh xac nhan.",
+      rechargeFlowTitle: "Quy trinh nap coin",
+      rechargeFlowSteps: [
+        "Chon goi coin va tao yeu cau nap.",
+        "Luu lai ma tham chieu de doi soat voi bo phan tai chinh.",
+        "Sau khi duyet, he thong se ghi co va cap nhat trang thai don.",
+      ],
+      providerOrderIdLabel: "Ma don kenh",
+      paymentReferenceLabel: "Ma tham chieu thanh toan",
+      pendingStatusLabel: "Cho duyet",
+      paidStatusLabel: "Da ghi co",
+      failedStatusLabel: "That bai",
+      refundedStatusLabel: "Da hoan tien",
+      closedStatusLabel: "Da dong",
     };
   }
 
@@ -312,8 +522,10 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       loginHint: "Coin balance aur recharge history dekhne ke liye member account se login karein.",
       balanceAfterLabel: "Balance after",
       createdAtLabel: "Created",
+      updatedAtLabel: "Updated",
       creditedAtLabel: "Credited",
       totalCoinsLabel: "Coins",
+      amountLabel: "Amount",
       walletSettlementProvider: "Coin wallet",
       manualRechargeReason: "Manual recharge",
       contentUnlockReason: "Content unlock",
@@ -324,12 +536,26 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       packageEyebrow: "Package Store",
       packageTitle: "Coin recharge packages",
       packageDescription: "Submit a recharge request in the member center and wait for finance to credit the coins.",
-      packagePriceLabel: "Recharge request",
+      packagePriceLabel: "Price",
+      packageTotalLabel: "Total coins",
       packageValidityLabel: "Validity",
       packageBonusLabel: "Bonus",
       packageSubmitLabel: "Create request",
       packageEmpty: "No active coin packages are available right now.",
       packageReviewHint: "Recharge requests remain pending until finance confirms and credits the coins.",
+      rechargeFlowTitle: "Recharge flow",
+      rechargeFlowSteps: [
+        "Package chunein aur recharge request create karein.",
+        "Reference number safe rakhein taaki finance verify kar sake.",
+        "Review ke baad coins credit honge aur order status update hoga.",
+      ],
+      providerOrderIdLabel: "Gateway order ID",
+      paymentReferenceLabel: "Payment reference",
+      pendingStatusLabel: "Awaiting review",
+      paidStatusLabel: "Credited",
+      failedStatusLabel: "Failed",
+      refundedStatusLabel: "Refunded",
+      closedStatusLabel: "Closed",
     };
   }
 
@@ -347,8 +573,10 @@ function getMemberCoinCopy(locale: DisplayLocale) {
     loginHint: "登录会员账号后可查看球币余额与充值记录。",
     balanceAfterLabel: "变动后余额",
     createdAtLabel: "创建时间",
+    updatedAtLabel: "更新时间",
     creditedAtLabel: "入账时间",
     totalCoinsLabel: "入账球币",
+    amountLabel: "支付金额",
     walletSettlementProvider: "球币钱包",
     manualRechargeReason: "人工充值",
     contentUnlockReason: "球币解锁内容",
@@ -359,12 +587,64 @@ function getMemberCoinCopy(locale: DisplayLocale) {
     packageEyebrow: "Package Store",
     packageTitle: "球币充值套餐",
     packageDescription: "在会员中心提交充值申请，等待财务审核后完成球币入账。",
-    packagePriceLabel: "充值申请",
+    packagePriceLabel: "支付金额",
+    packageTotalLabel: "总球币",
     packageValidityLabel: "有效期",
     packageBonusLabel: "赠送",
     packageSubmitLabel: "创建申请",
     packageEmpty: "当前没有可用的球币套餐。",
     packageReviewHint: "充值单创建后会保持待处理，待财务核对收款后再入账。",
+    rechargeFlowTitle: "充值流程",
+    rechargeFlowSteps: [
+      "选择套餐并创建充值申请。",
+      "保留支付流水，便于财务核对。",
+      "财务确认后入账，订单状态会更新为已入账。",
+    ],
+    providerOrderIdLabel: "通道单号",
+    paymentReferenceLabel: "支付流水",
+    pendingStatusLabel: "待审核",
+    paidStatusLabel: "已入账",
+    failedStatusLabel: "失败",
+    refundedStatusLabel: "已退款",
+    closedStatusLabel: "已关闭",
+  };
+}
+
+function getRechargeOrderStatusMeta(
+  status: "pending" | "paid" | "failed" | "closed" | "refunded",
+  copy: ReturnType<typeof getMemberCoinCopy>,
+) {
+  if (status === "paid") {
+    return {
+      label: copy.paidStatusLabel,
+      className: "rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1 text-xs font-semibold text-lime-100",
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      label: copy.failedStatusLabel,
+      className: "rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1 text-xs font-semibold text-rose-100",
+    };
+  }
+
+  if (status === "refunded") {
+    return {
+      label: copy.refundedStatusLabel,
+      className: "rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-slate-200",
+    };
+  }
+
+  if (status === "closed") {
+    return {
+      label: copy.closedStatusLabel,
+      className: "rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-slate-200",
+    };
+  }
+
+  return {
+    label: copy.pendingStatusLabel,
+    className: "rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-100",
   };
 }
 
@@ -423,16 +703,34 @@ export default async function MemberPage({
     getCurrentUserRecord(),
     getAvailableCoinPackages(locale),
   ]);
-  const coinCenter = currentUser ? await getMemberCoinCenter(currentUser.id) : null;
+  const coinCenter = currentUser ? await getMemberCoinCenter(currentUser.id, displayLocale) : null;
   const localizedMembershipPlans = membershipPlans.map((plan) => localizeMembershipPlan(plan, locale));
   const unlockedPlans = articlePlans.filter((plan) => canAccessContent(session, plan.id));
   const payment = readValue(resolved.payment);
   const coin = readValue(resolved.coin);
   const recharge = readValue(resolved.recharge);
+  const rechargeOrderNo = readValue(resolved.rechargeOrderNo);
+  const rechargeReference = readValue(resolved.rechargeReference);
+  const rechargeCoins = readNumber(resolved.rechargeCoins);
+  const rechargeAmount = readNumber(resolved.rechargeAmount);
   const paymentResult = getPaymentResultMeta("member", payment, displayLocale);
   const coinResult = getCoinPurchaseMessage(coin, displayLocale);
-  const rechargeResult = getRechargeRequestMessage(recharge, displayLocale);
+  const latestRechargeOrder = rechargeOrderNo
+    ? coinCenter?.rechargeOrders.find((order) => order.orderNo === rechargeOrderNo)
+    : undefined;
+  const rechargeResult = latestRechargeOrder || rechargeOrderNo ? null : getRechargeRequestMessage(recharge, displayLocale);
   const coinBalance = coinCenter?.balance ?? session.coinBalance ?? 0;
+  const pendingRechargeCount = coinCenter?.rechargeOrders.filter((order) => order.status === "pending").length ?? 0;
+  const paidRechargeCount = coinCenter?.rechargeOrders.filter((order) => order.status === "paid").length ?? 0;
+  const rechargeReceipt =
+    recharge === "created"
+      ? {
+          orderNo: latestRechargeOrder?.orderNo || rechargeOrderNo,
+          paymentReference: latestRechargeOrder?.paymentReference || rechargeReference,
+          totalCoins: latestRechargeOrder?.totalCoins ?? rechargeCoins,
+          amount: latestRechargeOrder?.amount ?? rechargeAmount,
+        }
+      : null;
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-10 sm:px-6 lg:px-8">
@@ -467,6 +765,19 @@ export default async function MemberPage({
         {paymentResult ? <div className={paymentResult.className}>{paymentResult.message}</div> : null}
         {coinResult ? <div className={coinResult.className}>{coinResult.message}</div> : null}
         {rechargeResult ? <div className={rechargeResult.className}>{rechargeResult.message}</div> : null}
+        {rechargeReceipt?.orderNo ? (
+          <div className="mt-6 rounded-[1.4rem] border border-sky-300/20 bg-sky-400/10 p-5 text-sm text-sky-100">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-semibold text-white">{coinCopy.pendingStatusLabel}</p>
+              <span>{rechargeReceipt.orderNo}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-4 text-xs text-sky-50/90">
+              {typeof rechargeReceipt.totalCoins === "number" ? <span>{coinCopy.totalCoinsLabel} {formatCoinAmount(rechargeReceipt.totalCoins, displayLocale)}</span> : null}
+              {typeof rechargeReceipt.amount === "number" ? <span>{coinCopy.amountLabel} {formatPrice(rechargeReceipt.amount, displayLocale)}</span> : null}
+              {rechargeReceipt.paymentReference ? <span>{coinCopy.paymentReferenceLabel} {rechargeReceipt.paymentReference}</span> : null}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -519,9 +830,47 @@ export default async function MemberPage({
               title={coinCopy.packageTitle}
               description={coinCopy.packageDescription}
             />
-            <p className="mt-4 rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4 text-sm text-slate-300">
-              {coinCopy.packageReviewHint}
-            </p>
+            <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              <p className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4 text-sm text-slate-300">
+                {coinCopy.packageReviewHint}
+              </p>
+              <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                <p className="text-sm font-medium text-white">{coinCopy.rechargeFlowTitle}</p>
+                <ol className="mt-3 space-y-2 text-sm text-slate-300">
+                  {coinCopy.rechargeFlowSteps.map((step, index) => (
+                    <li key={step} className="flex gap-3">
+                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-xs text-sky-100">
+                        {index + 1}
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+            {rechargeReceipt?.orderNo ? (
+              <div className="mt-4 rounded-[1.25rem] border border-sky-300/20 bg-sky-400/10 p-4 text-sm text-sky-100">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-white">
+                      {tMember(displayLocale, "充值申请已创建", "充值申請已建立", "Recharge request created", "สร้างคำขอเติมเงินแล้ว", "Da tao yeu cau nap coin", "Recharge request create ho gayi")}
+                    </p>
+                    <p className="mt-2 text-xs text-sky-100/90">
+                      {tMember(displayLocale, "请保存订单号并等待财务核对收款。", "請保存訂單號並等待財務核對收款。", "Save the order number and wait for finance to verify the payment.", "โปรดบันทึกเลขออเดอร์และรอทีมการเงินตรวจสอบ", "Hay luu ma don va cho bo phan tai chinh doi chieu.", "Order number save rakhein aur finance verification ka intezar karein.")}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-sky-200/20 bg-sky-100/10 px-3 py-1 text-xs font-semibold text-sky-50">
+                    {tMember(displayLocale, "待处理", "待處理", "Pending", "รอดำเนินการ", "Dang cho xu ly", "Pending")}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3 text-xs text-sky-100/90">
+                  <span>{tMember(displayLocale, "订单号", "訂單號", "Order", "เลขออเดอร์", "Ma don", "Order")} {rechargeReceipt.orderNo}</span>
+                  {rechargeReceipt.paymentReference ? <span>{coinCopy.paymentReferenceLabel} {rechargeReceipt.paymentReference}</span> : null}
+                  {typeof rechargeReceipt.totalCoins === "number" ? <span>{coinCopy.packageTotalLabel} {formatCoinAmount(rechargeReceipt.totalCoins, displayLocale)}</span> : null}
+                  {typeof rechargeReceipt.amount === "number" ? <span>{coinCopy.amountLabel} {formatPrice(rechargeReceipt.amount, displayLocale)}</span> : null}
+                </div>
+              </div>
+            ) : null}
             {coinPackages.length > 0 ? (
               <div className="mt-6 grid gap-4">
                 {coinPackages.map((pkg) => (
@@ -533,16 +882,22 @@ export default async function MemberPage({
                       </div>
                       <div className="text-right">
                         <p className="text-2xl font-semibold text-sky-100">{formatCoinAmount(pkg.totalCoins, displayLocale)}</p>
-                        <p className="mt-1 text-xs text-slate-500">{coinCopy.packagePriceLabel}</p>
+                        <p className="mt-1 text-xs text-slate-500">{coinCopy.packageTotalLabel}</p>
                       </div>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                      <span className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-sky-100">
+                        {coinCopy.packagePriceLabel} {formatPrice(pkg.price, displayLocale)}
+                      </span>
+                      <span className="rounded-full border border-white/10 px-3 py-1">
+                        {tMember(displayLocale, "基础球币", "基礎球幣", "Base coins", "เหรียญพื้นฐาน", "Coin co ban", "Base coins")} {formatCoinAmount(pkg.coinAmount, displayLocale)}
+                      </span>
                       <span className="rounded-full border border-white/10 px-3 py-1">
                         {coinCopy.packageBonusLabel} {formatCoinAmount(pkg.bonusAmount, displayLocale)}
                       </span>
                       {pkg.validityDays ? (
                         <span className="rounded-full border border-white/10 px-3 py-1">
-                          {coinCopy.packageValidityLabel} {pkg.validityDays}d
+                          {coinCopy.packageValidityLabel} {formatValidityDays(pkg.validityDays, displayLocale)}
                         </span>
                       ) : null}
                       {pkg.badge ? <span className="rounded-full border border-orange-300/20 bg-orange-400/10 px-3 py-1 text-orange-100">{pkg.badge}</span> : null}
@@ -629,16 +984,44 @@ export default async function MemberPage({
               title={coinCopy.rechargeTitle}
               description={coinCopy.rechargeDescription}
             />
+            {currentUser ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[1.15rem] border border-amber-300/20 bg-amber-300/10 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-amber-100/70">{tMember(displayLocale, "待审核充值", "待審核充值", "Pending recharges", "คำขอที่รอตรวจสอบ", "Don dang cho duyet", "Pending recharges")}</p>
+                  <p className="mt-2 text-2xl font-semibold text-amber-50">{pendingRechargeCount}</p>
+                  <p className="mt-2 text-sm text-amber-100/80">{tMember(displayLocale, "财务确认到账后会自动入账。", "財務確認到帳後會自動入帳。", "They will be credited automatically after finance verification.", "จะเข้ายอดหลังทีมการเงินยืนยัน", "Se duoc ghi co sau khi doi chieu tai chinh.", "Finance verification ke baad auto credit hoga.")}</p>
+                </div>
+                <div className="rounded-[1.15rem] border border-lime-300/20 bg-lime-300/10 p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-lime-100/70">{tMember(displayLocale, "已入账充值", "已入帳充值", "Credited recharges", "ออเดอร์ที่เข้ายอดแล้ว", "Don da ghi co", "Credited recharges")}</p>
+                  <p className="mt-2 text-2xl font-semibold text-lime-50">{paidRechargeCount}</p>
+                  <p className="mt-2 text-sm text-lime-100/80">{tMember(displayLocale, "入账后会同步出现在球币流水与余额里。", "入帳後會同步出現在球幣流水與餘額裡。", "Credited orders appear in your balance and coin ledger.", "ออเดอร์ที่เข้ายอดแล้วจะสะท้อนในยอดคงเหลือและประวัติ", "Don da ghi co se hien trong so du va lich su coin.", "Credited orders balance aur ledger mein dikhte hain.")}</p>
+                </div>
+              </div>
+            ) : null}
             <div className="mt-6 space-y-4">
               {currentUser && (coinCenter?.rechargeOrders.length ?? 0) > 0 ? (
                 coinCenter?.rechargeOrders.map((order) => {
-                  const statusMeta = getOrderStatusMeta(order.status, displayLocale);
+                  const statusMeta = getRechargeOrderStatusMeta(order.status, coinCopy);
+                  const providerLabel = order.provider ? getPaymentProviderLabel(order.provider, displayLocale) : undefined;
+                  const isLatestCreated = latestRechargeOrder?.id === order.id;
 
                   return (
-                    <div key={order.id} className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
+                    <div
+                      key={order.id}
+                      className={`rounded-[1.25rem] border bg-white/[0.03] p-4 ${
+                        isLatestCreated ? "border-sky-300/30 ring-1 ring-sky-300/20" : "border-white/8"
+                      }`}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="font-medium text-white">{order.packageTitle}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-white">{order.packageTitle}</p>
+                            {isLatestCreated ? (
+                              <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100">
+                                {tMember(displayLocale, "刚创建", "剛建立", "Just created", "เพิ่งสร้าง", "Vua tao", "Just created")}
+                              </span>
+                            ) : null}
+                          </div>
                           <p className="mt-1 text-xs text-slate-500">{order.orderNo}</p>
                         </div>
                         <span className={statusMeta.className}>{statusMeta.label}</span>
@@ -648,12 +1031,56 @@ export default async function MemberPage({
                           {coinCopy.totalCoinsLabel} {formatCoinAmount(order.totalCoins, displayLocale)}
                         </span>
                         <span>
+                          {tMember(displayLocale, "基础", "基礎", "Base", "พื้นฐาน", "Co ban", "Base")} {formatCoinAmount(order.coinAmount, displayLocale)}
+                        </span>
+                        <span>
+                          {coinCopy.packageBonusLabel} {formatCoinAmount(order.bonusAmount, displayLocale)}
+                        </span>
+                        <span>
+                          {coinCopy.amountLabel} {formatPrice(order.amount, displayLocale)}
+                        </span>
+                        <span>
                           {coinCopy.createdAtLabel} {formatDateTime(order.createdAt, displayLocale)}
+                        </span>
+                        <span>
+                          {coinCopy.updatedAtLabel} {formatDateTime(order.updatedAt, displayLocale)}
                         </span>
                         {order.creditedAt ? (
                           <span>
                             {coinCopy.creditedAtLabel} {formatDateTime(order.creditedAt, displayLocale)}
                           </span>
+                        ) : null}
+                        {providerLabel ? <span>{memberPageCopy.paymentProvider} {providerLabel}</span> : null}
+                      </div>
+                      {order.providerOrderId ? (
+                        <p className="mt-2 text-xs text-slate-500">
+                          {coinCopy.providerOrderIdLabel} {order.providerOrderId}
+                        </p>
+                      ) : null}
+                      {order.paymentReference ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          {coinCopy.paymentReferenceLabel} {order.paymentReference}
+                        </p>
+                      ) : null}
+                      <p className="mt-3 text-xs text-slate-400">{getRechargeOrderHint(order.status, displayLocale)}</p>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <Link
+                          href={`/member/recharge/${order.id}`}
+                          className="inline-flex items-center justify-center rounded-full border border-white/12 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-sky-300/30 hover:text-sky-100"
+                        >
+                          {tMember(displayLocale, "查看详情", "查看詳情", "View detail", "ดูรายละเอียด", "Xem chi tiet", "View detail")}
+                        </Link>
+                        {order.status === "pending" ? (
+                          <form action="/api/member/recharge-coins/cancel" method="post">
+                            <input type="hidden" name="orderId" value={order.id} />
+                            <input type="hidden" name="returnTo" value="/member" />
+                            <button
+                              type="submit"
+                              className="inline-flex items-center justify-center rounded-full border border-rose-300/20 bg-rose-400/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:border-rose-300/40 hover:bg-rose-400/15"
+                            >
+                              {tMember(displayLocale, "撤销申请", "撤銷申請", "Cancel request", "ยกเลิกคำขอ", "Huy yeu cau", "Cancel request")}
+                            </button>
+                          </form>
                         ) : null}
                       </div>
                     </div>

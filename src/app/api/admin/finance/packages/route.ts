@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await ensureDefaultCoinPackages();
+    await ensureDefaultCoinPackages({ revalidate: true });
   } catch {
     return redirectToAdmin(request, "&error=coin-package");
   }

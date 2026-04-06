@@ -597,9 +597,17 @@ db.exec(`
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "rechargeOrderId" TEXT,
+    "membershipOrderId" TEXT,
+    "contentOrderId" TEXT,
     "createdByUserId" TEXT,
     CONSTRAINT "FinanceReconciliationIssue_rechargeOrderId_fkey"
       FOREIGN KEY ("rechargeOrderId") REFERENCES "CoinRechargeOrder" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "FinanceReconciliationIssue_membershipOrderId_fkey"
+      FOREIGN KEY ("membershipOrderId") REFERENCES "MembershipOrder" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "FinanceReconciliationIssue_contentOrderId_fkey"
+      FOREIGN KEY ("contentOrderId") REFERENCES "ContentOrder" ("id")
       ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "FinanceReconciliationIssue_createdByUserId_fkey"
       FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id")
@@ -1258,6 +1266,8 @@ ensureColumn("FinanceReconciliationIssue", "resolvedAt", "DATETIME");
 ensureColumn("FinanceReconciliationIssue", "createdAt", "DATETIME");
 ensureColumn("FinanceReconciliationIssue", "updatedAt", "DATETIME");
 ensureColumn("FinanceReconciliationIssue", "rechargeOrderId", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "membershipOrderId", "TEXT");
+ensureColumn("FinanceReconciliationIssue", "contentOrderId", "TEXT");
 ensureColumn("FinanceReconciliationIssue", "createdByUserId", "TEXT");
 ensureColumn("User", "referredAt", "DATETIME");
 ensureColumn("User", "referredByAgentId", "TEXT");
@@ -1545,6 +1555,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_severity_updatedAt_idx" ON "FinanceReconciliationIssue"("severity", "updatedAt");
   CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_scope_updatedAt_idx" ON "FinanceReconciliationIssue"("scope", "updatedAt");
   CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_rechargeOrderId_updatedAt_idx" ON "FinanceReconciliationIssue"("rechargeOrderId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_membershipOrderId_updatedAt_idx" ON "FinanceReconciliationIssue"("membershipOrderId", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_contentOrderId_updatedAt_idx" ON "FinanceReconciliationIssue"("contentOrderId", "updatedAt");
   CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_createdByUserId_updatedAt_idx" ON "FinanceReconciliationIssue"("createdByUserId", "updatedAt");
   CREATE INDEX IF NOT EXISTS "AgentCommissionLedger_agentId_status_createdAt_idx" ON "AgentCommissionLedger"("agentId", "status", "createdAt");
   CREATE INDEX IF NOT EXISTS "AgentCommissionLedger_rechargeOrderId_kind_createdAt_idx" ON "AgentCommissionLedger"("rechargeOrderId", "kind", "createdAt");
@@ -1564,6 +1576,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_severity_createdAt_idx" ON "FinanceReconciliationIssue"("severity", "createdAt");
   CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_scope_createdAt_idx" ON "FinanceReconciliationIssue"("scope", "createdAt");
   CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_rechargeOrderId_createdAt_idx" ON "FinanceReconciliationIssue"("rechargeOrderId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_membershipOrderId_createdAt_idx" ON "FinanceReconciliationIssue"("membershipOrderId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "FinanceReconciliationIssue_contentOrderId_createdAt_idx" ON "FinanceReconciliationIssue"("contentOrderId", "createdAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "SupportKnowledgeItem_key_key" ON "SupportKnowledgeItem"("key");
   CREATE INDEX IF NOT EXISTS "AssistantConversation_sessionKey_updatedAt_idx" ON "AssistantConversation"("sessionKey", "updatedAt");
   CREATE INDEX IF NOT EXISTS "AssistantConversation_status_updatedAt_idx" ON "AssistantConversation"("status", "updatedAt");
