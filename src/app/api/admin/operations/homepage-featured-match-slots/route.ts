@@ -5,11 +5,8 @@ import {
   saveHomepageFeaturedMatchSlot,
   toggleHomepageFeaturedMatchSlotStatus,
 } from "@/lib/admin-operations";
+import { redirectToAdminContent } from "@/lib/admin-content-redirect";
 import { getSessionContext } from "@/lib/session";
-
-function redirectToAdmin(request: NextRequest, suffix = "") {
-  return NextResponse.redirect(new URL(`/admin?tab=content${suffix}`, request.url));
-}
 
 export async function POST(request: NextRequest) {
   const { entitlements } = await getSessionContext();
@@ -29,7 +26,11 @@ export async function POST(request: NextRequest) {
   try {
     if (intent === "delete") {
       await deleteHomepageFeaturedMatchSlot(id);
-      return redirectToAdmin(request, "&saved=featured-slot-deleted");
+      return redirectToAdminContent(request, {
+        formData,
+        fallbackSection: "homepage",
+        suffix: "&saved=featured-slot-deleted",
+      });
     } else if (intent === "toggle-status") {
       await toggleHomepageFeaturedMatchSlotStatus(id);
     } else if (intent === "move-up") {
@@ -40,8 +41,16 @@ export async function POST(request: NextRequest) {
       await saveHomepageFeaturedMatchSlot(formData);
     }
   } catch {
-    return redirectToAdmin(request, "&error=featured-slot");
+    return redirectToAdminContent(request, {
+      formData,
+      fallbackSection: "homepage",
+      suffix: "&error=featured-slot",
+    });
   }
 
-  return redirectToAdmin(request, "&saved=featured-slot");
+  return redirectToAdminContent(request, {
+    formData,
+    fallbackSection: "homepage",
+    suffix: "&saved=featured-slot",
+  });
 }

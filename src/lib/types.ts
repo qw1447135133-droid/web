@@ -3,9 +3,18 @@ export type Sport = "football" | "basketball" | "cricket" | "esports";
 export type MatchStatus = "live" | "upcoming" | "finished";
 
 export type UserRole = "visitor" | "member" | "operator" | "finance" | "admin";
+export type NotificationCategory = "system" | "recharge" | "order" | "membership" | "support";
 
 export type AnnouncementTone = "info" | "success" | "warning";
 export type HomepageBannerTheme = "sunrise" | "field" | "midnight";
+export type SiteAdPlacement =
+  | "home-inline"
+  | "member-inline"
+  | "plans-inline"
+  | "database-inline"
+  | "match-detail-inline"
+  | "live-footer";
+export type SiteAdTheme = "neutral" | "highlight" | "premium";
 
 export type MembershipPlanId = "monthly" | "seasonal" | "annual";
 
@@ -144,7 +153,7 @@ export interface MembershipOrder {
   planId: MembershipPlanId;
   amount: number;
   coinAmount?: number;
-  provider?: "mock" | "manual" | "hosted";
+  provider?: "mock" | "manual" | "hosted" | "xendit" | "razorpay" | "payu";
   providerOrderId?: string;
   expiresAt?: string;
   createdAt: string;
@@ -164,7 +173,7 @@ export interface ContentOrder {
   contentId: string;
   amount: number;
   coinAmount?: number;
-  provider?: "mock" | "manual" | "hosted";
+  provider?: "mock" | "manual" | "hosted" | "xendit" | "razorpay" | "payu";
   providerOrderId?: string;
   expiresAt?: string;
   createdAt: string;
@@ -201,7 +210,7 @@ export interface CoinRechargeOrder {
   coinAmount: number;
   bonusAmount: number;
   amount: number;
-  provider?: "mock" | "manual" | "hosted";
+  provider?: "mock" | "manual" | "hosted" | "xendit" | "razorpay" | "payu";
   providerOrderId?: string;
   expiresAt?: string;
   createdAt: string;
@@ -215,6 +224,19 @@ export interface CoinRechargeOrder {
   creditedAt?: string;
   paymentReference?: string;
   status: OrderStatus;
+}
+
+export interface UserNotification {
+  id: string;
+  category: NotificationCategory;
+  type: string;
+  level: "info" | "success" | "warning" | "error";
+  title: string;
+  message: string;
+  actionHref?: string;
+  actionLabel?: string;
+  readAt?: string;
+  createdAt: string;
 }
 
 export interface HomepageModule {
@@ -256,10 +278,30 @@ export interface SiteAnnouncement {
   tone: AnnouncementTone;
 }
 
+export interface SiteAd {
+  id: string;
+  placement: SiteAdPlacement;
+  format?: "image" | "text" | "html-snippet";
+  theme?: SiteAdTheme;
+  title: string;
+  description: string;
+  ctaLabel?: string;
+  href?: string;
+  imageUrl?: string;
+  htmlSnippet?: string;
+}
+
 export interface SessionUser {
+  id?: string;
   displayName: string;
   email: string;
   role: UserRole;
+  emailVerifiedAt?: string;
+  pendingEmail?: string;
+  preferredLocale?: string;
+  countryCode?: string;
+  contactMethod?: string;
+  contactValue?: string;
   membershipPlanId?: MembershipPlanId;
   membershipExpiresAt?: string;
   coinBalance?: number;

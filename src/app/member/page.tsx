@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { AccountWorkspaceNav } from "@/components/account-workspace-nav";
 import { SectionHeading } from "@/components/section-heading";
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { getAvailableCoinPackages, getMemberCoinCenter, getMembershipCoinPrice } from "@/lib/coin-wallet";
 import { canAccessContent } from "@/lib/entitlements";
 import { formatDateTime, formatPrice } from "@/lib/format";
@@ -15,7 +17,8 @@ import {
   getPaymentResultMeta,
 } from "@/lib/payment-ui";
 import { getCurrentUserRecord, getSessionContext } from "@/lib/session";
-import { getArticlePlans } from "@/lib/content-data";
+import { getArticlePlans, getSiteAds } from "@/lib/content-data";
+import { getUnreadUserNotificationCount } from "@/lib/user-notifications";
 import { getSiteCopy } from "@/lib/ui-copy";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -228,6 +231,38 @@ function getCoinPurchaseMessage(coin: string, locale: DisplayLocale) {
   return null;
 }
 
+function getManualCollectionCopy(locale: DisplayLocale) {
+  return {
+    title: tMember(locale, "付款指引", "付款指引", "Payment guide", "คู่มือการชำระ", "Huong dan thanh toan", "Payment guide"),
+    description: tMember(
+      locale,
+      "创建充值申请后，请按下方收款信息转账，并保留支付流水给财务核对。",
+      "建立充值申請後，請依下方收款資訊轉帳，並保留支付流水供財務核對。",
+      "After creating the recharge request, transfer to the collection account below and keep the payment reference for finance review.",
+      "หลังสร้างคำขอเติมเงินแล้ว ให้โอนตามข้อมูลด้านล่างและเก็บเลขอ้างอิงไว้เพื่อตรวจสอบ",
+      "Sau khi tao yeu cau nap coin, hay chuyen khoan theo thong tin ben duoi va giu lai ma tham chieu de doi chieu.",
+      "Recharge request create karne ke baad neeche diye gaye details par transfer karein aur payment reference sambhal kar rakhein.",
+    ),
+    channel: tMember(locale, "收款通道", "收款通道", "Collection channel", "ช่องทางรับเงิน", "Kenh thu tien", "Collection channel"),
+    accountName: tMember(locale, "收款户名", "收款戶名", "Account name", "ชื่อบัญชี", "Ten tai khoan", "Account name"),
+    accountNo: tMember(locale, "收款账号", "收款帳號", "Account / wallet", "เลขบัญชี / วอลเล็ท", "Tai khoan / vi", "Account / wallet"),
+    qrCode: tMember(locale, "收款二维码", "收款二維碼", "QR code", "คิวอาร์โค้ด", "Ma QR", "QR code"),
+    qrOpen: tMember(locale, "打开图片", "打開圖片", "Open image", "เปิดรูปภาพ", "Mo anh", "Open image"),
+    note: tMember(locale, "付款备注", "付款備註", "Payment note", "หมายเหตุการชำระเงิน", "Ghi chu thanh toan", "Payment note"),
+    guide: tMember(locale, "操作说明", "操作說明", "Instructions", "วิธีดำเนินการ", "Huong dan", "Instructions"),
+    missing: tMember(
+      locale,
+      "暂未配置人工收款信息，请先记录订单号和支付流水，再联系运营处理。",
+      "暫未配置人工收款資訊，請先記錄訂單號和支付流水，再聯繫運營處理。",
+      "Manual collection details are not configured yet. Save the order and payment reference first, then contact operations.",
+      "ยังไม่ได้ตั้งค่าข้อมูลรับชำระ ให้บันทึกเลขออเดอร์และเลขอ้างอิงไว้ก่อนแล้วติดต่อทีมงาน",
+      "Thong tin thu tien thu cong chua duoc cau hinh. Hay luu ma don va ma tham chieu truoc roi lien he van hanh.",
+      "Manual collection details abhi configured nahin hain. Pehle order aur payment reference save karein, phir operations se sampark karein.",
+    ),
+    detailAction: tMember(locale, "查看充值详情", "查看充值詳情", "View recharge detail", "ดูรายละเอียดออเดอร์", "Xem chi tiet don", "View recharge detail"),
+  };
+}
+
 function getRechargeRequestMessage(recharge: string, locale: DisplayLocale) {
   if (recharge === "created") {
     return {
@@ -307,7 +342,7 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       walletDescription: "Track remaining balance and the latest content unlock movements in one place.",
       rechargeEyebrow: "Recharge",
       rechargeTitle: "Recent recharge orders",
-      rechargeDescription: "Review manual or future hosted recharge orders and confirm credited records.",
+      rechargeDescription: "Review manual and hosted recharge orders, then confirm credited records.",
       ledgerTitle: "Recent coin ledger",
       emptyLedger: "No coin ledger records yet.",
       emptyRecharge: "No recharge orders yet.",
@@ -359,7 +394,7 @@ function getMemberCoinCopy(locale: DisplayLocale) {
       walletDescription: "把可用餘額、最新解鎖流水和充值狀態放在同一個入口裡查看。",
       rechargeEyebrow: "Recharge",
       rechargeTitle: "最近充值訂單",
-      rechargeDescription: "查看人工充值與後續託管充值訂單，核對入帳狀態。",
+      rechargeDescription: "查看人工充值與託管充值訂單，核對入帳狀態。",
       ledgerTitle: "最近球幣流水",
       emptyLedger: "目前還沒有球幣流水。",
       emptyRecharge: "目前還沒有充值訂單。",
@@ -566,7 +601,7 @@ function getMemberCoinCopy(locale: DisplayLocale) {
     walletDescription: "把可用余额、最新解锁流水和充值状态放在同一个入口里查看。",
     rechargeEyebrow: "Recharge",
     rechargeTitle: "最近充值订单",
-    rechargeDescription: "查看人工充值和后续托管充值订单，核对入账状态。",
+    rechargeDescription: "查看人工充值与托管充值订单，核对入账状态。",
     ledgerTitle: "最近球币流水",
     emptyLedger: "当前还没有球币流水。",
     emptyRecharge: "当前还没有充值订单。",
@@ -673,7 +708,7 @@ function getCoinReasonLabel(reason: string, copy: ReturnType<typeof getMemberCoi
 }
 
 function getOrderProviderDisplay(
-  order: { provider?: "mock" | "manual" | "hosted"; paymentReference?: string },
+  order: { provider?: "mock" | "manual" | "hosted" | "xendit" | "razorpay" | "payu"; paymentReference?: string },
   locale: DisplayLocale,
   coinCopy: ReturnType<typeof getMemberCoinCopy>,
 ) {
@@ -696,14 +731,17 @@ export default async function MemberPage({
   const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
   const { memberPageCopy, roleLabels, uiCopy } = getSiteCopy(displayLocale);
   const coinCopy = getMemberCoinCopy(displayLocale);
-  const [{ session, entitlements }, articlePlans, resolved, currentUser, coinPackages] = await Promise.all([
+  const manualCollectionCopy = getManualCollectionCopy(displayLocale);
+  const [{ session, entitlements }, articlePlans, resolved, currentUser, coinPackages, memberInlineAds] = await Promise.all([
     getSessionContext(),
     getArticlePlans(undefined, locale),
     searchParams,
     getCurrentUserRecord(),
     getAvailableCoinPackages(locale),
+    getSiteAds(locale, "member-inline"),
   ]);
   const coinCenter = currentUser ? await getMemberCoinCenter(currentUser.id, displayLocale) : null;
+  const unreadNotificationCount = currentUser ? await getUnreadUserNotificationCount(currentUser.id) : 0;
   const localizedMembershipPlans = membershipPlans.map((plan) => localizeMembershipPlan(plan, locale));
   const unlockedPlans = articlePlans.filter((plan) => canAccessContent(session, plan.id));
   const payment = readValue(resolved.payment);
@@ -769,7 +807,17 @@ export default async function MemberPage({
           <div className="mt-6 rounded-[1.4rem] border border-sky-300/20 bg-sky-400/10 p-5 text-sm text-sky-100">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="font-semibold text-white">{coinCopy.pendingStatusLabel}</p>
-              <span>{rechargeReceipt.orderNo}</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span>{rechargeReceipt.orderNo}</span>
+                {latestRechargeOrder ? (
+                  <Link
+                    href={`/member/recharge/${latestRechargeOrder.id}`}
+                    className="inline-flex rounded-full border border-sky-100/20 bg-sky-100/10 px-3 py-1 text-xs font-semibold text-sky-50 transition hover:bg-sky-100/15"
+                  >
+                    {manualCollectionCopy.detailAction}
+                  </Link>
+                ) : null}
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-4 text-xs text-sky-50/90">
               {typeof rechargeReceipt.totalCoins === "number" ? <span>{coinCopy.totalCoinsLabel} {formatCoinAmount(rechargeReceipt.totalCoins, displayLocale)}</span> : null}
@@ -780,7 +828,29 @@ export default async function MemberPage({
         ) : null}
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+      <AccountWorkspaceNav locale={displayLocale} unreadCount={unreadNotificationCount} />
+
+      <div className="space-y-6">
+          <SiteAdSlot
+            ads={memberInlineAds}
+            locale={displayLocale}
+            title={
+              displayLocale === "en"
+                ? "Member workspace picks"
+                : displayLocale === "zh-TW"
+                  ? "會員推薦位"
+                  : displayLocale === "th"
+                    ? "แนะนำสำหรับสมาชิก"
+                    : displayLocale === "vi"
+                      ? "De xuat cho hoi vien"
+                      : displayLocale === "hi"
+                        ? "Member workspace picks"
+                        : "会员推荐位"
+            }
+          />
+
+          <section className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+        <div className="space-y-6">
         <div className="glass-panel rounded-[2rem] p-6">
           <SectionHeading
             eyebrow={memberPageCopy.plansEyebrow}
@@ -789,7 +859,7 @@ export default async function MemberPage({
           />
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             {localizedMembershipPlans.map((plan) => (
-              <div key={plan.id} className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div key={plan.id} className="flex h-full flex-col rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
                 <p className="text-sm uppercase tracking-[0.2em] text-slate-500">{memberPageCopy.durationLabel(plan.durationDays)}</p>
                 <h3 className="mt-2 text-2xl font-semibold text-white">{plan.name}</h3>
                 <p className="mt-3 text-sm leading-7 text-slate-400">{plan.description}</p>
@@ -799,15 +869,16 @@ export default async function MemberPage({
                     <li key={perk}>- {perk}</li>
                   ))}
                 </ul>
+                <div className="mt-auto pt-6">
                 {session.role === "visitor" ? (
                   <Link
                     href="/login?next=%2Fmember"
-                    className="mt-6 inline-flex rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
+                    className="inline-flex rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
                   >
                     {memberPageCopy.buyAfterLogin}
                   </Link>
                 ) : (
-                  <form action="/api/member/purchase-coins" method="post" className="mt-6">
+                  <form action="/api/member/purchase-coins" method="post">
                     <input type="hidden" name="planId" value={plan.id} />
                     <input type="hidden" name="returnTo" value="/member" />
                     <button
@@ -818,36 +889,18 @@ export default async function MemberPage({
                     </button>
                   </form>
                 )}
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="glass-panel rounded-[2rem] p-6">
+          <div id="member-coins" className="glass-panel rounded-[2rem] p-6">
             <SectionHeading
               eyebrow={coinCopy.packageEyebrow}
               title={coinCopy.packageTitle}
               description={coinCopy.packageDescription}
             />
-            <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-              <p className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4 text-sm text-slate-300">
-                {coinCopy.packageReviewHint}
-              </p>
-              <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
-                <p className="text-sm font-medium text-white">{coinCopy.rechargeFlowTitle}</p>
-                <ol className="mt-3 space-y-2 text-sm text-slate-300">
-                  {coinCopy.rechargeFlowSteps.map((step, index) => (
-                    <li key={step} className="flex gap-3">
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-xs text-sky-100">
-                        {index + 1}
-                      </span>
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </div>
             {rechargeReceipt?.orderNo ? (
               <div className="mt-4 rounded-[1.25rem] border border-sky-300/20 bg-sky-400/10 p-4 text-sm text-sky-100">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -930,7 +983,9 @@ export default async function MemberPage({
               </div>
             )}
           </div>
+        </div>
 
+        <div className="space-y-6">
           <div className="glass-panel rounded-[2rem] p-6">
             <SectionHeading
               eyebrow={coinCopy.walletEyebrow}
@@ -1062,6 +1117,14 @@ export default async function MemberPage({
                           {coinCopy.paymentReferenceLabel} {order.paymentReference}
                         </p>
                       ) : null}
+                      {order.proofUrl ? (
+                        <p className="mt-1 text-xs text-cyan-200">
+                          <a href={order.proofUrl} target="_blank" rel="noreferrer" className="underline underline-offset-4 transition hover:text-cyan-100">
+                            {tMember(displayLocale, "已上传付款凭证", "已上傳付款憑證", "Payment proof uploaded", "อัปโหลดหลักฐานแล้ว", "Da tai len chung tu", "Payment proof uploaded")}
+                          </a>
+                        </p>
+                      ) : null}
+                      {order.memberNote ? <p className="mt-1 text-xs text-slate-500 line-clamp-2">{order.memberNote}</p> : null}
                       <p className="mt-3 text-xs text-slate-400">{getRechargeOrderHint(order.status, displayLocale)}</p>
                       <div className="mt-4 flex flex-wrap gap-3">
                         <Link
@@ -1094,7 +1157,7 @@ export default async function MemberPage({
             </div>
           </div>
 
-          <div className="glass-panel rounded-[2rem] p-6">
+          <div id="member-orders" className="glass-panel rounded-[2rem] p-6">
             <SectionHeading eyebrow={memberPageCopy.ordersEyebrow} title={memberPageCopy.ordersTitle} />
             <div className="mt-6 space-y-4">
               {session.membershipOrders.length === 0 && session.contentOrders.length === 0 ? (
@@ -1199,7 +1262,7 @@ export default async function MemberPage({
             </div>
           </div>
 
-          <div className="glass-panel rounded-[2rem] p-6">
+          <div id="member-entitlements" className="glass-panel rounded-[2rem] p-6">
             <SectionHeading eyebrow={memberPageCopy.entitlementsEyebrow} title={memberPageCopy.entitlementsTitle} />
             {entitlements.activeMembership ? (
               <p className="mt-4 rounded-[1.25rem] border border-lime-300/20 bg-lime-300/10 p-4 text-sm text-lime-100">
@@ -1226,7 +1289,8 @@ export default async function MemberPage({
             </div>
           </div>
         </div>
-      </section>
+          </section>
+      </div>
     </div>
   );
 }

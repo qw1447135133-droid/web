@@ -5,10 +5,12 @@ import {
   type PaymentOrderType,
 } from "@/lib/payment-orders";
 import {
-  getPaymentCallbackUrl,
-  getPaymentHostedGatewayConfig,
   getPaymentHostedSigningSecret,
-  getPaymentPublicUrl,
+  getPaymentProviderFamily,
+  getResolvedPaymentCallbackUrl,
+  isHostedPaymentProvider,
+  getResolvedPaymentPublicUrl,
+  getResolvedPaymentHostedGatewayConfig,
   normalizePaymentProvider,
   type PaymentManualCollectionConfig,
   type PaymentProvider,
@@ -25,7 +27,7 @@ export type PaymentCheckoutFlow = {
 
 export type NormalizedPaymentCallbackPayload = {
   provider?: PaymentProvider;
-  type: PaymentOrderType;
+  type: PaymentOrderType | "coin-recharge";
   state?: "paid" | "failed" | "closed";
   orderId?: string;
   providerOrderId?: string;
@@ -37,7 +39,7 @@ export type NormalizedPaymentCallbackPayload = {
 
 export type HostedGatewayLaunchOrder = {
   id: string;
-  type: PaymentOrderType;
+  type: PaymentOrderType | "coin-recharge";
   provider: PaymentProvider;
   providerOrderId?: string;
   paymentReference?: string;
@@ -81,8 +83,9 @@ function normalizePaymentState(value: string) {
 
 export function getPaymentCheckoutFlow(provider: PaymentProvider): PaymentCheckoutFlow {
   const normalizedProvider = normalizePaymentProvider(provider);
+  const family = getPaymentProviderFamily(normalizedProvider);
 
-  if (normalizedProvider === "hosted") {
+  if (family === "hosted") {
     return {
       provider: normalizedProvider,
       mode: "hosted-redirect",
@@ -91,7 +94,7 @@ export function getPaymentCheckoutFlow(provider: PaymentProvider): PaymentChecko
     };
   }
 
-  if (normalizedProvider === "manual") {
+  if (family === "manual") {
     return {
       provider: normalizedProvider,
       mode: "manual-review",
@@ -178,7 +181,12 @@ export function normalizePaymentCallbackPayload(payload: unknown): NormalizedPay
 
   return {
     provider: providerRaw ? normalizePaymentProvider(providerRaw) : undefined,
-    type: typeRaw === "membership" ? "membership" : "content",
+    type:
+      typeRaw === "membership"
+        ? "membership"
+        : typeRaw === "coin-recharge" || typeRaw === "coin_recharge" || typeRaw === "recharge"
+          ? "coin-recharge"
+          : "content",
     state: normalizePaymentState(stateRaw),
     orderId: pickStringValue(record, ["orderId", "outTradeNo", "out_trade_no", "merchantOrderId"]) || undefined,
     providerOrderId: pickStringValue(record, ["providerOrderId", "tradeNo", "trade_no", "transactionId", "transaction_id"]) || undefined,
@@ -213,24 +221,25 @@ function buildHostedGatewaySignatureBase(input: {
     .join("&");
 }
 
-export function buildHostedGatewayRedirectUrl(input: {
+export async function buildHostedGatewayRedirectUrl(input: {
   order: HostedGatewayLaunchOrder;
   returnTo: string;
 }) {
-  const config = getPaymentHostedGatewayConfig();
+  const provider = normalizePaymentProvider(input.order.provider);
+  const config = await getResolvedPaymentHostedGatewayConfig(provider);
 
   if (!config.configured || !config.checkoutUrl || !config.merchantId) {
     throw new Error("HOSTED_GATEWAY_NOT_CONFIGURED");
   }
 
-  const returnUrl = getPaymentPublicUrl(
+  const returnUrl = await getResolvedPaymentPublicUrl(
     getCheckoutRedirectPath({
       type: input.order.type,
       orderId: input.order.id,
       returnTo: input.returnTo,
     }),
   );
-  const callbackUrl = getPaymentCallbackUrl();
+  const callbackUrl = await getResolvedPaymentCallbackUrl();
   const baseString = buildHostedGatewaySignatureBase({
     merchantId: config.merchantId,
     type: input.order.type,
@@ -241,11 +250,13 @@ export function buildHostedGatewayRedirectUrl(input: {
     callbackUrl,
     returnUrl,
   });
-  const signature = getPaymentHostedSigningSecret()
-    ? createHmac("sha256", getPaymentHostedSigningSecret()).update(baseString).digest("hex")
+  const signingSecret = getPaymentHostedSigningSecret(provider);
+  const signature = signingSecret
+    ? createHmac("sha256", signingSecret).update(baseString).digest("hex")
     : "";
   const url = new URL(config.checkoutUrl);
 
+  url.searchParams.set("provider", provider);
   url.searchParams.set("merchantId", config.merchantId);
   url.searchParams.set("type", input.order.type);
   url.searchParams.set("orderId", input.order.id);
@@ -263,9 +274,19 @@ export function buildHostedGatewayRedirectUrl(input: {
   return url.toString();
 }
 
-export function verifyHostedGatewayCallbackSignature(payload: unknown, rawBody?: string) {
-  const config = getPaymentHostedGatewayConfig();
-  const secret = getPaymentHostedSigningSecret();
+export async function verifyHostedGatewayCallbackSignature(payload: unknown, rawBody?: string) {
+  const normalized = normalizePaymentCallbackPayload(payload);
+  const provider = normalized.provider ? normalizePaymentProvider(normalized.provider) : "hosted";
+
+  if (!isHostedPaymentProvider(provider)) {
+    return {
+      ok: false,
+      reason: "HOSTED_SIGNATURE_NOT_REQUIRED",
+    } as const;
+  }
+
+  const config = await getResolvedPaymentHostedGatewayConfig(provider);
+  const secret = getPaymentHostedSigningSecret(provider);
 
   if (!config.configured || !secret) {
     return {
@@ -278,7 +299,6 @@ export function verifyHostedGatewayCallbackSignature(payload: unknown, rawBody?:
     payload && typeof payload === "object" && !Array.isArray(payload)
       ? (payload as Record<string, unknown>)
       : {};
-  const normalized = normalizePaymentCallbackPayload(payload);
   const signature = pickStringValue(record, ["signature", "sign", "hmac"]);
 
   if (!signature) {
@@ -291,7 +311,7 @@ export function verifyHostedGatewayCallbackSignature(payload: unknown, rawBody?:
   const providerOrderId = normalized.providerOrderId ?? "";
   const orderId = normalized.orderId ?? "";
   const paymentReference = normalized.paymentReference ?? "";
-  const callbackUrl = getPaymentCallbackUrl();
+  const callbackUrl = await getResolvedPaymentCallbackUrl();
   const returnUrl = pickStringValue(record, ["returnUrl", "return_url"]);
   const amountRaw = pickStringValue(record, ["amount", "totalAmount", "total_amount"]);
   const amount = Number.parseInt(amountRaw, 10);

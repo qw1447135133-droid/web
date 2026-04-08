@@ -6,7 +6,8 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const type = normalizePaymentOrderType(String(formData.get("type") || "content"));
   const orderId = String(formData.get("orderId") || "");
-  const fallbackReturnTo = type === "membership" ? "/member" : "/plans";
+  const fallbackReturnTo =
+    type === "membership" ? "/member" : type === "coin-recharge" ? `/member/recharge/${encodeURIComponent(orderId)}` : "/plans";
   const returnTo = sanitizeReturnTo(String(formData.get("returnTo") || fallbackReturnTo), fallbackReturnTo);
   const reason = String(formData.get("reason") || "模拟支付通道返回失败，请重新发起订单。");
   const current = await getCurrentUserRecord();

@@ -1,5 +1,7 @@
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { ScoreboardTable } from "@/components/scoreboard-table";
 import { SectionHeading } from "@/components/section-heading";
+import { getSiteAds } from "@/lib/content-data";
 import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
 import { getSiteCopy } from "@/lib/ui-copy";
@@ -23,9 +25,10 @@ export default async function BasketballLivePage({
   const { livePageCopy, uiCopy } = getSiteCopy(displayLocale);
   const resolved = await searchParams;
   const league = pickValue(resolved.league, "all");
-  const [allLeagues, allMatches] = await Promise.all([
+  const [allLeagues, allMatches, liveFooterAds] = await Promise.all([
     getTrackedLeagues("basketball", locale),
     getMatchesBySport("basketball", locale),
+    getSiteAds(locale, "live-footer"),
   ]);
 
   let items = allMatches;
@@ -69,6 +72,7 @@ export default async function BasketballLivePage({
       </section>
 
       <ScoreboardTable matches={items} sportLabel={livePageCopy.basketball.sportLabel} locale={displayLocale} />
+      <SiteAdSlot ads={liveFooterAds} locale={displayLocale} />
     </div>
   );
 }

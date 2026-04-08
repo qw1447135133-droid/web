@@ -5,42 +5,8 @@ import {
   toggleArticlePlanHot,
   toggleArticlePlanStatus,
 } from "@/lib/admin-content";
+import { redirectToAdminContent } from "@/lib/admin-content-redirect";
 import { getSessionContext } from "@/lib/session";
-
-function redirectToAdmin(request: NextRequest, formData: FormData, suffix = "") {
-  const url = new URL("/admin", request.url);
-  url.searchParams.set("tab", "content");
-
-  const contentSport = String(formData.get("contentSport") || "").trim();
-  const contentAuthorId = String(formData.get("contentAuthorId") || "").trim();
-  const contentPlanStatus = String(formData.get("contentPlanStatus") || "").trim();
-  const contentQuery = String(formData.get("contentQuery") || "").trim();
-
-  if (contentSport && contentSport !== "all") {
-    url.searchParams.set("contentSport", contentSport);
-  }
-
-  if (contentAuthorId) {
-    url.searchParams.set("contentAuthorId", contentAuthorId);
-  }
-
-  if (contentPlanStatus && contentPlanStatus !== "all") {
-    url.searchParams.set("contentPlanStatus", contentPlanStatus);
-  }
-
-  if (contentQuery) {
-    url.searchParams.set("contentQuery", contentQuery);
-  }
-
-  if (suffix.startsWith("&")) {
-    const extra = new URLSearchParams(suffix.slice(1));
-    for (const [key, value] of extra.entries()) {
-      url.searchParams.set(key, value);
-    }
-  }
-
-  return NextResponse.redirect(url);
-}
 
 export async function POST(request: NextRequest) {
   const { entitlements } = await getSessionContext();
@@ -68,8 +34,8 @@ export async function POST(request: NextRequest) {
       await saveArticlePlan(formData);
     }
   } catch {
-    return redirectToAdmin(request, formData, "&error=plan");
+    return redirectToAdminContent(request, { formData, fallbackSection: "library", suffix: "&error=plan" });
   }
 
-  return redirectToAdmin(request, formData, "&saved=plan");
+  return redirectToAdminContent(request, { formData, fallbackSection: "library", suffix: "&saved=plan" });
 }

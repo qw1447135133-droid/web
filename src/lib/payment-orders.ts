@@ -1,16 +1,31 @@
 import { createHash, randomUUID } from "node:crypto";
+import {
+  closePendingCoinRechargeOrder,
+  markCoinRechargeOrderFailedByAdmin,
+  markCoinRechargeOrderPaidByAdmin,
+  refundCoinRechargeOrderByAdmin,
+} from "@/lib/admin-finance";
 import { membershipPlans } from "@/lib/mock-data";
 import {
-  getPaymentProvider,
   getPaymentProviderExpiryMinutes,
+  getPaymentProviderFamily,
+  getPaymentProviderReferencePrefix,
+  getResolvedPaymentRuntimeConfig,
   normalizePaymentProvider,
+  type PaymentRuntimeConfig,
   type PaymentProvider,
 } from "@/lib/payment-provider";
 import { prisma } from "@/lib/prisma";
 import { recordUserMembershipEvent } from "@/lib/user-activity";
+import {
+  notifyContentPaid,
+  notifyMembershipActivated,
+  notifyMembershipRefunded,
+  notifyOrderStateChanged,
+} from "@/lib/user-notifications";
 import type { MembershipPlanId, OrderStatus } from "@/lib/types";
 
-export type PaymentOrderType = "membership" | "content";
+export type PaymentOrderType = "membership" | "content" | "coin-recharge";
 export type PaymentReturnState = "success" | "closed" | "failed" | "error";
 
 export type CheckoutOrder = {
@@ -32,6 +47,23 @@ export type CheckoutOrder = {
   refundedAt?: string;
   refundReason?: string;
   paymentReference?: string;
+  callbackPayload?: string;
+};
+
+export type PaymentRouteSnapshot = {
+  preferredProvider?: PaymentProvider;
+  routedProvider?: PaymentProvider;
+  routeCountry?: string;
+  routeCountryLabel?: string;
+  routeCurrency?: string;
+  routeWallets?: string[];
+  routeFallbackReason?: "provider-not-configured";
+  hostedGatewayName?: string;
+  manualChannelLabel?: string;
+  manualAccountName?: string;
+  manualAccountNo?: string;
+  manualQrCodeUrl?: string;
+  manualNote?: string;
 };
 
 export const MEMBERSHIP_REFUND_BLOCKED_ERROR = "MEMBERSHIP_REFUND_BLOCKED";
@@ -74,35 +106,92 @@ function nextMembershipExpiry(currentExpiry: Date | null, durationDays: number) 
 }
 
 function createMockPaymentReference(type: PaymentOrderType) {
-  const prefix = type === "membership" ? "MEM" : "CNT";
+  const prefix = type === "membership" ? "MEM" : type === "coin-recharge" ? "COIN" : "CNT";
   return `MOCK-${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
-function createPaymentReference(type: PaymentOrderType, provider = getPaymentProvider()) {
-  const prefix = type === "membership" ? "MEM" : "CNT";
-  const providerPrefix = provider === "mock" ? "MOCK" : provider === "hosted" ? "HOSTED" : "MANUAL";
+function createPaymentReference(type: PaymentOrderType, provider: PaymentProvider) {
+  const prefix = type === "membership" ? "MEM" : type === "coin-recharge" ? "COIN" : "CNT";
+  const providerPrefix = getPaymentProviderReferencePrefix(provider);
   return `${providerPrefix}-${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
-function createProviderOrderId(type: PaymentOrderType, provider = getPaymentProvider()) {
-  const prefix = type === "membership" ? "MEM" : "CNT";
-  const providerPrefix = provider === "mock" ? "MOCK" : provider === "hosted" ? "HOSTED" : "MANUAL";
+function createProviderOrderId(type: PaymentOrderType, provider: PaymentProvider) {
+  const prefix = type === "membership" ? "MEM" : type === "coin-recharge" ? "COIN" : "CNT";
+  const providerPrefix = getPaymentProviderReferencePrefix(provider);
   return `${providerPrefix}-ORDER-${prefix}-${randomUUID().slice(0, 10).toUpperCase()}`;
 }
 
-function createOrderExpiry(provider = getPaymentProvider()) {
+function createOrderExpiry(provider: PaymentProvider) {
   const expiresAt = new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + getPaymentProviderExpiryMinutes(provider));
   return expiresAt;
 }
 
-function buildPendingOrderData(type: PaymentOrderType, provider = getPaymentProvider()) {
+export function buildPaymentRouteSnapshot(paymentRuntime: PaymentRuntimeConfig) {
+  return JSON.stringify({
+    preferredProvider: paymentRuntime.preferredProvider,
+    routedProvider: paymentRuntime.provider,
+    routeCountry: paymentRuntime.routing.countryCode ?? paymentRuntime.routing.key,
+    routeCountryLabel: paymentRuntime.routing.countryLabel,
+    routeCurrency: paymentRuntime.routing.currency,
+    routeWallets: paymentRuntime.routing.wallets,
+    routeFallbackReason: paymentRuntime.routeFallbackReason,
+    hostedGatewayName: paymentRuntime.hostedGatewayName,
+    manualChannelLabel: paymentRuntime.manualCollection.channelLabel,
+    manualAccountName: paymentRuntime.manualCollection.accountName,
+    manualAccountNo: paymentRuntime.manualCollection.accountNo,
+    manualQrCodeUrl: paymentRuntime.manualCollection.qrCodeUrl,
+    manualNote: paymentRuntime.manualCollection.note,
+  } satisfies PaymentRouteSnapshot);
+}
+
+export function parsePaymentRouteSnapshot(value?: string | null): PaymentRouteSnapshot | undefined {
+  if (!value?.trim()) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+
+    const record = parsed as Record<string, unknown>;
+    const routeWallets = Array.isArray(record.routeWallets)
+      ? record.routeWallets.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : undefined;
+
+    return {
+      preferredProvider:
+        typeof record.preferredProvider === "string" ? normalizePaymentProvider(record.preferredProvider) : undefined,
+      routedProvider:
+        typeof record.routedProvider === "string" ? normalizePaymentProvider(record.routedProvider) : undefined,
+      routeCountry: typeof record.routeCountry === "string" ? record.routeCountry : undefined,
+      routeCountryLabel: typeof record.routeCountryLabel === "string" ? record.routeCountryLabel : undefined,
+      routeCurrency: typeof record.routeCurrency === "string" ? record.routeCurrency : undefined,
+      routeWallets,
+      routeFallbackReason: record.routeFallbackReason === "provider-not-configured" ? "provider-not-configured" : undefined,
+      hostedGatewayName: typeof record.hostedGatewayName === "string" ? record.hostedGatewayName : undefined,
+      manualChannelLabel: typeof record.manualChannelLabel === "string" ? record.manualChannelLabel : undefined,
+      manualAccountName: typeof record.manualAccountName === "string" ? record.manualAccountName : undefined,
+      manualAccountNo: typeof record.manualAccountNo === "string" ? record.manualAccountNo : undefined,
+      manualQrCodeUrl: typeof record.manualQrCodeUrl === "string" ? record.manualQrCodeUrl : undefined,
+      manualNote: typeof record.manualNote === "string" ? record.manualNote : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function buildPendingOrderData(type: PaymentOrderType, provider: PaymentProvider, callbackPayload?: string) {
   return {
     provider,
     providerOrderId: createProviderOrderId(type, provider),
     expiresAt: createOrderExpiry(provider),
     paymentReference: createPaymentReference(type, provider),
-    callbackPayload: null,
+    callbackPayload: callbackPayload ?? null,
   };
 }
 
@@ -124,13 +213,29 @@ function shouldRefreshPendingOrder(input: {
 }
 
 function buildDefaultRefundReason(type: PaymentOrderType) {
-  return type === "membership"
-    ? "后台人工退款，会员权益已回收。"
-    : "后台人工退款，内容解锁权益已回收。";
+  if (type === "membership") {
+    return "后台人工退款，会员权益已回收。";
+  }
+
+  if (type === "coin-recharge") {
+    return "后台人工退款，球币充值额度已回退。";
+  }
+
+  return "后台人工退款，内容解锁权益已回收。";
 }
 
 export function normalizePaymentOrderType(value?: string | null): PaymentOrderType {
-  return value === "membership" ? "membership" : "content";
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "membership") {
+    return "membership";
+  }
+
+  if (normalized === "coin-recharge" || normalized === "coin_recharge" || normalized === "recharge") {
+    return "coin-recharge";
+  }
+
+  return "content";
 }
 
 export function sanitizeReturnTo(value: string | null | undefined, fallback = "/member") {
@@ -142,12 +247,28 @@ export async function createPendingMembershipOrder(input: {
   planId: MembershipPlanId;
 }) {
   const plan = resolveMembershipPlan(input.planId);
-  const provider = getPaymentProvider();
-  const pendingOrderData = buildPendingOrderData("membership", provider);
 
   if (!plan) {
     throw new Error("会员套餐不存在。");
   }
+
+  const user = await prisma.user.findUnique({
+    where: { id: input.userId },
+    select: {
+      id: true,
+      countryCode: true,
+    },
+  });
+
+  if (!user) {
+    throw new Error("会员用户不存在。");
+  }
+
+  const paymentRuntime = await getResolvedPaymentRuntimeConfig({
+    countryCode: user.countryCode,
+  });
+  const provider = paymentRuntime.provider;
+  const pendingOrderData = buildPendingOrderData("membership", provider, buildPaymentRouteSnapshot(paymentRuntime));
 
   const existing = await prisma.membershipOrder.findFirst({
     where: {
@@ -204,20 +325,37 @@ export async function createPendingContentOrder(input: {
   userId: string;
   contentId: string;
 }) {
-  const provider = getPaymentProvider();
-  const pendingOrderData = buildPendingOrderData("content", provider);
-  const storedContent = await prisma.articlePlan.findUnique({
-    where: { id: input.contentId },
-    select: {
-      id: true,
-      price: true,
-      status: true,
-    },
-  });
+  const [user, storedContent] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: input.userId },
+      select: {
+        id: true,
+        countryCode: true,
+      },
+    }),
+    prisma.articlePlan.findUnique({
+      where: { id: input.contentId },
+      select: {
+        id: true,
+        price: true,
+        status: true,
+      },
+    }),
+  ]);
 
   if (!storedContent || storedContent.status !== "published") {
     throw new Error("计划单不存在。");
   }
+
+  if (!user) {
+    throw new Error("用户不存在。");
+  }
+
+  const paymentRuntime = await getResolvedPaymentRuntimeConfig({
+    countryCode: user.countryCode,
+  });
+  const provider = paymentRuntime.provider;
+  const pendingOrderData = buildPendingOrderData("content", provider, buildPaymentRouteSnapshot(paymentRuntime));
 
   const paidOrder = await prisma.contentOrder.findFirst({
     where: {
@@ -288,6 +426,66 @@ export async function getCheckoutOrder(input: {
   orderId: string;
   userId: string;
 }): Promise<CheckoutOrder | null> {
+  if (input.type === "coin-recharge") {
+    const order = await prisma.coinRechargeOrder.findFirst({
+      where: {
+        id: input.orderId,
+        userId: input.userId,
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        amount: true,
+        status: true,
+        provider: true,
+        providerOrderId: true,
+        expiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+        paidAt: true,
+        failedAt: true,
+        failureReason: true,
+        closedAt: true,
+        refundedAt: true,
+        refundReason: true,
+        paymentReference: true,
+        callbackPayload: true,
+        package: {
+          select: {
+            titleEn: true,
+            titleZhCn: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      return null;
+    }
+
+    return {
+      id: order.id,
+      type: "coin-recharge",
+      provider: normalizePaymentProvider(order.provider),
+      providerOrderId: order.providerOrderId ?? undefined,
+      expiresAt: order.expiresAt?.toISOString(),
+      title: order.package.titleEn || order.package.titleZhCn || order.orderNo,
+      description: "Coin recharge order",
+      amount: order.amount,
+      status: order.status as OrderStatus,
+      createdAt: order.createdAt.toISOString(),
+      updatedAt: order.updatedAt.toISOString(),
+      paidAt: order.paidAt?.toISOString(),
+      failedAt: order.failedAt?.toISOString(),
+      failureReason: order.failureReason ?? undefined,
+      closedAt: order.closedAt?.toISOString(),
+      refundedAt: order.refundedAt?.toISOString(),
+      refundReason: order.refundReason ?? undefined,
+      paymentReference: order.paymentReference ?? undefined,
+      callbackPayload: order.callbackPayload ?? undefined,
+    };
+  }
+
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findFirst({
       where: {
@@ -311,6 +509,7 @@ export async function getCheckoutOrder(input: {
         refundedAt: true,
         refundReason: true,
         paymentReference: true,
+        callbackPayload: true,
       },
     });
 
@@ -339,6 +538,7 @@ export async function getCheckoutOrder(input: {
       refundedAt: order.refundedAt?.toISOString(),
       refundReason: order.refundReason ?? undefined,
       paymentReference: order.paymentReference ?? undefined,
+      callbackPayload: order.callbackPayload ?? undefined,
     };
   }
 
@@ -364,6 +564,7 @@ export async function getCheckoutOrder(input: {
       refundedAt: true,
       refundReason: true,
       paymentReference: true,
+      callbackPayload: true,
     },
   });
 
@@ -398,6 +599,7 @@ export async function getCheckoutOrder(input: {
     refundedAt: order.refundedAt?.toISOString(),
     refundReason: order.refundReason ?? undefined,
     paymentReference: order.paymentReference ?? undefined,
+    callbackPayload: order.callbackPayload ?? undefined,
   };
 }
 
@@ -406,6 +608,39 @@ export async function confirmMockPayment(input: {
   orderId: string;
   userId: string;
 }) {
+  if (input.type === "coin-recharge") {
+    const order = await prisma.coinRechargeOrder.findFirst({
+      where: {
+        id: input.orderId,
+        userId: input.userId,
+      },
+      select: {
+        id: true,
+        status: true,
+        paymentReference: true,
+      },
+    });
+
+    if (!order) {
+      throw new Error("充值订单不存在。");
+    }
+
+    if (order.status === "paid") {
+      return;
+    }
+
+    if (order.status !== "pending") {
+      throw new Error("当前充值订单不允许继续支付。");
+    }
+
+    await markCoinRechargeOrderPaidByAdmin({
+      orderId: order.id,
+      paymentReference: order.paymentReference ?? createMockPaymentReference("coin-recharge"),
+    });
+
+    return;
+  }
+
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findFirst({
       where: {
@@ -479,6 +714,13 @@ export async function confirmMockPayment(input: {
         nextExpiresAt: expiresAt,
         note: "mock-payment-confirmed",
       });
+
+      await notifyMembershipActivated(tx, {
+        userId: input.userId,
+        orderId: order.id,
+        planId: plan.id,
+        expiresAt,
+      });
     });
 
     return;
@@ -491,6 +733,7 @@ export async function confirmMockPayment(input: {
     },
     select: {
       id: true,
+      contentId: true,
       status: true,
       paymentReference: true,
     },
@@ -510,6 +753,12 @@ export async function confirmMockPayment(input: {
 
   const paidAt = new Date();
   const paymentReference = order.paymentReference ?? createMockPaymentReference("content");
+  const contentTitle = (
+    await prisma.articlePlan.findUnique({
+      where: { id: order.contentId },
+      select: { title: true },
+    })
+  )?.title;
 
   await prisma.contentOrder.update({
     where: { id: order.id },
@@ -524,6 +773,13 @@ export async function confirmMockPayment(input: {
       paymentReference,
     },
   });
+
+  await notifyContentPaid(prisma, {
+    userId: input.userId,
+    orderId: order.id,
+    subjectId: order.contentId,
+    subjectTitle: contentTitle,
+  });
 }
 
 export async function failMockPayment(input: {
@@ -533,6 +789,40 @@ export async function failMockPayment(input: {
   reason?: string;
 }) {
   const failureReason = input.reason?.trim() || "模拟支付通道返回失败，请重新发起订单。";
+
+  if (input.type === "coin-recharge") {
+    const order = await prisma.coinRechargeOrder.findFirst({
+      where: {
+        id: input.orderId,
+        userId: input.userId,
+      },
+      select: {
+        id: true,
+        status: true,
+        paymentReference: true,
+      },
+    });
+
+    if (!order) {
+      throw new Error("充值订单不存在。");
+    }
+
+    if (order.status === "failed") {
+      return;
+    }
+
+    if (order.status !== "pending") {
+      throw new Error("当前充值订单不允许标记为支付失败。");
+    }
+
+    await markCoinRechargeOrderFailedByAdmin({
+      orderId: order.id,
+      reason: failureReason,
+      paymentReference: order.paymentReference ?? createMockPaymentReference("coin-recharge"),
+    });
+
+    return;
+  }
 
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findFirst({
@@ -571,6 +861,13 @@ export async function failMockPayment(input: {
         refundReason: null,
         paymentReference: order.paymentReference ?? createMockPaymentReference("membership"),
       },
+    });
+
+    await notifyOrderStateChanged(prisma, {
+      userId: input.userId,
+      orderId: order.id,
+      subjectType: "membership",
+      state: "failed",
     });
 
     return;
@@ -613,6 +910,13 @@ export async function failMockPayment(input: {
       paymentReference: order.paymentReference ?? createMockPaymentReference("content"),
     },
   });
+
+  await notifyOrderStateChanged(prisma, {
+    userId: input.userId,
+    orderId: order.id,
+    subjectType: "content",
+    state: "failed",
+  });
 }
 
 export async function closeMockPayment(input: {
@@ -620,6 +924,32 @@ export async function closeMockPayment(input: {
   orderId: string;
   userId: string;
 }) {
+  if (input.type === "coin-recharge") {
+    const order = await prisma.coinRechargeOrder.findFirst({
+      where: {
+        id: input.orderId,
+        userId: input.userId,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!order) {
+      throw new Error("充值订单不存在。");
+    }
+
+    if (order.status === "pending") {
+      await closePendingCoinRechargeOrder({
+        orderId: order.id,
+        operatorUserId: input.userId,
+      });
+    }
+
+    return;
+  }
+
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findFirst({
       where: {
@@ -648,6 +978,13 @@ export async function closeMockPayment(input: {
           refundedAt: null,
           refundReason: null,
         },
+      });
+
+      await notifyOrderStateChanged(prisma, {
+        userId: input.userId,
+        orderId: order.id,
+        subjectType: "membership",
+        state: "closed",
       });
     }
 
@@ -682,6 +1019,13 @@ export async function closeMockPayment(input: {
         refundReason: null,
       },
     });
+
+    await notifyOrderStateChanged(prisma, {
+      userId: input.userId,
+      orderId: order.id,
+      subjectType: "content",
+      state: "closed",
+    });
   }
 }
 
@@ -692,6 +1036,15 @@ export async function refundOrderByAdmin(input: {
 }) {
   const refundReason = input.reason?.trim() || buildDefaultRefundReason(input.type);
   const refundedAt = new Date();
+
+  if (input.type === "coin-recharge") {
+    await refundCoinRechargeOrderByAdmin({
+      orderId: input.orderId,
+      reason: refundReason,
+    });
+
+    return;
+  }
 
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findUnique({
@@ -766,6 +1119,12 @@ export async function refundOrderByAdmin(input: {
         note: refundReason,
         createdByDisplayName: "Admin refund",
       });
+
+      await notifyMembershipRefunded(tx, {
+        userId: order.userId,
+        orderId: order.id,
+        planId: order.planId,
+      });
     });
 
     return;
@@ -810,6 +1169,16 @@ export async function markOrderPaidByAdmin(input: {
   paymentReference?: string;
   allowRecoverFromTerminal?: boolean;
 }) {
+  if (input.type === "coin-recharge") {
+    await markCoinRechargeOrderPaidByAdmin({
+      orderId: input.orderId,
+      paymentReference: input.paymentReference,
+      allowRecoverFromTerminal: input.allowRecoverFromTerminal,
+    });
+
+    return;
+  }
+
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findUnique({
       where: { id: input.orderId },
@@ -817,6 +1186,7 @@ export async function markOrderPaidByAdmin(input: {
         id: true,
         planId: true,
         status: true,
+        provider: true,
         paymentReference: true,
         userId: true,
         user: {
@@ -855,7 +1225,10 @@ export async function markOrderPaidByAdmin(input: {
     }
 
     const paidAt = new Date();
-    const paymentReference = input.paymentReference?.trim() || order.paymentReference || createPaymentReference("membership");
+    const paymentReference =
+      input.paymentReference?.trim() ||
+      order.paymentReference ||
+      createPaymentReference("membership", normalizePaymentProvider(order.provider));
     const expiresAt = nextMembershipExpiry(order.user.membershipExpiresAt, plan.durationDays);
 
     await prisma.$transaction(async (tx) => {
@@ -890,6 +1263,13 @@ export async function markOrderPaidByAdmin(input: {
         note: "admin-paid-recovery",
         createdByDisplayName: "Admin",
       });
+
+      await notifyMembershipActivated(tx, {
+        userId: order.userId,
+        orderId: order.id,
+        planId: plan.id,
+        expiresAt,
+      });
     });
 
     return;
@@ -897,11 +1277,14 @@ export async function markOrderPaidByAdmin(input: {
 
   const order = await prisma.contentOrder.findUnique({
     where: { id: input.orderId },
-    select: {
-      id: true,
-      status: true,
-      paymentReference: true,
-    },
+      select: {
+        id: true,
+        contentId: true,
+        status: true,
+        provider: true,
+        paymentReference: true,
+        userId: true,
+      },
   });
 
   if (!order) {
@@ -924,6 +1307,13 @@ export async function markOrderPaidByAdmin(input: {
     throw new Error("CONTENT_ORDER_NOT_PAYABLE");
   }
 
+  const contentTitle = (
+    await prisma.articlePlan.findUnique({
+      where: { id: order.contentId },
+      select: { title: true },
+    })
+  )?.title;
+
   await prisma.contentOrder.update({
     where: { id: order.id },
     data: {
@@ -934,8 +1324,18 @@ export async function markOrderPaidByAdmin(input: {
       closedAt: null,
       refundedAt: null,
       refundReason: null,
-      paymentReference: input.paymentReference?.trim() || order.paymentReference || createPaymentReference("content"),
+      paymentReference:
+        input.paymentReference?.trim() ||
+        order.paymentReference ||
+        createPaymentReference("content", normalizePaymentProvider(order.provider)),
     },
+  });
+
+  await notifyContentPaid(prisma, {
+    userId: order.userId,
+    orderId: order.id,
+    subjectId: order.contentId,
+    subjectTitle: contentTitle,
   });
 }
 
@@ -947,10 +1347,20 @@ export async function markOrderFailedByAdmin(input: {
 }) {
   const failureReason = input.reason?.trim() || "后台记录该订单支付失败，请重新发起支付。";
 
+  if (input.type === "coin-recharge") {
+    await markCoinRechargeOrderFailedByAdmin({
+      orderId: input.orderId,
+      reason: failureReason,
+      paymentReference: input.paymentReference,
+    });
+
+    return;
+  }
+
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findUnique({
       where: { id: input.orderId },
-      select: { id: true, status: true, paymentReference: true },
+      select: { id: true, status: true, provider: true, paymentReference: true, userId: true },
     });
 
     if (!order) {
@@ -975,8 +1385,18 @@ export async function markOrderFailedByAdmin(input: {
         closedAt: null,
         refundedAt: null,
         refundReason: null,
-        paymentReference: input.paymentReference?.trim() || order.paymentReference || createPaymentReference("membership"),
+        paymentReference:
+          input.paymentReference?.trim() ||
+          order.paymentReference ||
+          createPaymentReference("membership", normalizePaymentProvider(order.provider)),
       },
+    });
+
+    await notifyOrderStateChanged(prisma, {
+      userId: order.userId,
+      orderId: order.id,
+      subjectType: "membership",
+      state: "failed",
     });
 
     return;
@@ -984,7 +1404,7 @@ export async function markOrderFailedByAdmin(input: {
 
   const order = await prisma.contentOrder.findUnique({
     where: { id: input.orderId },
-    select: { id: true, status: true, paymentReference: true },
+    select: { id: true, status: true, provider: true, paymentReference: true, userId: true },
   });
 
   if (!order) {
@@ -1009,8 +1429,18 @@ export async function markOrderFailedByAdmin(input: {
       closedAt: null,
       refundedAt: null,
       refundReason: null,
-      paymentReference: input.paymentReference?.trim() || order.paymentReference || createPaymentReference("content"),
+      paymentReference:
+        input.paymentReference?.trim() ||
+        order.paymentReference ||
+        createPaymentReference("content", normalizePaymentProvider(order.provider)),
     },
+  });
+
+  await notifyOrderStateChanged(prisma, {
+    userId: order.userId,
+    orderId: order.id,
+    subjectType: "content",
+    state: "failed",
   });
 }
 
@@ -1018,10 +1448,18 @@ export async function closePendingOrderByAdmin(input: {
   type: PaymentOrderType;
   orderId: string;
 }) {
+  if (input.type === "coin-recharge") {
+    await closePendingCoinRechargeOrder({
+      orderId: input.orderId,
+    });
+
+    return;
+  }
+
   if (input.type === "membership") {
     const order = await prisma.membershipOrder.findUnique({
       where: { id: input.orderId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, userId: true },
     });
 
     if (!order) {
@@ -1040,6 +1478,13 @@ export async function closePendingOrderByAdmin(input: {
           refundReason: null,
         },
       });
+
+      await notifyOrderStateChanged(prisma, {
+        userId: order.userId,
+        orderId: order.id,
+        subjectType: "membership",
+        state: "closed",
+      });
     }
 
     return;
@@ -1047,7 +1492,7 @@ export async function closePendingOrderByAdmin(input: {
 
   const order = await prisma.contentOrder.findUnique({
     where: { id: input.orderId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, userId: true },
   });
 
   if (!order) {
@@ -1065,6 +1510,13 @@ export async function closePendingOrderByAdmin(input: {
         refundedAt: null,
         refundReason: null,
       },
+    });
+
+    await notifyOrderStateChanged(prisma, {
+      userId: order.userId,
+      orderId: order.id,
+      subjectType: "content",
+      state: "closed",
     });
   }
 }
@@ -1274,6 +1726,31 @@ async function resolvePaymentCallbackOrder(input: {
   const paymentReference = input.paymentReference?.trim();
   const provider = input.provider?.trim() ? normalizePaymentProvider(input.provider) : undefined;
 
+  if (input.type === "coin-recharge") {
+    if (orderId) {
+      return prisma.coinRechargeOrder.findUnique({
+        where: { id: orderId },
+        select: { id: true },
+      });
+    }
+
+    if (providerOrderId) {
+      return prisma.coinRechargeOrder.findFirst({
+        where: provider ? { provider, providerOrderId } : { providerOrderId },
+        select: { id: true },
+      });
+    }
+
+    if (paymentReference) {
+      return prisma.coinRechargeOrder.findFirst({
+        where: { paymentReference },
+        select: { id: true },
+      });
+    }
+
+    return null;
+  }
+
   if (input.type === "membership") {
     if (orderId) {
       return prisma.membershipOrder.findUnique({
@@ -1344,6 +1821,14 @@ async function recordPaymentCallbackMetadata(input: {
   };
 
   if (Object.keys(data).length === 0) {
+    return;
+  }
+
+  if (input.type === "coin-recharge") {
+    await prisma.coinRechargeOrder.update({
+      where: { id: input.orderId },
+      data,
+    });
     return;
   }
 
@@ -1537,8 +2022,14 @@ export function getCheckoutRedirectPath(input: {
   orderId: string;
   returnTo: string;
 }) {
+  if (input.type === "coin-recharge") {
+    const url = new URL(`/member/recharge/${encodeURIComponent(input.orderId)}`, "http://signalnine.local");
+    return `${url.pathname}${url.search}`;
+  }
+
   const fallback = input.type === "membership" ? "/member" : "/plans";
   const url = new URL("/checkout", "http://signalnine.local");
+
   url.searchParams.set("type", input.type);
   url.searchParams.set("orderId", input.orderId);
   url.searchParams.set("returnTo", sanitizeReturnTo(input.returnTo, fallback));

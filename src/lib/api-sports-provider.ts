@@ -178,7 +178,7 @@ export type ApiSportsDatabaseSnapshot = {
   h2h: HeadToHeadRow[];
 };
 
-const API_SPORTS_TIMEZONE = process.env.APISPORTS_TIMEZONE?.trim() || "Asia/Shanghai";
+const API_SPORTS_TIMEZONE = process.env.APISPORTS_TIMEZONE?.trim() || "UTC";
 const DATABASE_WINDOW_OFFSETS = [-1, 0, 1];
 
 const TRACKED_LEAGUES: ApiTrackedLeague[] = [

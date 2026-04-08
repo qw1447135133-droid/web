@@ -187,31 +187,55 @@ function mapHomepageBanner(record: {
   titleZhCn: string;
   titleZhTw: string;
   titleEn: string;
+  titleTh: string;
+  titleVi: string;
+  titleHi: string;
   subtitleZhCn: string;
   subtitleZhTw: string;
   subtitleEn: string;
+  subtitleTh: string;
+  subtitleVi: string;
+  subtitleHi: string;
   descriptionZhCn: string;
   descriptionZhTw: string;
   descriptionEn: string;
+  descriptionTh: string;
+  descriptionVi: string;
+  descriptionHi: string;
   href: string;
   ctaLabelZhCn: string;
   ctaLabelZhTw: string;
   ctaLabelEn: string;
+  ctaLabelTh: string;
+  ctaLabelVi: string;
+  ctaLabelHi: string;
   imageUrl: string;
   theme: string;
 }): HomepageBanner & {
   titleZhCn: string;
   titleZhTw: string;
   titleEn: string;
+  titleTh: string;
+  titleVi: string;
+  titleHi: string;
   subtitleZhCn: string;
   subtitleZhTw: string;
   subtitleEn: string;
+  subtitleTh: string;
+  subtitleVi: string;
+  subtitleHi: string;
   descriptionZhCn: string;
   descriptionZhTw: string;
   descriptionEn: string;
+  descriptionTh: string;
+  descriptionVi: string;
+  descriptionHi: string;
   ctaLabelZhCn: string;
   ctaLabelZhTw: string;
   ctaLabelEn: string;
+  ctaLabelTh: string;
+  ctaLabelVi: string;
+  ctaLabelHi: string;
 } {
   return {
     id: record.id,
@@ -225,15 +249,27 @@ function mapHomepageBanner(record: {
     titleZhCn: record.titleZhCn,
     titleZhTw: record.titleZhTw,
     titleEn: record.titleEn,
+    titleTh: record.titleTh,
+    titleVi: record.titleVi,
+    titleHi: record.titleHi,
     subtitleZhCn: record.subtitleZhCn,
     subtitleZhTw: record.subtitleZhTw,
     subtitleEn: record.subtitleEn,
+    subtitleTh: record.subtitleTh,
+    subtitleVi: record.subtitleVi,
+    subtitleHi: record.subtitleHi,
     descriptionZhCn: record.descriptionZhCn,
     descriptionZhTw: record.descriptionZhTw,
     descriptionEn: record.descriptionEn,
+    descriptionTh: record.descriptionTh,
+    descriptionVi: record.descriptionVi,
+    descriptionHi: record.descriptionHi,
     ctaLabelZhCn: record.ctaLabelZhCn,
     ctaLabelZhTw: record.ctaLabelZhTw,
     ctaLabelEn: record.ctaLabelEn,
+    ctaLabelTh: record.ctaLabelTh,
+    ctaLabelVi: record.ctaLabelVi,
+    ctaLabelHi: record.ctaLabelHi,
   };
 }
 
@@ -242,24 +278,42 @@ function mapSiteAnnouncement(record: {
   titleZhCn: string;
   titleZhTw: string;
   titleEn: string;
+  titleTh: string;
+  titleVi: string;
+  titleHi: string;
   messageZhCn: string;
   messageZhTw: string;
   messageEn: string;
+  messageTh: string;
+  messageVi: string;
+  messageHi: string;
   href: string | null;
   ctaLabelZhCn: string | null;
   ctaLabelZhTw: string | null;
   ctaLabelEn: string | null;
+  ctaLabelTh: string | null;
+  ctaLabelVi: string | null;
+  ctaLabelHi: string | null;
   tone: string;
 }): SiteAnnouncement & {
   titleZhCn: string;
   titleZhTw: string;
   titleEn: string;
+  titleTh: string;
+  titleVi: string;
+  titleHi: string;
   messageZhCn: string;
   messageZhTw: string;
   messageEn: string;
+  messageTh: string;
+  messageVi: string;
+  messageHi: string;
   ctaLabelZhCn?: string;
   ctaLabelZhTw?: string;
   ctaLabelEn?: string;
+  ctaLabelTh?: string;
+  ctaLabelVi?: string;
+  ctaLabelHi?: string;
 } {
   return {
     id: record.id,
@@ -271,12 +325,21 @@ function mapSiteAnnouncement(record: {
     titleZhCn: record.titleZhCn,
     titleZhTw: record.titleZhTw,
     titleEn: record.titleEn,
+    titleTh: record.titleTh,
+    titleVi: record.titleVi,
+    titleHi: record.titleHi,
     messageZhCn: record.messageZhCn,
     messageZhTw: record.messageZhTw,
     messageEn: record.messageEn,
+    messageTh: record.messageTh,
+    messageVi: record.messageVi,
+    messageHi: record.messageHi,
     ctaLabelZhCn: record.ctaLabelZhCn ?? undefined,
     ctaLabelZhTw: record.ctaLabelZhTw ?? undefined,
     ctaLabelEn: record.ctaLabelEn ?? undefined,
+    ctaLabelTh: record.ctaLabelTh ?? undefined,
+    ctaLabelVi: record.ctaLabelVi ?? undefined,
+    ctaLabelHi: record.ctaLabelHi ?? undefined,
   };
 }
 
@@ -376,15 +439,27 @@ export const getStoredHomepageBanners = cache(async (): Promise<
     titleZhCn: string;
     titleZhTw: string;
     titleEn: string;
+    titleTh: string;
+    titleVi: string;
+    titleHi: string;
     subtitleZhCn: string;
     subtitleZhTw: string;
     subtitleEn: string;
+    subtitleTh: string;
+    subtitleVi: string;
+    subtitleHi: string;
     descriptionZhCn: string;
     descriptionZhTw: string;
     descriptionEn: string;
+    descriptionTh: string;
+    descriptionVi: string;
+    descriptionHi: string;
     ctaLabelZhCn: string;
     ctaLabelZhTw: string;
     ctaLabelEn: string;
+    ctaLabelTh: string;
+    ctaLabelVi: string;
+    ctaLabelHi: string;
   })[]
 > => {
   try {
@@ -410,12 +485,21 @@ export const getStoredSiteAnnouncements = cache(async (): Promise<
     titleZhCn: string;
     titleZhTw: string;
     titleEn: string;
+    titleTh: string;
+    titleVi: string;
+    titleHi: string;
     messageZhCn: string;
     messageZhTw: string;
     messageEn: string;
+    messageTh: string;
+    messageVi: string;
+    messageHi: string;
     ctaLabelZhCn?: string;
     ctaLabelZhTw?: string;
     ctaLabelEn?: string;
+    ctaLabelTh?: string;
+    ctaLabelVi?: string;
+    ctaLabelHi?: string;
   })[]
 > => {
   try {

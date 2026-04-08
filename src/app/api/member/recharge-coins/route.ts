@@ -50,10 +50,11 @@ export async function POST(request: NextRequest) {
       userId: current.id,
       packageId,
     });
+    const detailPath = `/member/recharge/${encodeURIComponent(created.id)}`;
 
     return NextResponse.redirect(
       new URL(
-        buildReturnUrl(returnTo, "created", {
+        buildReturnUrl(detailPath, "created", {
           orderNo: created.orderNo,
           paymentReference: created.paymentReference,
           totalCoins: created.coinAmount + created.bonusAmount,

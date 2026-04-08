@@ -1,4 +1,5 @@
 import { membershipPlans } from "@/lib/mock-data";
+import { normalizePaymentProvider, type PaymentProvider } from "@/lib/payment-provider";
 import { prisma } from "@/lib/prisma";
 import { recordUserMembershipEvent } from "@/lib/user-activity";
 import type { OrderStatus, UserRole } from "@/lib/types";
@@ -52,7 +53,7 @@ export type AdminMembershipOrderRecord = {
   planName: string;
   amount: number;
   status: OrderStatus;
-  provider: "mock" | "manual" | "hosted";
+  provider: PaymentProvider;
   providerOrderId?: string;
   expiresAt?: string;
   createdAt: string;
@@ -74,7 +75,7 @@ export type AdminContentOrderRecord = {
   contentTitle: string;
   amount: number;
   status: OrderStatus;
-  provider: "mock" | "manual" | "hosted";
+  provider: PaymentProvider;
   providerOrderId?: string;
   expiresAt?: string;
   createdAt: string;
@@ -92,7 +93,7 @@ export type AdminOrderExportRow = {
   orderType: "membership" | "content";
   orderId: string;
   status: OrderStatus;
-  provider: "mock" | "manual" | "hosted";
+  provider: PaymentProvider;
   providerOrderId?: string;
   expiresAt?: string;
   userDisplayName: string;
@@ -137,7 +138,7 @@ export type AdminUsersDashboard = {
 
 export type AdminPaymentCallbackRecord = {
   id: string;
-  provider: "mock" | "manual" | "hosted";
+  provider: PaymentProvider;
   providerEventId?: string;
   eventKey: string;
   orderType: "membership" | "content";
@@ -182,7 +183,7 @@ export type AdminUserRechargeOrderRecord = {
   amount: number;
   totalCoins: number;
   status: OrderStatus;
-  provider: "mock" | "manual" | "hosted";
+  provider: PaymentProvider;
   paymentReference?: string;
   createdAt: string;
   paidAt?: string;
@@ -297,6 +298,12 @@ export type AdminUserWorkspace = {
     id: string;
     displayName: string;
     email: string;
+    emailVerifiedAt?: string;
+    pendingEmail?: string;
+    contactMethod?: string;
+    contactValue?: string;
+    preferredLocale?: string;
+    countryCode?: string;
     role: UserRole;
     createdAt: string;
     updatedAt: string;
@@ -559,7 +566,7 @@ function toMembershipOrderRecord(order: {
     planName: resolvePlanName(order.planId),
     amount: order.amount,
     status: order.status as OrderStatus,
-    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    provider: normalizePaymentProvider(order.provider),
     providerOrderId: order.providerOrderId ?? undefined,
     expiresAt: order.expiresAt?.toISOString(),
     createdAt: order.createdAt.toISOString(),
@@ -607,7 +614,7 @@ function toContentOrderRecord(
     contentTitle: contentTitles.get(order.contentId) ?? order.contentId,
     amount: order.amount,
     status: order.status as OrderStatus,
-    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    provider: normalizePaymentProvider(order.provider),
     providerOrderId: order.providerOrderId ?? undefined,
     expiresAt: order.expiresAt?.toISOString(),
     createdAt: order.createdAt.toISOString(),
@@ -640,7 +647,7 @@ function toPaymentCallbackRecord(event: {
 }): AdminPaymentCallbackRecord {
   return {
     id: event.id,
-    provider: event.provider === "manual" ? "manual" : event.provider === "hosted" ? "hosted" : "mock",
+    provider: normalizePaymentProvider(event.provider),
     providerEventId: event.providerEventId ?? undefined,
     eventKey: event.eventKey,
     orderType: event.orderType === "membership" ? "membership" : "content",
@@ -1011,7 +1018,7 @@ export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters
     orderType: "membership",
     orderId: order.id,
     status: order.status as OrderStatus,
-    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    provider: normalizePaymentProvider(order.provider),
     providerOrderId: order.providerOrderId ?? undefined,
     expiresAt: order.expiresAt?.toISOString(),
     userDisplayName: order.user.displayName,
@@ -1033,7 +1040,7 @@ export async function getAdminOrdersExportRows(input: AdminUsersDashboardFilters
     orderType: "content",
     orderId: order.id,
     status: order.status as OrderStatus,
-    provider: order.provider === "manual" ? "manual" : order.provider === "hosted" ? "hosted" : "mock",
+    provider: normalizePaymentProvider(order.provider),
     providerOrderId: order.providerOrderId ?? undefined,
     expiresAt: order.expiresAt?.toISOString(),
     userDisplayName: order.user.displayName,
@@ -1063,6 +1070,12 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       id: true,
       displayName: true,
       email: true,
+      emailVerifiedAt: true,
+      pendingEmail: true,
+      contactMethod: true,
+      contactValue: true,
+      preferredLocale: true,
+      countryCode: true,
       role: true,
       referredAt: true,
       membershipPlanId: true,
@@ -1531,6 +1544,12 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
       id: user.id,
       displayName: user.displayName,
       email: user.email,
+      emailVerifiedAt: user.emailVerifiedAt?.toISOString(),
+      pendingEmail: user.pendingEmail ?? undefined,
+      contactMethod: user.contactMethod ?? undefined,
+      contactValue: user.contactValue ?? undefined,
+      preferredLocale: user.preferredLocale ?? undefined,
+      countryCode: user.countryCode ?? undefined,
       role: user.role as UserRole,
       createdAt: user.createdAt.toISOString(),
       updatedAt: user.updatedAt.toISOString(),
@@ -1635,7 +1654,7 @@ export async function getAdminUserWorkspace(userId: string): Promise<AdminUserWo
         item.status === "paid" || item.status === "failed" || item.status === "closed" || item.status === "refunded"
           ? (item.status as OrderStatus)
           : "pending",
-      provider: item.provider === "manual" ? "manual" : item.provider === "hosted" ? "hosted" : "mock",
+      provider: normalizePaymentProvider(item.provider),
       paymentReference: item.paymentReference ?? undefined,
       createdAt: item.createdAt.toISOString(),
       paidAt: item.paidAt?.toISOString(),

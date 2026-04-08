@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { articlePlans as mockArticlePlans, authorTeams as mockAuthorTeams, predictions as mockPredictions } from "@/lib/mock-data";
+import { createUserNotification } from "@/lib/user-notifications";
 import type { Sport } from "@/lib/types";
 
 export type AdminAuthorTeamRecord = {
@@ -15,6 +16,29 @@ export type AdminAuthorTeamRecord = {
   badge: string;
   bio: string;
   status: string;
+};
+
+export type AdminAuthorApplicationRecord = {
+  id: string;
+  source: string;
+  displayName: string;
+  email: string;
+  contactMethod?: string;
+  contactValue?: string;
+  focus: string;
+  badge?: string;
+  bio: string;
+  sampleLinks?: string;
+  status: string;
+  reviewNote?: string;
+  reviewedAt?: string;
+  reviewedByDisplayName?: string;
+  createdAt: string;
+  updatedAt: string;
+  userId?: string;
+  userDisplayName?: string;
+  approvedAuthorId?: string;
+  approvedAuthorName?: string;
 };
 
 export type AdminArticlePlanRecord = {
@@ -96,6 +120,12 @@ function normalizeTags(value: string | null | undefined) {
     .map((item) => item.trim())
     .filter(Boolean)
     .join(" | ");
+}
+
+function parseOptionalText(value: FormDataEntryValue | string | null | undefined) {
+  const resolved = typeof value === "string" ? value : String(value ?? "");
+  const trimmed = resolved.trim();
+  return trimmed || undefined;
 }
 
 function resolvePreviewText(previewText: string, fullAnalysisText: string, teaser: string) {
@@ -224,6 +254,48 @@ export async function getAdminAuthorTeams(): Promise<AdminAuthorTeamRecord[]> {
   }));
 }
 
+export async function getAdminAuthorApplications(): Promise<AdminAuthorApplicationRecord[]> {
+  const records = await prisma.authorApplication.findMany({
+    include: {
+      user: {
+        select: {
+          displayName: true,
+        },
+      },
+      approvedAuthor: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+  });
+
+  return records.map((record) => ({
+    id: record.id,
+    source: record.source,
+    displayName: record.displayName,
+    email: record.email,
+    contactMethod: record.contactMethod ?? undefined,
+    contactValue: record.contactValue ?? undefined,
+    focus: record.focus,
+    badge: record.badge ?? undefined,
+    bio: record.bio,
+    sampleLinks: record.sampleLinks ?? undefined,
+    status: record.status,
+    reviewNote: record.reviewNote ?? undefined,
+    reviewedAt: record.reviewedAt?.toISOString(),
+    reviewedByDisplayName: record.reviewedByDisplayName ?? undefined,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+    userId: record.userId ?? undefined,
+    userDisplayName: record.user?.displayName ?? undefined,
+    approvedAuthorId: record.approvedAuthor?.id ?? undefined,
+    approvedAuthorName: record.approvedAuthor?.name ?? undefined,
+  }));
+}
+
 export async function getAdminArticlePlans(): Promise<AdminArticlePlanRecord[]> {
   const records = await prisma.articlePlan.findMany({
     orderBy: [{ status: "asc" }, { isHot: "desc" }, { kickoff: "asc" }],
@@ -340,6 +412,204 @@ export async function saveAuthorTeam(formData: FormData) {
 
   revalidateContentViews();
   return created;
+}
+
+export async function submitAuthorApplication(input: {
+  displayName: string;
+  email: string;
+  focus: string;
+  bio: string;
+  badge?: string;
+  contactMethod?: string;
+  contactValue?: string;
+  sampleLinks?: string;
+  userId?: string;
+  source?: string;
+}) {
+  const displayName = input.displayName.trim();
+  const email = input.email.trim().toLowerCase();
+  const focus = input.focus.trim();
+  const bio = input.bio.trim();
+
+  if (!displayName || !email || !focus || !bio) {
+    throw new Error("AUTHOR_APPLICATION_INVALID");
+  }
+
+  const existingPending = await prisma.authorApplication.findFirst({
+    where: {
+      email,
+      status: "pending",
+    },
+    select: { id: true },
+  });
+
+  const payload = {
+    source: input.source?.trim() || "web",
+    displayName,
+    email,
+    contactMethod: parseOptionalText(input.contactMethod) ?? null,
+    contactValue: parseOptionalText(input.contactValue) ?? null,
+    focus,
+    badge: parseOptionalText(input.badge) ?? null,
+    bio,
+    sampleLinks: parseOptionalText(input.sampleLinks) ?? null,
+    status: "pending",
+    reviewNote: null,
+    reviewedAt: null,
+    reviewedByDisplayName: null,
+    userId: input.userId?.trim() || null,
+    approvedAuthorId: null,
+  };
+
+  const application = existingPending
+    ? await prisma.authorApplication.update({
+        where: { id: existingPending.id },
+        data: payload,
+      })
+    : await prisma.authorApplication.create({
+        data: payload,
+      });
+
+  if (application.userId) {
+    await createUserNotification(prisma, {
+      userId: application.userId,
+      category: "system",
+      type: "author_application_submitted",
+      level: "info",
+      title: "作者申请已提交",
+      message: "你的作者申请已进入后台审核队列，审核结果会写入消息中心。",
+      actionHref: "/member",
+      payload: {
+        applicationId: application.id,
+        status: application.status,
+      },
+    });
+  }
+
+  revalidateContentViews();
+  return application;
+}
+
+async function upsertApprovedAuthorFromApplication(application: {
+  id: string;
+  displayName: string;
+  focus: string;
+  badge: string | null;
+  bio: string;
+  approvedAuthorId: string | null;
+}) {
+  if (application.approvedAuthorId) {
+    return prisma.authorTeam.update({
+      where: { id: application.approvedAuthorId },
+      data: {
+        name: application.displayName,
+        focus: application.focus,
+        badge: application.badge ?? "作者申请",
+        bio: application.bio,
+        status: "active",
+      },
+    });
+  }
+
+  const existing = await prisma.authorTeam.findFirst({
+    where: {
+      source: "author-application",
+      sourceKey: application.id,
+    },
+  });
+
+  const slug = await ensureUniqueAuthorSlug(application.displayName, existing?.id);
+
+  if (existing) {
+    return prisma.authorTeam.update({
+      where: { id: existing.id },
+      data: {
+        name: application.displayName,
+        slug,
+        focus: application.focus,
+        badge: application.badge ?? existing.badge,
+        bio: application.bio,
+        status: "active",
+      },
+    });
+  }
+
+  return prisma.authorTeam.create({
+    data: {
+      source: "author-application",
+      sourceKey: application.id,
+      name: application.displayName,
+      slug,
+      focus: application.focus,
+      streak: "待验证",
+      winRate: "待验证",
+      monthlyRoi: "待验证",
+      followers: "0",
+      badge: application.badge ?? "作者申请",
+      bio: application.bio,
+      status: "active",
+    },
+  });
+}
+
+export async function reviewAuthorApplication(formData: FormData) {
+  const id = String(formData.get("id") || "").trim();
+  const intent = String(formData.get("intent") || "").trim();
+  const reviewNote = parseOptionalText(formData.get("reviewNote")) ?? null;
+  const reviewedByDisplayName = parseOptionalText(formData.get("reviewedByDisplayName")) ?? "Admin";
+
+  if (!id || (intent !== "approve" && intent !== "reject")) {
+    throw new Error("AUTHOR_APPLICATION_REVIEW_INVALID");
+  }
+
+  const application = await prisma.authorApplication.findUnique({
+    where: { id },
+  });
+
+  if (!application) {
+    throw new Error("AUTHOR_APPLICATION_NOT_FOUND");
+  }
+
+  let approvedAuthorId: string | null = application.approvedAuthorId;
+
+  if (intent === "approve") {
+    const author = await upsertApprovedAuthorFromApplication(application);
+    approvedAuthorId = author.id;
+  }
+
+  const updated = await prisma.authorApplication.update({
+    where: { id },
+    data: {
+      status: intent === "approve" ? "approved" : "rejected",
+      reviewNote,
+      reviewedAt: new Date(),
+      reviewedByDisplayName,
+      approvedAuthorId: intent === "approve" ? approvedAuthorId : null,
+    },
+  });
+
+  if (application.userId) {
+    await createUserNotification(prisma, {
+      userId: application.userId,
+      category: "system",
+      type: intent === "approve" ? "author_application_approved" : "author_application_rejected",
+      level: intent === "approve" ? "success" : "warning",
+      title: intent === "approve" ? "作者申请已通过" : "作者申请未通过",
+      message:
+        intent === "approve"
+          ? `你的作者申请已通过审核，${application.displayName} 已创建为作者档案。`
+          : `你的作者申请暂未通过审核。${reviewNote ? `备注：${reviewNote}` : "请根据运营反馈补充资料后再提交。"}`,
+      actionHref: intent === "approve" && approvedAuthorId ? `/authors/${approvedAuthorId}` : "/member",
+      payload: {
+        applicationId: updated.id,
+        status: updated.status,
+        approvedAuthorId: approvedAuthorId ?? undefined,
+      },
+    });
+  }
+
+  revalidateContentViews(undefined, undefined);
+  return updated;
 }
 
 export async function toggleAuthorTeamStatus(authorId: string) {

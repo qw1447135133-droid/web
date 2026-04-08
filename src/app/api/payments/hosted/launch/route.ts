@@ -6,14 +6,14 @@ import {
   normalizePaymentOrderType,
   sanitizeReturnTo,
 } from "@/lib/payment-orders";
-import { normalizePaymentProvider } from "@/lib/payment-provider";
+import { getPaymentProviderFamily, normalizePaymentProvider } from "@/lib/payment-provider";
 import { getCurrentUserRecord } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const type = normalizePaymentOrderType(searchParams.get("type"));
   const orderId = searchParams.get("orderId")?.trim() ?? "";
-  const fallbackReturnTo = type === "membership" ? "/member" : "/plans";
+  const fallbackReturnTo = type === "membership" ? "/member" : type === "coin-recharge" ? `/member/recharge/${orderId}` : "/plans";
   const returnTo = sanitizeReturnTo(searchParams.get("returnTo"), fallbackReturnTo);
   const current = await getCurrentUserRecord();
 
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       userId: current.id,
     });
 
-    if (!order || normalizePaymentProvider(order.provider) !== "hosted") {
+    if (!order || getPaymentProviderFamily(normalizePaymentProvider(order.provider)) !== "hosted") {
       fallbackCheckoutUrl.searchParams.set("payment", "error");
       return NextResponse.redirect(fallbackCheckoutUrl);
     }
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(fallbackCheckoutUrl);
     }
 
-    const redirectUrl = buildHostedGatewayRedirectUrl({
+    const redirectUrl = await buildHostedGatewayRedirectUrl({
       order,
       returnTo,
     });

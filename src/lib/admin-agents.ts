@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { settleAgentWithdrawalCommission } from "@/lib/agent-attribution";
+import { getSystemParameterMap } from "@/lib/admin-system";
 import { prisma } from "@/lib/prisma";
 import type { Locale } from "@/lib/i18n-config";
 
@@ -209,6 +210,43 @@ export type AgentPerformanceSnapshotRecord = {
   rejectionWithdrawalAmount: number;
 };
 
+export type AgentCommissionPolicyRecord = {
+  level: AgentLevel;
+  directRate: number;
+  downstreamRate: number;
+  minReferredUsers: number;
+  minMonthlyRecharge: number;
+};
+
+export type AgentAutomationRuntime = {
+  policies: AgentCommissionPolicyRecord[];
+  weeklySettlementMinimum: number;
+  lastLevelSyncAt?: string;
+  lastLevelSyncDetail?: string;
+  lastWeeklySettlementAt?: string;
+  lastWeeklySettlementDetail?: string;
+};
+
+export type AgentLevelAutomationResult = {
+  processedCount: number;
+  changedCount: number;
+  promotedCount: number;
+  demotedCount: number;
+};
+
+export type AgentWeeklySettlementResult = {
+  processedCount: number;
+  createdCount: number;
+  skippedCount: number;
+  minimumAmount: number;
+};
+
+const agentLevelRank: Record<AgentLevel, number> = {
+  level1: 1,
+  level2: 2,
+  level3: 3,
+};
+
 type AdminAgentCommissionLedgerRow = {
   id: string;
   agentId: string;
@@ -366,6 +404,84 @@ function normalizeWithdrawalStatus(value: string): WithdrawalStatus {
   }
 
   return "pending";
+}
+
+function parseConfigNumber(value: string | undefined, fallback: number) {
+  const parsed = Number.parseFloat(value ?? "");
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+async function getAgentCommissionPolicies(): Promise<AgentCommissionPolicyRecord[]> {
+  const keys = [
+    "agents.level1.direct_rate",
+    "agents.level1.downstream_rate",
+    "agents.level2.direct_rate",
+    "agents.level2.downstream_rate",
+    "agents.level3.direct_rate",
+    "agents.level3.downstream_rate",
+    "agents.level2.min_referred_users",
+    "agents.level2.min_monthly_recharge",
+    "agents.level3.min_referred_users",
+    "agents.level3.min_monthly_recharge",
+  ];
+  const map = await getSystemParameterMap(keys);
+
+  return [
+    {
+      level: "level1",
+      directRate: parseConfigNumber(map.get("agents.level1.direct_rate"), 32),
+      downstreamRate: parseConfigNumber(map.get("agents.level1.downstream_rate"), 8),
+      minReferredUsers: 0,
+      minMonthlyRecharge: 0,
+    },
+    {
+      level: "level2",
+      directRate: parseConfigNumber(map.get("agents.level2.direct_rate"), 45),
+      downstreamRate: parseConfigNumber(map.get("agents.level2.downstream_rate"), 12),
+      minReferredUsers: parseConfigNumber(map.get("agents.level2.min_referred_users"), 30),
+      minMonthlyRecharge: parseConfigNumber(map.get("agents.level2.min_monthly_recharge"), 30000),
+    },
+    {
+      level: "level3",
+      directRate: parseConfigNumber(map.get("agents.level3.direct_rate"), 55),
+      downstreamRate: parseConfigNumber(map.get("agents.level3.downstream_rate"), 18),
+      minReferredUsers: parseConfigNumber(map.get("agents.level3.min_referred_users"), 80),
+      minMonthlyRecharge: parseConfigNumber(map.get("agents.level3.min_monthly_recharge"), 100000),
+    },
+  ];
+}
+
+function resolvePolicyByLevel(
+  policies: AgentCommissionPolicyRecord[],
+  level: AgentLevel,
+) {
+  return policies.find((item) => item.level === level) ?? policies[0];
+}
+
+function deriveAutoLevel(
+  agent: {
+    totalReferredUsers: number;
+    monthlyRechargeAmount: number;
+  },
+  policies: AgentCommissionPolicyRecord[],
+): AgentLevel {
+  const level3 = resolvePolicyByLevel(policies, "level3");
+  if (
+    agent.totalReferredUsers >= level3.minReferredUsers ||
+    agent.monthlyRechargeAmount >= level3.minMonthlyRecharge
+  ) {
+    return "level3";
+  }
+
+  const level2 = resolvePolicyByLevel(policies, "level2");
+  if (
+    agent.totalReferredUsers >= level2.minReferredUsers ||
+    agent.monthlyRechargeAmount >= level2.minMonthlyRecharge
+  ) {
+    return "level2";
+  }
+
+  return "level1";
 }
 
 function parseMultiLineRefs(value: string) {
@@ -1373,6 +1489,199 @@ export async function getAdminAgentsDashboard(locale: Locale): Promise<AdminAgen
   };
 }
 
+export async function getAgentAutomationRuntime(): Promise<AgentAutomationRuntime> {
+  const policies = await getAgentCommissionPolicies();
+  const weeklyMap = await getSystemParameterMap(["agents.weekly_settlement_minimum"]);
+  const [lastLevelSyncLog, lastSettlementLog] = await Promise.all([
+    prisma.adminAuditLog.findFirst({
+      where: {
+        scope: "agents.automation.level-sync",
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        createdAt: true,
+        detail: true,
+      },
+    }),
+    prisma.adminAuditLog.findFirst({
+      where: {
+        scope: "agents.automation.weekly-settlement",
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        createdAt: true,
+        detail: true,
+      },
+    }),
+  ]);
+
+  return {
+    policies,
+    weeklySettlementMinimum: parseConfigNumber(
+      weeklyMap.get("agents.weekly_settlement_minimum"),
+      500,
+    ),
+    lastLevelSyncAt: lastLevelSyncLog?.createdAt.toISOString(),
+    lastLevelSyncDetail: lastLevelSyncLog?.detail ?? undefined,
+    lastWeeklySettlementAt: lastSettlementLog?.createdAt.toISOString(),
+    lastWeeklySettlementDetail: lastSettlementLog?.detail ?? undefined,
+  };
+}
+
+export async function syncAgentCommissionPolicies(): Promise<{ processedCount: number; changedCount: number }> {
+  const policies = await getAgentCommissionPolicies();
+  const agents = await prisma.agentProfile.findMany({
+    select: {
+      id: true,
+      level: true,
+      commissionRate: true,
+      downstreamRate: true,
+    },
+  });
+
+  let changedCount = 0;
+
+  for (const agent of agents) {
+    const policy = resolvePolicyByLevel(policies, normalizeAgentLevel(agent.level));
+    if (
+      agent.commissionRate !== policy.directRate ||
+      agent.downstreamRate !== policy.downstreamRate
+    ) {
+      await prisma.agentProfile.update({
+        where: { id: agent.id },
+        data: {
+          commissionRate: policy.directRate,
+          downstreamRate: policy.downstreamRate,
+        },
+      });
+      changedCount += 1;
+    }
+  }
+
+  safeRevalidate(adminPaths);
+
+  return {
+    processedCount: agents.length,
+    changedCount,
+  };
+}
+
+export async function runAgentLevelAutomation(): Promise<AgentLevelAutomationResult> {
+  const policies = await getAgentCommissionPolicies();
+  const agents = await prisma.agentProfile.findMany({
+    where: {
+      status: {
+        not: "inactive",
+      },
+    },
+    select: {
+      id: true,
+      level: true,
+      totalReferredUsers: true,
+      monthlyRechargeAmount: true,
+    },
+  });
+
+  let changedCount = 0;
+  let promotedCount = 0;
+  let demotedCount = 0;
+
+  for (const agent of agents) {
+    const currentLevel = normalizeAgentLevel(agent.level);
+    const nextLevel = deriveAutoLevel(agent, policies);
+
+    if (currentLevel === nextLevel) {
+      continue;
+    }
+
+    const nextPolicy = resolvePolicyByLevel(policies, nextLevel);
+    await prisma.agentProfile.update({
+      where: { id: agent.id },
+      data: {
+        level: nextLevel,
+        commissionRate: nextPolicy.directRate,
+        downstreamRate: nextPolicy.downstreamRate,
+      },
+    });
+    changedCount += 1;
+    if (agentLevelRank[nextLevel] > agentLevelRank[currentLevel]) {
+      promotedCount += 1;
+    } else {
+      demotedCount += 1;
+    }
+  }
+
+  safeRevalidate(adminPaths);
+
+  return {
+    processedCount: agents.length,
+    changedCount,
+    promotedCount,
+    demotedCount,
+  };
+}
+
+export async function runWeeklyAgentSettlement(): Promise<AgentWeeklySettlementResult> {
+  const map = await getSystemParameterMap(["agents.weekly_settlement_minimum"]);
+  const minimumAmount = Math.max(
+    1,
+    Math.trunc(parseConfigNumber(map.get("agents.weekly_settlement_minimum"), 500)),
+  );
+  const agents = await prisma.agentProfile.findMany({
+    where: {
+      status: "active",
+      unsettledCommission: {
+        gte: minimumAmount,
+      },
+    },
+    select: {
+      id: true,
+      payoutAccount: true,
+      unsettledCommission: true,
+      withdrawals: {
+        where: {
+          status: {
+            in: ["pending", "reviewing", "paying"],
+          },
+        },
+        select: {
+          id: true,
+        },
+      },
+    },
+  });
+
+  let createdCount = 0;
+  let skippedCount = 0;
+
+  for (const agent of agents) {
+    if (!agent.payoutAccount?.trim() || agent.withdrawals.length > 0) {
+      skippedCount += 1;
+      continue;
+    }
+
+    await prisma.agentWithdrawal.create({
+      data: {
+        agentId: agent.id,
+        amount: agent.unsettledCommission,
+        status: "reviewing",
+        payoutAccount: agent.payoutAccount,
+        note: `Weekly settlement auto-created ${new Date().toISOString().slice(0, 10)}`,
+      },
+    });
+    createdCount += 1;
+  }
+
+  safeRevalidate(adminPaths);
+
+  return {
+    processedCount: agents.length,
+    createdCount,
+    skippedCount,
+    minimumAmount,
+  };
+}
+
 export async function saveAgentApplication(formData: FormData) {
   const id = parseOptionalText(formData.get("id"));
 
@@ -1418,12 +1727,15 @@ export async function reviewAgentApplication(formData: FormData) {
   }
 
   if (action === "approve") {
+    const level = normalizeAgentLevel(application.desiredLevel);
+    const policy = resolvePolicyByLevel(await getAgentCommissionPolicies(), level);
+
     await prisma.$transaction(async (tx) => {
       const inviteCode = await generateUniqueInviteCode();
       const agent = await tx.agentProfile.create({
         data: {
           displayName: application.applicantName,
-          level: normalizeAgentLevel(application.desiredLevel),
+          level,
           status: "active",
           inviteCode,
           inviteUrl: buildInviteUrl(inviteCode),
@@ -1431,6 +1743,8 @@ export async function reviewAgentApplication(formData: FormData) {
           contactPhone: application.phone,
           channelSummary: application.channelSummary,
           parentAgentId,
+          commissionRate: policy.directRate,
+          downstreamRate: policy.downstreamRate,
         },
       });
 
@@ -1462,16 +1776,24 @@ export async function saveAgentProfile(formData: FormData) {
   const id = parseOptionalText(formData.get("id"));
   const inviteCodeInput = parseOptionalText(formData.get("inviteCode"));
   const inviteCode = inviteCodeInput || (await generateUniqueInviteCode());
+  const level = normalizeAgentLevel(String(formData.get("level") || "level1"));
+  const policy = resolvePolicyByLevel(await getAgentCommissionPolicies(), level);
+  const commissionRateInput = parseOptionalText(formData.get("commissionRate"));
+  const downstreamRateInput = parseOptionalText(formData.get("downstreamRate"));
 
   const payload = {
     displayName: String(formData.get("displayName") || "").trim(),
-    level: normalizeAgentLevel(String(formData.get("level") || "level1")),
+    level,
     status: normalizeAgentStatus(String(formData.get("status") || "active")),
     inviteCode,
     inviteUrl: buildInviteUrl(inviteCode),
     parentAgentId: parseOptionalText(formData.get("parentAgentId")) ?? null,
-    commissionRate: parseFloatValue(formData.get("commissionRate")),
-    downstreamRate: parseFloatValue(formData.get("downstreamRate")),
+    commissionRate: commissionRateInput
+      ? parseFloatValue(formData.get("commissionRate"), policy.directRate)
+      : policy.directRate,
+    downstreamRate: downstreamRateInput
+      ? parseFloatValue(formData.get("downstreamRate"), policy.downstreamRate)
+      : policy.downstreamRate,
     contactName: parseOptionalText(formData.get("contactName")) ?? null,
     contactPhone: parseOptionalText(formData.get("contactPhone")) ?? null,
     channelSummary: parseOptionalText(formData.get("channelSummary")) ?? null,

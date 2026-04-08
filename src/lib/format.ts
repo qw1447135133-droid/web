@@ -14,6 +14,7 @@ export function formatDateTime(input: string, locale: Locale | DisplayLocale = d
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "UTC",
   }).format(new Date(input));
 }
 

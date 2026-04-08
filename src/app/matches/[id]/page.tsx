@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { SectionHeading } from "@/components/section-heading";
 import { formatDateTime, formatOdd } from "@/lib/format";
-import { getArticlePlans, getAuthorTeams } from "@/lib/content-data";
+import { getArticlePlans, getAuthorTeams, getSiteAds } from "@/lib/content-data";
 import { getCricketMatchDepth } from "@/lib/cricket-depth";
 import type { DisplayLocale } from "@/lib/i18n-config";
 import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
@@ -476,10 +477,11 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
     notFound();
   }
 
-  const [prediction, plans, authors] = await Promise.all([
+  const [prediction, plans, authors, matchDetailAds] = await Promise.all([
     getPredictionByMatchId(match.id, locale),
     match.sport === "cricket" || match.sport === "esports" ? getArticlePlans(match.sport, locale) : Promise.resolve([]),
     match.sport === "cricket" || match.sport === "esports" ? getAuthorTeams(locale) : Promise.resolve([]),
+    getSiteAds(locale, "match-detail-inline"),
   ]);
   const cricketSnapshot = match.sport === "cricket" ? await getDatabaseSnapshot("cricket", match.leagueSlug, locale) : null;
   const esportsSnapshot = match.sport === "esports" ? await getDatabaseSnapshot("esports", match.leagueSlug, locale) : null;
@@ -625,6 +627,8 @@ export default async function MatchDetailPage({ params }: { params: Params }) {
           </div>
         </div>
       </section>
+
+      <SiteAdSlot ads={matchDetailAds} locale={displayLocale} />
 
       {match.sport === "cricket" ? (
         <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">

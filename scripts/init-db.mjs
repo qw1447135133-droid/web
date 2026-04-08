@@ -106,6 +106,13 @@ db.exec(`
     "email" TEXT NOT NULL,
     "displayName" TEXT NOT NULL,
     "role" TEXT NOT NULL,
+    "passwordHash" TEXT,
+    "emailVerifiedAt" DATETIME,
+    "pendingEmail" TEXT,
+    "contactMethod" TEXT,
+    "contactValue" TEXT,
+    "preferredLocale" TEXT,
+    "countryCode" TEXT,
     "membershipPlanId" TEXT,
     "membershipExpiresAt" DATETIME,
     "referredAt" DATETIME,
@@ -126,6 +133,88 @@ db.exec(`
     CONSTRAINT "Session_userId_fkey"
       FOREIGN KEY ("userId") REFERENCES "User" ("id")
       ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "EmailVerificationToken" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "tokenHash" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "purpose" TEXT NOT NULL DEFAULT 'verify_email',
+    "expiresAt" DATETIME NOT NULL,
+    "consumedAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+    CONSTRAINT "EmailVerificationToken_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "UserNotification" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "category" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "level" TEXT NOT NULL DEFAULT 'info',
+    "title" TEXT,
+    "message" TEXT,
+    "actionHref" TEXT,
+    "actionLabel" TEXT,
+    "payloadJson" TEXT,
+    "readAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT NOT NULL,
+    CONSTRAINT "UserNotification_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "UserPushDevice" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "deviceKey" TEXT NOT NULL,
+    "permission" TEXT NOT NULL DEFAULT 'default',
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "locale" TEXT,
+    "platform" TEXT,
+    "userAgent" TEXT,
+    "pushEndpoint" TEXT,
+    "pushP256dhKey" TEXT,
+    "pushAuthKey" TEXT,
+    "pushSubscriptionJson" TEXT,
+    "lastSeenAt" DATETIME,
+    "lastPermissionAt" DATETIME,
+    "lastNotifiedAt" DATETIME,
+    "lastPushAttemptAt" DATETIME,
+    "lastPushSuccessAt" DATETIME,
+    "lastPushError" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT,
+    CONSTRAINT "UserPushDevice_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS "PushCampaign" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "key" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "message" TEXT NOT NULL,
+    "actionHref" TEXT,
+    "actionLabel" TEXT,
+    "audience" TEXT NOT NULL DEFAULT 'all',
+    "locale" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'draft',
+    "payloadJson" TEXT,
+    "scheduledForAt" DATETIME,
+    "targetCount" INTEGER NOT NULL DEFAULT 0,
+    "deliveredCount" INTEGER NOT NULL DEFAULT 0,
+    "sentAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdByDisplayName" TEXT,
+    "createdByUserId" TEXT,
+    CONSTRAINT "PushCampaign_createdByUserId_fkey"
+      FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS "UserLoginActivity" (
@@ -275,6 +364,9 @@ db.exec(`
     "refundedAt" DATETIME,
     "refundReason" TEXT,
     "creditedAt" DATETIME,
+    "memberNote" TEXT,
+    "proofUrl" TEXT,
+    "proofUploadedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "packageId" TEXT NOT NULL,
@@ -512,6 +604,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS "SystemAlertEvent" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "eventKey" TEXT,
     "source" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "message" TEXT NOT NULL,
@@ -800,6 +893,33 @@ db.exec(`
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS "AuthorApplication" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "source" TEXT NOT NULL DEFAULT 'web',
+    "displayName" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "contactMethod" TEXT,
+    "contactValue" TEXT,
+    "focus" TEXT NOT NULL,
+    "badge" TEXT,
+    "bio" TEXT NOT NULL,
+    "sampleLinks" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "reviewNote" TEXT,
+    "reviewedAt" DATETIME,
+    "reviewedByDisplayName" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "userId" TEXT,
+    "approvedAuthorId" TEXT,
+    CONSTRAINT "AuthorApplication_userId_fkey"
+      FOREIGN KEY ("userId") REFERENCES "User" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT "AuthorApplication_approvedAuthorId_fkey"
+      FOREIGN KEY ("approvedAuthorId") REFERENCES "AuthorTeam" ("id")
+      ON DELETE SET NULL ON UPDATE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS "PredictionRecord" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "source" TEXT NOT NULL DEFAULT 'manual',
@@ -897,16 +1017,28 @@ db.exec(`
     "titleZhCn" TEXT NOT NULL,
     "titleZhTw" TEXT NOT NULL,
     "titleEn" TEXT NOT NULL,
+    "titleTh" TEXT NOT NULL DEFAULT '',
+    "titleVi" TEXT NOT NULL DEFAULT '',
+    "titleHi" TEXT NOT NULL DEFAULT '',
     "subtitleZhCn" TEXT NOT NULL,
     "subtitleZhTw" TEXT NOT NULL,
     "subtitleEn" TEXT NOT NULL,
+    "subtitleTh" TEXT NOT NULL DEFAULT '',
+    "subtitleVi" TEXT NOT NULL DEFAULT '',
+    "subtitleHi" TEXT NOT NULL DEFAULT '',
     "descriptionZhCn" TEXT NOT NULL,
     "descriptionZhTw" TEXT NOT NULL,
     "descriptionEn" TEXT NOT NULL,
+    "descriptionTh" TEXT NOT NULL DEFAULT '',
+    "descriptionVi" TEXT NOT NULL DEFAULT '',
+    "descriptionHi" TEXT NOT NULL DEFAULT '',
     "href" TEXT NOT NULL,
     "ctaLabelZhCn" TEXT NOT NULL,
     "ctaLabelZhTw" TEXT NOT NULL,
     "ctaLabelEn" TEXT NOT NULL,
+    "ctaLabelTh" TEXT NOT NULL DEFAULT '',
+    "ctaLabelVi" TEXT NOT NULL DEFAULT '',
+    "ctaLabelHi" TEXT NOT NULL DEFAULT '',
     "imageUrl" TEXT NOT NULL,
     "startsAt" DATETIME,
     "endsAt" DATETIME,
@@ -944,19 +1076,80 @@ db.exec(`
     "titleZhCn" TEXT NOT NULL,
     "titleZhTw" TEXT NOT NULL,
     "titleEn" TEXT NOT NULL,
+    "titleTh" TEXT NOT NULL DEFAULT '',
+    "titleVi" TEXT NOT NULL DEFAULT '',
+    "titleHi" TEXT NOT NULL DEFAULT '',
     "messageZhCn" TEXT NOT NULL,
     "messageZhTw" TEXT NOT NULL,
     "messageEn" TEXT NOT NULL,
+    "messageTh" TEXT NOT NULL DEFAULT '',
+    "messageVi" TEXT NOT NULL DEFAULT '',
+    "messageHi" TEXT NOT NULL DEFAULT '',
     "href" TEXT,
     "ctaLabelZhCn" TEXT,
     "ctaLabelZhTw" TEXT,
     "ctaLabelEn" TEXT,
+    "ctaLabelTh" TEXT,
+    "ctaLabelVi" TEXT,
+    "ctaLabelHi" TEXT,
     "startsAt" DATETIME,
     "endsAt" DATETIME,
     "status" TEXT NOT NULL DEFAULT 'active',
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "SiteAd" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "key" TEXT NOT NULL,
+    "placement" TEXT NOT NULL,
+    "format" TEXT NOT NULL DEFAULT 'image',
+    "theme" TEXT NOT NULL DEFAULT 'neutral',
+    "titleZhCn" TEXT NOT NULL,
+    "titleZhTw" TEXT NOT NULL,
+    "titleEn" TEXT NOT NULL,
+    "titleTh" TEXT NOT NULL DEFAULT '',
+    "titleVi" TEXT NOT NULL DEFAULT '',
+    "titleHi" TEXT NOT NULL DEFAULT '',
+    "descriptionZhCn" TEXT NOT NULL,
+    "descriptionZhTw" TEXT NOT NULL,
+    "descriptionEn" TEXT NOT NULL,
+    "descriptionTh" TEXT NOT NULL DEFAULT '',
+    "descriptionVi" TEXT NOT NULL DEFAULT '',
+    "descriptionHi" TEXT NOT NULL DEFAULT '',
+    "ctaLabelZhCn" TEXT NOT NULL DEFAULT '',
+    "ctaLabelZhTw" TEXT NOT NULL DEFAULT '',
+    "ctaLabelEn" TEXT NOT NULL DEFAULT '',
+    "ctaLabelTh" TEXT NOT NULL DEFAULT '',
+    "ctaLabelVi" TEXT NOT NULL DEFAULT '',
+    "ctaLabelHi" TEXT NOT NULL DEFAULT '',
+    "href" TEXT,
+    "imageUrl" TEXT,
+    "htmlSnippet" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "startsAt" DATETIME,
+    "endsAt" DATETIME,
+    "impressionCount" INTEGER NOT NULL DEFAULT 0,
+    "clickCount" INTEGER NOT NULL DEFAULT 0,
+    "lastImpressionAt" DATETIME,
+    "lastClickAt" DATETIME,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS "SiteAdDailyStat" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "metricDate" DATETIME NOT NULL,
+    "impressionCount" INTEGER NOT NULL DEFAULT 0,
+    "clickCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "adId" TEXT NOT NULL,
+    CONSTRAINT "SiteAdDailyStat_adId_fkey"
+      FOREIGN KEY ("adId") REFERENCES "SiteAd" ("id")
+      ON DELETE CASCADE ON UPDATE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS "SyncRun" (
@@ -1053,6 +1246,8 @@ db.exec(`
   );
 
   CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
+  CREATE UNIQUE INDEX IF NOT EXISTS "UserPushDevice_deviceKey_key" ON "UserPushDevice"("deviceKey");
+  CREATE UNIQUE INDEX IF NOT EXISTS "PushCampaign_key_key" ON "PushCampaign"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "AgentCommissionLedger_rechargeOrderId_key" ON "AgentCommissionLedger"("rechargeOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinAccount_userId_key" ON "CoinAccount"("userId");
@@ -1076,6 +1271,7 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS "HomepageFeaturedMatchSlot_key_key" ON "HomepageFeaturedMatchSlot"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "HomepageBanner_key_key" ON "HomepageBanner"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "SiteAnnouncement_key_key" ON "SiteAnnouncement"("key");
+  CREATE UNIQUE INDEX IF NOT EXISTS "SiteAd_key_key" ON "SiteAd"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "SupportKnowledgeItem_key_key" ON "SupportKnowledgeItem"("key");
   CREATE UNIQUE INDEX IF NOT EXISTS "PaymentCallbackEvent_eventKey_key" ON "PaymentCallbackEvent"("eventKey");
   CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId");
@@ -1148,6 +1344,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "HomepageBannerDailyStat_metricDate_idx" ON "HomepageBannerDailyStat"("metricDate");
   CREATE INDEX IF NOT EXISTS "SiteAnnouncement_status_sortOrder_idx" ON "SiteAnnouncement"("status", "sortOrder");
   CREATE INDEX IF NOT EXISTS "SiteAnnouncement_startsAt_endsAt_idx" ON "SiteAnnouncement"("startsAt", "endsAt");
+  CREATE INDEX IF NOT EXISTS "UserPushDevice_userId_status_updatedAt_idx" ON "UserPushDevice"("userId", "status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "UserPushDevice_permission_updatedAt_idx" ON "UserPushDevice"("permission", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "UserPushDevice_locale_updatedAt_idx" ON "UserPushDevice"("locale", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "PushCampaign_status_createdAt_idx" ON "PushCampaign"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "PushCampaign_audience_createdAt_idx" ON "PushCampaign"("audience", "createdAt");
+  CREATE INDEX IF NOT EXISTS "PushCampaign_createdByUserId_createdAt_idx" ON "PushCampaign"("createdByUserId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SiteAd_placement_status_sortOrder_idx" ON "SiteAd"("placement", "status", "sortOrder");
+  CREATE INDEX IF NOT EXISTS "SiteAd_startsAt_endsAt_idx" ON "SiteAd"("startsAt", "endsAt");
+  CREATE UNIQUE INDEX IF NOT EXISTS "SiteAdDailyStat_adId_metricDate_key" ON "SiteAdDailyStat"("adId", "metricDate");
+  CREATE INDEX IF NOT EXISTS "SiteAdDailyStat_metricDate_idx" ON "SiteAdDailyStat"("metricDate");
   CREATE INDEX IF NOT EXISTS "SyncRun_source_startedAt_idx" ON "SyncRun"("source", "startedAt");
   CREATE INDEX IF NOT EXISTS "SyncRun_status_startedAt_idx" ON "SyncRun"("status", "startedAt");
   CREATE INDEX IF NOT EXISTS "SyncLock_expiresAt_idx" ON "SyncLock"("expiresAt");
@@ -1234,8 +1440,18 @@ ensureColumn("CoinRechargeOrder", "closedAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "refundedAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "refundReason", "TEXT");
 ensureColumn("CoinRechargeOrder", "creditedAt", "DATETIME");
+ensureColumn("CoinRechargeOrder", "memberNote", "TEXT");
+ensureColumn("CoinRechargeOrder", "proofUrl", "TEXT");
+ensureColumn("CoinRechargeOrder", "proofUploadedAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "createdAt", "DATETIME");
 ensureColumn("CoinRechargeOrder", "updatedAt", "DATETIME");
+ensureColumn("UserPushDevice", "pushEndpoint", "TEXT");
+ensureColumn("UserPushDevice", "pushP256dhKey", "TEXT");
+ensureColumn("UserPushDevice", "pushAuthKey", "TEXT");
+ensureColumn("UserPushDevice", "pushSubscriptionJson", "TEXT");
+ensureColumn("UserPushDevice", "lastPushAttemptAt", "DATETIME");
+ensureColumn("UserPushDevice", "lastPushSuccessAt", "DATETIME");
+ensureColumn("UserPushDevice", "lastPushError", "TEXT");
 ensureColumn("AdminReportDailyFact", "metricDate", "DATETIME");
 ensureColumn("AdminReportDailyFact", "scope", "TEXT DEFAULT 'overview'");
 ensureColumn("AdminReportDailyFact", "metricKey", "TEXT");
@@ -1321,6 +1537,31 @@ ensureColumn("AgentWithdrawal", "payoutRequestedAt", "DATETIME");
 ensureColumn("AgentWithdrawal", "callbackStatus", "TEXT");
 ensureColumn("AgentWithdrawal", "callbackPayload", "TEXT");
 ensureColumn("AgentWithdrawal", "callbackReceivedAt", "DATETIME");
+ensureColumn("User", "passwordHash", "TEXT");
+ensureColumn("User", "emailVerifiedAt", "DATETIME");
+ensureColumn("User", "pendingEmail", "TEXT");
+ensureColumn("User", "contactMethod", "TEXT");
+ensureColumn("User", "contactValue", "TEXT");
+ensureColumn("User", "preferredLocale", "TEXT");
+ensureColumn("User", "countryCode", "TEXT");
+ensureColumn("SystemAlertEvent", "eventKey", "TEXT");
+ensureColumn("AuthorApplication", "source", "TEXT DEFAULT 'web'");
+ensureColumn("AuthorApplication", "displayName", "TEXT");
+ensureColumn("AuthorApplication", "email", "TEXT");
+ensureColumn("AuthorApplication", "contactMethod", "TEXT");
+ensureColumn("AuthorApplication", "contactValue", "TEXT");
+ensureColumn("AuthorApplication", "focus", "TEXT");
+ensureColumn("AuthorApplication", "badge", "TEXT");
+ensureColumn("AuthorApplication", "bio", "TEXT");
+ensureColumn("AuthorApplication", "sampleLinks", "TEXT");
+ensureColumn("AuthorApplication", "status", "TEXT DEFAULT 'pending'");
+ensureColumn("AuthorApplication", "reviewNote", "TEXT");
+ensureColumn("AuthorApplication", "reviewedAt", "DATETIME");
+ensureColumn("AuthorApplication", "reviewedByDisplayName", "TEXT");
+ensureColumn("AuthorApplication", "createdAt", "DATETIME");
+ensureColumn("AuthorApplication", "updatedAt", "DATETIME");
+ensureColumn("AuthorApplication", "userId", "TEXT");
+ensureColumn("AuthorApplication", "approvedAuthorId", "TEXT");
 ensureColumn("PaymentCallbackEvent", "provider", "TEXT DEFAULT 'mock'");
 ensureColumn("PaymentCallbackEvent", "providerEventId", "TEXT");
 ensureColumn("PaymentCallbackEvent", "eventKey", "TEXT");
@@ -1340,12 +1581,33 @@ ensureColumn("ArticlePlan", "matchId", "TEXT");
 ensureColumn("HomepageFeaturedMatchSlot", "matchRef", "TEXT");
 ensureColumn("HomepageBanner", "impressionCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "clickCount", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("HomepageBanner", "titleTh", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "titleVi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "titleHi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "subtitleTh", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "subtitleVi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "subtitleHi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "descriptionTh", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "descriptionVi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "descriptionHi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "ctaLabelTh", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "ctaLabelVi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("HomepageBanner", "ctaLabelHi", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("HomepageBanner", "primaryImpressionCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "primaryClickCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "secondaryImpressionCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "secondaryClickCount", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("HomepageBanner", "lastImpressionAt", "DATETIME");
 ensureColumn("HomepageBanner", "lastClickAt", "DATETIME");
+ensureColumn("SiteAnnouncement", "titleTh", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("SiteAnnouncement", "titleVi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("SiteAnnouncement", "titleHi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("SiteAnnouncement", "messageTh", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("SiteAnnouncement", "messageVi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("SiteAnnouncement", "messageHi", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("SiteAnnouncement", "ctaLabelTh", "TEXT");
+ensureColumn("SiteAnnouncement", "ctaLabelVi", "TEXT");
+ensureColumn("SiteAnnouncement", "ctaLabelHi", "TEXT");
 ensureColumn("SyncRun", "triggerSource", "TEXT DEFAULT 'manual-admin'");
 ensureColumn("SyncRun", "requestedByUserId", "TEXT");
 ensureColumn("AssistantConversation", "locale", "TEXT DEFAULT 'zh-CN'");
@@ -1362,6 +1624,7 @@ ensureColumn("AssistantMessage", "linksJson", "TEXT");
 ensureColumn("AssistantMessage", "provider", "TEXT");
 ensureColumn("AssistantMessage", "model", "TEXT");
 ensureColumn("AssistantMessage", "finishReason", "TEXT");
+ensureColumn("PushCampaign", "scheduledForAt", "DATETIME");
 ensureColumn("SupportKnowledgeItem", "category", "TEXT DEFAULT 'general'");
 ensureColumn("SupportKnowledgeItem", "href", "TEXT");
 ensureColumn("SupportKnowledgeItem", "tagsText", "TEXT");
@@ -1536,6 +1799,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS "MembershipOrder_status_updatedAt_idx" ON "MembershipOrder"("status", "updatedAt");
   CREATE INDEX IF NOT EXISTS "ContentOrder_status_updatedAt_idx" ON "ContentOrder"("status", "updatedAt");
   CREATE INDEX IF NOT EXISTS "User_referredByAgentId_createdAt_idx" ON "User"("referredByAgentId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "User_preferredLocale_createdAt_idx" ON "User"("preferredLocale", "createdAt");
+  CREATE INDEX IF NOT EXISTS "User_countryCode_createdAt_idx" ON "User"("countryCode", "createdAt");
+  CREATE UNIQUE INDEX IF NOT EXISTS "EmailVerificationToken_tokenHash_key" ON "EmailVerificationToken"("tokenHash");
+  CREATE INDEX IF NOT EXISTS "EmailVerificationToken_userId_expiresAt_idx" ON "EmailVerificationToken"("userId", "expiresAt");
+  CREATE INDEX IF NOT EXISTS "EmailVerificationToken_purpose_expiresAt_idx" ON "EmailVerificationToken"("purpose", "expiresAt");
+  CREATE INDEX IF NOT EXISTS "UserNotification_userId_createdAt_idx" ON "UserNotification"("userId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "UserNotification_userId_readAt_createdAt_idx" ON "UserNotification"("userId", "readAt", "createdAt");
+  CREATE INDEX IF NOT EXISTS "UserNotification_category_createdAt_idx" ON "UserNotification"("category", "createdAt");
+  CREATE INDEX IF NOT EXISTS "PushCampaign_status_scheduledForAt_idx" ON "PushCampaign"("status", "scheduledForAt");
   CREATE UNIQUE INDEX IF NOT EXISTS "MembershipOrder_provider_providerOrderId_key" ON "MembershipOrder"("provider", "providerOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "ContentOrder_provider_providerOrderId_key" ON "ContentOrder"("provider", "providerOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinAccount_userId_key" ON "CoinAccount"("userId");
@@ -1543,6 +1815,14 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_orderNo_key" ON "CoinRechargeOrder"("orderNo");
   CREATE UNIQUE INDEX IF NOT EXISTS "CoinRechargeOrder_provider_providerOrderId_key" ON "CoinRechargeOrder"("provider", "providerOrderId");
   CREATE UNIQUE INDEX IF NOT EXISTS "AgentCommissionLedger_rechargeOrderId_agentId_kind_key" ON "AgentCommissionLedger"("rechargeOrderId", "agentId", "kind");
+  CREATE UNIQUE INDEX IF NOT EXISTS "SystemAlertEvent_eventKey_key" ON "SystemAlertEvent"("eventKey");
+  CREATE INDEX IF NOT EXISTS "SystemAlertEvent_status_createdAt_idx" ON "SystemAlertEvent"("status", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SystemAlertEvent_severity_createdAt_idx" ON "SystemAlertEvent"("severity", "createdAt");
+  CREATE INDEX IF NOT EXISTS "SystemAlertEvent_channelId_createdAt_idx" ON "SystemAlertEvent"("channelId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AuthorApplication_status_updatedAt_idx" ON "AuthorApplication"("status", "updatedAt");
+  CREATE INDEX IF NOT EXISTS "AuthorApplication_email_createdAt_idx" ON "AuthorApplication"("email", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AuthorApplication_userId_createdAt_idx" ON "AuthorApplication"("userId", "createdAt");
+  CREATE INDEX IF NOT EXISTS "AuthorApplication_approvedAuthorId_createdAt_idx" ON "AuthorApplication"("approvedAuthorId", "createdAt");
   CREATE INDEX IF NOT EXISTS "CoinAccount_balance_updatedAt_idx" ON "CoinAccount"("balance", "updatedAt");
   CREATE INDEX IF NOT EXISTS "CoinLedger_accountId_createdAt_idx" ON "CoinLedger"("accountId", "createdAt");
   CREATE INDEX IF NOT EXISTS "CoinLedger_referenceType_referenceId_idx" ON "CoinLedger"("referenceType", "referenceId");

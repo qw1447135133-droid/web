@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
       await markCoinRechargeOrderPaidByAdmin({
         orderId,
         paymentReference,
+        note: reason,
         allowRecoverFromTerminal: true,
         operatorUserId: currentUser?.id,
         operatorDisplayName: session.displayName,
@@ -159,7 +160,7 @@ export async function POST(request: NextRequest) {
         scope: "finance.coin-recharge-order",
         targetType: "coin-recharge-order",
         targetId: orderId,
-        detail: `paymentReference: ${paymentReference || "--"}`,
+        detail: `paymentReference: ${paymentReference || "--"} | note: ${reason || "--"}`,
         ipAddress,
       });
     } else if (intent === "mark-failed") {

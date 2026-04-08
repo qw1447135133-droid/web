@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizePaymentCallbackPayload, verifyHostedGatewayCallbackSignature } from "@/lib/payment-gateway";
 import { applyPaymentCallback, normalizePaymentOrderType } from "@/lib/payment-orders";
-import { getPaymentCallbackToken } from "@/lib/payment-provider";
+import { getPaymentCallbackToken, getPaymentProviderFamily, normalizePaymentProvider } from "@/lib/payment-provider";
+import { prisma } from "@/lib/prisma";
 
 function isAuthorized(request: NextRequest) {
   const configuredToken = getPaymentCallbackToken();
@@ -14,6 +15,89 @@ function isAuthorized(request: NextRequest) {
   const headerToken = request.headers.get("x-payment-token")?.trim();
 
   return bearer === configuredToken || headerToken === configuredToken;
+}
+
+async function resolveStoredProvider(input: {
+  type: ReturnType<typeof normalizePaymentOrderType>;
+  orderId?: string;
+  providerOrderId?: string;
+  paymentReference?: string;
+}) {
+  const orderId = input.orderId?.trim();
+  const providerOrderId = input.providerOrderId?.trim();
+  const paymentReference = input.paymentReference?.trim();
+
+  const select = { provider: true } as const;
+
+  if (input.type === "coin-recharge") {
+    if (orderId) {
+      return (await prisma.coinRechargeOrder.findUnique({ where: { id: orderId }, select }))?.provider ?? undefined;
+    }
+
+    if (providerOrderId) {
+      return (
+        await prisma.coinRechargeOrder.findFirst({
+          where: { providerOrderId },
+          select,
+        })
+      )?.provider ?? undefined;
+    }
+
+    if (paymentReference) {
+      return (
+        await prisma.coinRechargeOrder.findFirst({
+          where: { paymentReference },
+          select,
+        })
+      )?.provider ?? undefined;
+    }
+  } else if (input.type === "membership") {
+    if (orderId) {
+      return (await prisma.membershipOrder.findUnique({ where: { id: orderId }, select }))?.provider ?? undefined;
+    }
+
+    if (providerOrderId) {
+      return (
+        await prisma.membershipOrder.findFirst({
+          where: { providerOrderId },
+          select,
+        })
+      )?.provider ?? undefined;
+    }
+
+    if (paymentReference) {
+      return (
+        await prisma.membershipOrder.findFirst({
+          where: { paymentReference },
+          select,
+        })
+      )?.provider ?? undefined;
+    }
+  } else {
+    if (orderId) {
+      return (await prisma.contentOrder.findUnique({ where: { id: orderId }, select }))?.provider ?? undefined;
+    }
+
+    if (providerOrderId) {
+      return (
+        await prisma.contentOrder.findFirst({
+          where: { providerOrderId },
+          select,
+        })
+      )?.provider ?? undefined;
+    }
+
+    if (paymentReference) {
+      return (
+        await prisma.contentOrder.findFirst({
+          where: { paymentReference },
+          select,
+        })
+      )?.provider ?? undefined;
+    }
+  }
+
+  return undefined;
 }
 
 export async function POST(request: NextRequest) {
@@ -65,6 +149,8 @@ export async function POST(request: NextRequest) {
   const paymentReference = normalizedPayload.paymentReference ?? String(payloadRecord.paymentReference || "");
   const reason = normalizedPayload.reason ?? String(payloadRecord.reason || "");
   const expiresAt = normalizedPayload.expiresAt ?? String(payloadRecord.expiresAt || "");
+  const signature =
+    String(payloadRecord.signature || payloadRecord.sign || payloadRecord.hmac || "").trim() || undefined;
 
   if ((!orderId && !providerOrderId && !paymentReference) || (state !== "paid" && state !== "failed" && state !== "closed")) {
     return NextResponse.json(
@@ -76,8 +162,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (provider === "hosted") {
-    const signature = verifyHostedGatewayCallbackSignature(payload, rawBody);
+  const storedProvider = provider
+    ? normalizePaymentProvider(provider)
+    : await resolveStoredProvider({
+        type,
+        orderId,
+        providerOrderId,
+        paymentReference,
+      });
+
+  if (!provider && signature && !storedProvider) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: "HOSTED_PROVIDER_REQUIRED",
+      },
+      { status: 400 },
+    );
+  }
+
+  if (storedProvider && getPaymentProviderFamily(normalizePaymentProvider(storedProvider)) === "hosted") {
+    const signature = await verifyHostedGatewayCallbackSignature(payload, rawBody);
 
     if (!signature.ok) {
       return NextResponse.json(
@@ -95,7 +200,7 @@ export async function POST(request: NextRequest) {
       type,
       orderId,
       state,
-      provider,
+      provider: storedProvider ?? provider,
       providerOrderId,
       paymentReference,
       reason,

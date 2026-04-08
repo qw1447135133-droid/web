@@ -5,12 +5,14 @@ import {
   createAgentCommissionForRechargeOrder,
   reverseAgentCommissionForRechargeOrder,
 } from "@/lib/agent-attribution";
+import { getPaymentProviderReferencePrefix, normalizePaymentProvider, type PaymentProvider } from "@/lib/payment-provider";
+import { notifyRechargeStateChanged } from "@/lib/user-notifications";
 import { prisma } from "@/lib/prisma";
 import type { Locale } from "@/lib/i18n-config";
 
 type FinanceClient = Prisma.TransactionClient | typeof prisma;
 type CoinOrderStatus = "pending" | "paid" | "failed" | "closed" | "refunded";
-type CoinOrderProvider = "mock" | "manual" | "hosted";
+type CoinOrderProvider = PaymentProvider;
 type CoinPackageStatus = "active" | "inactive";
 type CoinLedgerDirection = "credit" | "debit";
 type FinanceTone = "good" | "warn" | "neutral";
@@ -60,6 +62,9 @@ export type AdminCoinRechargeOrderRecord = {
   provider: CoinOrderProvider;
   providerOrderId?: string;
   paymentReference?: string;
+  memberNote?: string;
+  proofUrl?: string;
+  proofUploadedAt?: string;
   failureReason?: string;
   refundReason?: string;
   createdAt: string;
@@ -246,7 +251,11 @@ function safeRevalidate(paths: string[]) {
     try {
       revalidatePath(path);
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes("static generation store missing")) {
+      if (
+        !(error instanceof Error) ||
+        (!error.message.includes("static generation store missing") &&
+          !error.message.includes("during render which is unsupported"))
+      ) {
         throw error;
       }
     }
@@ -970,12 +979,12 @@ function createCoinOrderNo() {
 }
 
 function createCoinPaymentReference(provider: CoinOrderProvider) {
-  const prefix = provider === "hosted" ? "HOSTED" : provider === "mock" ? "MOCK" : "MANUAL";
+  const prefix = getPaymentProviderReferencePrefix(provider);
   return `${prefix}-COIN-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
 function createCoinProviderOrderId(provider: CoinOrderProvider) {
-  const prefix = provider === "hosted" ? "HOSTED" : provider === "mock" ? "MOCK" : "MANUAL";
+  const prefix = getPaymentProviderReferencePrefix(provider);
   return `${prefix}-COIN-ORDER-${randomUUID().slice(0, 10).toUpperCase()}`;
 }
 
@@ -1160,6 +1169,7 @@ export async function createManualCoinRechargeOrder(input: {
 export async function markCoinRechargeOrderPaidByAdmin(input: {
   orderId: string;
   paymentReference?: string;
+  note?: string;
   allowRecoverFromTerminal?: boolean;
   operatorUserId?: string | null;
   operatorDisplayName?: string;
@@ -1207,6 +1217,8 @@ export async function markCoinRechargeOrderPaidByAdmin(input: {
 
   const now = new Date();
   const totalCoins = order.coinAmount + order.bonusAmount;
+  const paymentReference =
+    input.paymentReference?.trim() || order.paymentReference || createCoinPaymentReference("manual");
 
   await prisma.$transaction(async (tx) => {
     await applyCoinAccountAdjustment(tx, {
@@ -1216,7 +1228,7 @@ export async function markCoinRechargeOrderPaidByAdmin(input: {
       amount: totalCoins,
       referenceType: "coin-recharge-order",
       referenceId: order.id,
-      note: order.orderNo,
+      note: input.note?.trim() || order.orderNo,
     });
 
     await tx.coinRechargeOrder.update({
@@ -1230,13 +1242,21 @@ export async function markCoinRechargeOrderPaidByAdmin(input: {
         closedAt: null,
         refundedAt: null,
         refundReason: null,
-        paymentReference: input.paymentReference?.trim() || order.paymentReference || createCoinPaymentReference("manual"),
+        paymentReference,
       },
     });
 
     await createAgentCommissionForRechargeOrder(tx, {
       orderId: order.id,
       note: `Recharge paid ${order.orderNo}`,
+    });
+
+    await notifyRechargeStateChanged(tx, {
+      userId: order.userId,
+      orderId: order.id,
+      orderNo: order.orderNo,
+      state: "paid",
+      paymentReference,
     });
   });
 
@@ -1259,7 +1279,9 @@ export async function markCoinRechargeOrderFailedByAdmin(input: {
     where: { id: input.orderId },
     select: {
       id: true,
+      orderNo: true,
       status: true,
+      userId: true,
       paymentReference: true,
     },
   });
@@ -1276,6 +1298,9 @@ export async function markCoinRechargeOrderFailedByAdmin(input: {
     throw new Error("COIN_RECHARGE_ORDER_NOT_FAILABLE");
   }
 
+  const paymentReference =
+    input.paymentReference?.trim() || order.paymentReference || createCoinPaymentReference("manual");
+
   await prisma.coinRechargeOrder.update({
     where: { id: order.id },
     data: {
@@ -1287,8 +1312,16 @@ export async function markCoinRechargeOrderFailedByAdmin(input: {
       closedAt: null,
       refundedAt: null,
       refundReason: null,
-      paymentReference: input.paymentReference?.trim() || order.paymentReference || createCoinPaymentReference("manual"),
+      paymentReference,
     },
+  });
+
+  await notifyRechargeStateChanged(prisma, {
+    userId: order.userId,
+    orderId: order.id,
+    orderNo: order.orderNo,
+    state: "failed",
+    paymentReference,
   });
 
   await syncRechargeOrderReconciliationIssues({
@@ -1308,7 +1341,10 @@ export async function closePendingCoinRechargeOrder(input: {
     where: { id: input.orderId },
     select: {
       id: true,
+      orderNo: true,
       status: true,
+      userId: true,
+      paymentReference: true,
     },
   });
 
@@ -1330,6 +1366,14 @@ export async function closePendingCoinRechargeOrder(input: {
       refundedAt: null,
       refundReason: null,
     },
+  });
+
+  await notifyRechargeStateChanged(prisma, {
+    userId: order.userId,
+    orderId: order.id,
+    orderNo: order.orderNo,
+    state: "closed",
+    paymentReference: order.paymentReference,
   });
 
   await syncRechargeOrderReconciliationIssues({
@@ -1355,6 +1399,7 @@ export async function refundCoinRechargeOrderByAdmin(input: {
       status: true,
       coinAmount: true,
       bonusAmount: true,
+      paymentReference: true,
     },
   });
 
@@ -1397,6 +1442,14 @@ export async function refundCoinRechargeOrderByAdmin(input: {
     await reverseAgentCommissionForRechargeOrder(tx, {
       orderId: order.id,
       note: input.reason?.trim() || `Recharge refunded ${order.orderNo}`,
+    });
+
+    await notifyRechargeStateChanged(tx, {
+      userId: order.userId,
+      orderId: order.id,
+      orderNo: order.orderNo,
+      state: "refunded",
+      paymentReference: order.paymentReference,
     });
   });
 
@@ -1517,6 +1570,7 @@ export async function batchUpdateCoinRechargeOrdersByAdmin(input: {
         await markCoinRechargeOrderPaidByAdmin({
           orderId: order.id,
           paymentReference: input.paymentReference,
+          note: input.reason,
           allowRecoverFromTerminal: true,
           operatorUserId: input.operatorUserId ?? null,
           operatorDisplayName: input.operatorDisplayName,
@@ -3932,12 +3986,12 @@ export async function getAdminFinanceDashboard(locale: Locale): Promise<AdminFin
       order.status === "refunded"
         ? order.status
         : "pending",
-    provider:
-      order.provider === "mock" || order.provider === "hosted"
-        ? order.provider
-        : "manual",
+    provider: normalizePaymentProvider(order.provider),
     providerOrderId: order.providerOrderId ?? undefined,
     paymentReference: order.paymentReference ?? undefined,
+    memberNote: order.memberNote ?? undefined,
+    proofUrl: order.proofUrl ?? undefined,
+    proofUploadedAt: order.proofUploadedAt?.toISOString(),
     failureReason: order.failureReason ?? undefined,
     refundReason: order.refundReason ?? undefined,
     createdAt: order.createdAt.toISOString(),

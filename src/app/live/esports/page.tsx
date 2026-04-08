@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { ScoreboardTable } from "@/components/scoreboard-table";
 import { SectionHeading } from "@/components/section-heading";
+import { getSiteAds } from "@/lib/content-data";
 import { formatDateTime } from "@/lib/format";
 import type { DisplayLocale } from "@/lib/i18n-config";
 import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
@@ -170,9 +172,10 @@ export default async function EsportsLivePage({
   const sort = pickValue(resolved.sort, "time");
   const game = pickValue(resolved.game, "all") as EsportsGame;
 
-  const [allLeagues, allMatches] = await Promise.all([
+  const [allLeagues, allMatches, liveFooterAds] = await Promise.all([
     getTrackedLeagues("esports", locale),
     getMatchesBySport("esports", locale),
+    getSiteAds(locale, "live-footer"),
   ]);
 
   let items = allMatches;
@@ -347,6 +350,7 @@ export default async function EsportsLivePage({
       </section>
 
       <ScoreboardTable matches={items} sportLabel={livePageCopy.esports.sportLabel} locale={displayLocale} />
+      <SiteAdSlot ads={liveFooterAds} locale={displayLocale} />
 
       <section className="grid gap-6 lg:grid-cols-[1fr_0.95fr]">
         <div className="glass-panel rounded-[2rem] p-6">

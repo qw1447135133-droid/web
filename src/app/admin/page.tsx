@@ -3,19 +3,25 @@ import { redirect } from "next/navigation";
 import { AdminBannerComposer } from "@/components/admin-banner-composer";
 import { AdminEventsPanel } from "@/components/admin-events-panel";
 import { SectionHeading } from "@/components/section-heading";
-import { getAdminAgentsDashboard } from "@/lib/admin-agents";
+import { getAdminAgentsDashboard, getAgentAutomationRuntime } from "@/lib/admin-agents";
 import { getAgentPayoutRuntimeConfig } from "@/lib/agent-payout-provider";
 import { getRecentAdminExportTasks } from "@/lib/admin-export-tasks";
 import { getAdminReportsDashboard } from "@/lib/admin-reports";
 import { getAdminSystemDashboard } from "@/lib/admin-system";
 import { getAdminEventsDashboard } from "@/lib/admin-events";
+import { getAppVersionInfo } from "@/lib/app-version";
 import {
   applyHomepageModuleMetrics,
   getArticlePlans as getSiteArticlePlans,
   getAuthorTeams as getSiteAuthorTeams,
   getPredictions as getSitePredictions,
 } from "@/lib/content-data";
-import { getAdminArticlePlans, getAdminAuthorTeams, getAdminPredictionRecords } from "@/lib/admin-content";
+import {
+  getAdminArticlePlans,
+  getAdminAuthorApplications,
+  getAdminAuthorTeams,
+  getAdminPredictionRecords,
+} from "@/lib/admin-content";
 import {
   buildFinancePackageCards,
   getAdminFinanceDashboard,
@@ -51,12 +57,18 @@ import { homepageBannerSeeds, homepageModules as homepageModuleSeeds, membership
 import { getOpsCopy } from "@/lib/ops-copy";
 import { getManualCollectionSummary, getPaymentCheckoutFlow } from "@/lib/payment-gateway";
 import {
-  getPaymentManualCollectionConfig,
   getPaymentProviderLabel,
-  getPaymentRuntimeConfig,
+  getResolvedPaymentRuntimeConfig,
 } from "@/lib/payment-provider";
 import { getOrderActivityMeta, getOrderFailureMeta, getOrderStatusMeta } from "@/lib/payment-ui";
+import { getAdminPushDashboard } from "@/lib/push-notifications";
 import { getSessionContext } from "@/lib/session";
+import {
+  getAdminSiteAds,
+  getSiteAdPlacementHint,
+  getSiteAdPlacementLabel,
+  siteAdPlacements,
+} from "@/lib/site-ads";
 import { getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
 import { getRecentSyncRuns, getSyncRotationPlan } from "@/lib/sync/sports-sync";
 import { getSiteCopy } from "@/lib/ui-copy";
@@ -77,6 +89,20 @@ type AdminSportFilter = "all" | "football" | "basketball" | "cricket" | "esports
 type AdminPlanStatusFilter = "all" | "draft" | "published" | "archived";
 type AdminPredictionResultFilter = "all" | "pending" | "won" | "lost";
 type AdminAiScope = "recent" | "all";
+type AdminContentSection = "overview" | "homepage" | "library" | "distribution" | "assistant";
+type AdminUsersSection = "overview" | "workspace" | "membership-orders" | "content-orders" | "payments";
+type AdminFinanceSection = "overview" | "recharge" | "reconciliation" | "wallets";
+type AdminAgentsSection = "overview" | "automation" | "network" | "withdrawals";
+type AdminSystemSection = "overview" | "security" | "notifications" | "runtime";
+type AdminReportsSection = "overview" | "trends" | "breakdowns" | "exports";
+type AdminContentPane =
+  | "featured"
+  | "banners"
+  | "modules"
+  | "authors"
+  | "plans"
+  | "announcements"
+  | "ads";
 type AdminAssistantKnowledgeStatusFilter = "all" | "active" | "inactive";
 type AdminAssistantHandoffStatusFilter = "all" | "pending" | "resolved";
 type AdminFinanceIssueQueueFilter = "all" | "overdue" | "unassigned" | "active" | "closed";
@@ -231,6 +257,7 @@ function formatShortDateLabel(value: string, locale: Locale | DisplayLocale) {
   return new Intl.DateTimeFormat(getIntlLocale(locale), {
     month: "numeric",
     day: "numeric",
+    timeZone: "UTC",
   }).format(date);
 }
 
@@ -298,6 +325,27 @@ function getBannerRunState(
       : { key: "live", label: "展示中", classes: "bg-lime-300/12 text-lime-100" };
 }
 
+function getAuthorApplicationStatusMeta(status: string, locale: DisplayLocale) {
+  if (status === "approved") {
+    return {
+      label: locale === "zh-TW" ? "已通過" : locale === "en" || locale === "th" || locale === "vi" || locale === "hi" ? "Approved" : "已通过",
+      className: "bg-lime-300/12 text-lime-100",
+    };
+  }
+
+  if (status === "rejected") {
+    return {
+      label: locale === "zh-TW" ? "已拒絕" : locale === "en" || locale === "th" || locale === "vi" || locale === "hi" ? "Rejected" : "已拒绝",
+      className: "bg-rose-400/12 text-rose-100",
+    };
+  }
+
+  return {
+    label: locale === "zh-TW" ? "待審核" : locale === "en" || locale === "th" || locale === "vi" || locale === "hi" ? "Pending" : "待审核",
+    className: "bg-amber-300/12 text-amber-100",
+  };
+}
+
 function getTrendMaxValue(
   points: Array<{
     impressionCount: number;
@@ -313,6 +361,19 @@ function getSimpleTrendMaxValue(
   }>,
 ) {
   return points.reduce((max, item) => Math.max(max, item.value), 0);
+}
+
+function isBooleanSystemParameterKey(key: string) {
+  return (
+    key === "app.version.force_update" ||
+    key === "app.web.install_enabled" ||
+    key === "app.web.fullscreen_enabled" ||
+    key === "app.push.webpush_enabled"
+  );
+}
+
+function isTextareaSystemParameterKey(key: string) {
+  return key === "app.version.notes" || key.endsWith(".wallets");
 }
 
 function getReadinessStateMeta(
@@ -333,11 +394,98 @@ function getReadinessStateMeta(
   };
 }
 
-function buildAdminUsersHref(filters: AdminUsersTabFilters, overrides: Partial<AdminUsersTabFilters> = {}) {
+function AdminHiddenFields({
+  values,
+}: {
+  values: Record<string, string | number | undefined>;
+}) {
+  return (
+    <>
+      {Object.entries(values).map(([name, value]) =>
+        value === undefined ? null : <input key={name} type="hidden" name={name} value={value} />,
+      )}
+    </>
+  );
+}
+
+function AdminContentPaneNav({
+  title,
+  description,
+  items,
+  activeKey,
+}: {
+  title: string;
+  description: string;
+  items: Array<{
+    key: string;
+    label: string;
+    count: string;
+    href: string;
+  }>;
+  activeKey?: string;
+}) {
+  return (
+    <div className="mt-6 rounded-[1.45rem] border border-white/8 bg-white/[0.035] p-3.5 sm:p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="section-label">{title}</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{description}</p>
+        </div>
+        <span className="rounded-full border border-white/10 bg-slate-950/40 px-3 py-1.5 text-[11px] font-medium text-slate-300">
+          {items.length}
+        </span>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2.5">
+        {items.map((item) => {
+          const isActive = item.key === activeKey;
+
+          return (
+            <Link
+              key={item.key}
+              href={item.href}
+              aria-current={isActive ? "page" : undefined}
+              className={`group flex min-w-[calc(50%-0.3125rem)] flex-1 items-center justify-between gap-3 rounded-[1.05rem] border px-3.5 py-2.5 text-sm transition sm:min-w-0 sm:flex-none sm:justify-start sm:rounded-full sm:px-4 sm:py-2 ${
+                isActive
+                  ? "border-orange-300/35 bg-[linear-gradient(135deg,rgba(251,146,60,0.18),rgba(249,115,22,0.08))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_10px_26px_rgba(249,115,22,0.10)]"
+                  : "border-white/10 bg-slate-950/38 text-slate-300 hover:border-white/20 hover:bg-white/[0.05] hover:text-white"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 flex-none rounded-full transition ${
+                  isActive ? "bg-orange-100 shadow-[0_0_12px_rgba(251,191,36,0.45)]" : "bg-slate-500/80 group-hover:bg-slate-200"
+                }`}
+              />
+              <span className="min-w-0 flex-1 text-left leading-5 sm:flex-none sm:whitespace-nowrap sm:leading-none">
+                {item.label}
+              </span>
+              <span
+                className={`flex-none rounded-full border px-2.5 py-1 text-[11px] font-medium leading-none transition ${
+                  isActive
+                    ? "border-orange-200/15 bg-white/10 text-orange-50"
+                    : "border-white/8 bg-white/[0.04] text-slate-400 group-hover:text-slate-200"
+                }`}
+              >
+                {item.count}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function buildAdminUsersHref(
+  filters: AdminUsersTabFilters & { usersSection?: AdminUsersSection },
+  overrides: Partial<AdminUsersTabFilters & { usersSection?: AdminUsersSection }> = {},
+) {
   const nextFilters = { ...filters, ...overrides };
   const params = new URLSearchParams();
 
   params.set("tab", "users");
+  if (nextFilters.usersSection) {
+    params.set("usersSection", nextFilters.usersSection);
+  }
   params.set("orderStatus", nextFilters.orderStatus);
   params.set("orderType", nextFilters.orderType);
   setOptionalSearchParam(params, "q", nextFilters.query);
@@ -345,6 +493,108 @@ function buildAdminUsersHref(filters: AdminUsersTabFilters, overrides: Partial<A
   setOptionalSearchParam(params, "to", nextFilters.to);
   params.set("membershipPage", String(nextFilters.membershipPage));
   params.set("contentPage", String(nextFilters.contentPage));
+
+  return `/admin?${params.toString()}`;
+}
+
+function buildAdminFinanceHref(
+  filters: {
+    financeSection?: AdminFinanceSection;
+    financeIssueScope: string;
+    financeIssueStatus: string;
+    financeIssueSeverity: string;
+    financeIssueType: string;
+    financeIssueQueue: AdminFinanceIssueQueueFilter;
+    financeIssueQuery: string;
+  },
+  overrides: Partial<{
+    financeSection?: AdminFinanceSection;
+    financeIssueScope: string;
+    financeIssueStatus: string;
+    financeIssueSeverity: string;
+    financeIssueType: string;
+    financeIssueQueue: AdminFinanceIssueQueueFilter;
+    financeIssueQuery: string;
+  }> = {},
+) {
+  const nextFilters = { ...filters, ...overrides };
+  const params = new URLSearchParams();
+
+  params.set("tab", "finance");
+  if (nextFilters.financeSection) {
+    params.set("financeSection", nextFilters.financeSection);
+  }
+  params.set("financeIssueScope", nextFilters.financeIssueScope);
+  params.set("financeIssueStatus", nextFilters.financeIssueStatus);
+  params.set("financeIssueSeverity", nextFilters.financeIssueSeverity);
+  params.set("financeIssueType", nextFilters.financeIssueType);
+  params.set("financeIssueQueue", nextFilters.financeIssueQueue);
+  setOptionalSearchParam(params, "financeIssueQuery", nextFilters.financeIssueQuery);
+
+  return `/admin?${params.toString()}`;
+}
+
+function buildAdminAgentsHref(
+  filters: { agentsSection?: AdminAgentsSection },
+  overrides: Partial<{ agentsSection?: AdminAgentsSection }> = {},
+) {
+  const nextFilters = { ...filters, ...overrides };
+  const params = new URLSearchParams();
+
+  params.set("tab", "agents");
+  if (nextFilters.agentsSection) {
+    params.set("agentsSection", nextFilters.agentsSection);
+  }
+
+  return `/admin?${params.toString()}`;
+}
+
+function buildAdminSystemHref(
+  filters: { systemSection?: AdminSystemSection },
+  overrides: Partial<{ systemSection?: AdminSystemSection; editPushCampaign?: string }> = {},
+) {
+  const nextFilters = { ...filters, ...overrides };
+  const params = new URLSearchParams();
+
+  params.set("tab", "system");
+  if (nextFilters.systemSection) {
+    params.set("systemSection", nextFilters.systemSection);
+  }
+  setOptionalSearchParam(params, "editPushCampaign", overrides.editPushCampaign);
+
+  return `/admin?${params.toString()}`;
+}
+
+function buildAdminReportsHref(
+  filters: {
+    reportsSection?: AdminReportsSection;
+    reportsWindow: AdminReportsWindow;
+    reportsFrom: string;
+    reportsTo: string;
+    reportsOrderType: string;
+    reportsDimension: string;
+  },
+  overrides: Partial<{
+    reportsSection?: AdminReportsSection;
+    reportsWindow: AdminReportsWindow;
+    reportsFrom: string;
+    reportsTo: string;
+    reportsOrderType: string;
+    reportsDimension: string;
+  }> = {},
+) {
+  const nextFilters = { ...filters, ...overrides };
+  const params = new URLSearchParams();
+
+  params.set("tab", "reports");
+  if (nextFilters.reportsSection) {
+    params.set("reportsSection", nextFilters.reportsSection);
+  }
+  params.set("reportsWindow", String(nextFilters.reportsWindow));
+  setOptionalSearchParam(params, "reportsFrom", nextFilters.reportsFrom);
+  setOptionalSearchParam(params, "reportsTo", nextFilters.reportsTo);
+  params.set("reportsOrderType", nextFilters.reportsOrderType);
+  setOptionalSearchParam(params, "reportsDimension", nextFilters.reportsDimension);
 
   return `/admin?${params.toString()}`;
 }
@@ -373,8 +623,86 @@ function normalizeAdminPlanStatusFilter(value: string): AdminPlanStatusFilter {
   return "all";
 }
 
+function normalizeAdminContentSection(value: string): AdminContentSection | undefined {
+  if (
+    value === "overview" ||
+    value === "homepage" ||
+    value === "library" ||
+    value === "distribution" ||
+    value === "assistant"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeAdminUsersSection(value: string): AdminUsersSection | undefined {
+  if (
+    value === "overview" ||
+    value === "workspace" ||
+    value === "membership-orders" ||
+    value === "content-orders" ||
+    value === "payments"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeAdminFinanceSection(value: string): AdminFinanceSection | undefined {
+  if (value === "overview" || value === "recharge" || value === "reconciliation" || value === "wallets") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeAdminAgentsSection(value: string): AdminAgentsSection | undefined {
+  if (value === "overview" || value === "automation" || value === "network" || value === "withdrawals") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeAdminSystemSection(value: string): AdminSystemSection | undefined {
+  if (value === "overview" || value === "security" || value === "notifications" || value === "runtime") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeAdminReportsSection(value: string): AdminReportsSection | undefined {
+  if (value === "overview" || value === "trends" || value === "breakdowns" || value === "exports") {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizeAdminContentPane(value: string): AdminContentPane | undefined {
+  if (
+    value === "featured" ||
+    value === "banners" ||
+    value === "modules" ||
+    value === "authors" ||
+    value === "plans" ||
+    value === "announcements" ||
+    value === "ads"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
 function buildAdminContentHref(
   filters: {
+    contentSection?: AdminContentSection;
+    contentPane?: AdminContentPane;
     contentSport: AdminSportFilter;
     contentAuthorId: string;
     contentPlanStatus: AdminPlanStatusFilter;
@@ -384,9 +712,12 @@ function buildAdminContentHref(
     knowledgeQuery?: string;
   },
   overrides?: {
+    contentSection?: AdminContentSection;
+    contentPane?: AdminContentPane;
     editAuthor?: string;
     editPlan?: string;
     editBanner?: string;
+    editSiteAd?: string;
     editFeaturedSlot?: string;
     editModule?: string;
     editAnnouncement?: string;
@@ -395,6 +726,20 @@ function buildAdminContentHref(
 ) {
   const params = new URLSearchParams();
   params.set("tab", "content");
+
+  const nextContentSection = overrides?.contentSection ?? filters.contentSection;
+  const nextContentPane =
+    overrides && "contentPane" in overrides
+      ? overrides.contentPane
+      : overrides?.contentSection && overrides.contentSection !== filters.contentSection
+        ? undefined
+        : filters.contentPane;
+  if (nextContentSection && nextContentSection !== "overview") {
+    params.set("contentSection", nextContentSection);
+  }
+  if (nextContentPane) {
+    params.set("contentPane", nextContentPane);
+  }
 
   if (filters.contentSport !== "all") {
     params.set("contentSport", filters.contentSport);
@@ -422,6 +767,10 @@ function buildAdminContentHref(
 
   if (overrides?.editBanner) {
     params.set("editBanner", overrides.editBanner);
+  }
+
+  if (overrides?.editSiteAd) {
+    params.set("editSiteAd", overrides.editSiteAd);
   }
 
   if (overrides?.editFeaturedSlot) {
@@ -585,7 +934,7 @@ function getPaymentCallbackProcessingMeta(
 
 function getPaymentRuntimeCopy(
   locale: Locale,
-  paymentRuntime: ReturnType<typeof getPaymentRuntimeConfig>,
+  paymentRuntime: Awaited<ReturnType<typeof getResolvedPaymentRuntimeConfig>>,
   paymentCheckoutFlow: ReturnType<typeof getPaymentCheckoutFlow>,
 ) {
   return {
@@ -967,8 +1316,11 @@ function FinanceRechargeOrdersPanel({
     totalCoins: number;
     amount: number;
     status: "pending" | "paid" | "failed" | "closed" | "refunded";
-    provider: "mock" | "manual" | "hosted";
+    provider: "mock" | "manual" | "hosted" | "xendit" | "razorpay" | "payu";
     paymentReference?: string;
+    memberNote?: string;
+    proofUrl?: string;
+    proofUploadedAt?: string;
     failureReason?: string;
     refundReason?: string;
     createdAt: string;
@@ -986,6 +1338,20 @@ function FinanceRechargeOrdersPanel({
     refund: locale === "en" ? "Refund" : locale === "zh-TW" ? "退款" : "退款",
     flagIssue:
       locale === "en" ? "Flag issue" : locale === "zh-TW" ? "加入對帳問題" : "加入对账问题",
+    reviewTitle:
+      locale === "en" ? "Single-order review" : locale === "zh-TW" ? "單筆審核動作" : "单笔审核动作",
+    referenceLabel:
+      locale === "en" ? "Payment reference" : locale === "zh-TW" ? "支付流水" : "支付流水",
+    referencePlaceholder:
+      locale === "en" ? "Optional bank / wallet reference" : locale === "zh-TW" ? "可選，銀行 / 錢包流水號" : "可选，银行 / 钱包流水号",
+    noteLabel:
+      locale === "en" ? "Handling note" : locale === "zh-TW" ? "處理備註" : "处理备注",
+    failPlaceholder:
+      locale === "en" ? "Reason shown to finance and support" : locale === "zh-TW" ? "填寫失敗原因，方便財務與客服追蹤" : "填写失败原因，方便财务与客服追踪",
+    refundPlaceholder:
+      locale === "en" ? "Reason for refund or rollback" : locale === "zh-TW" ? "填寫退款或回退原因" : "填写退款或回退原因",
+    closeHint:
+      locale === "en" ? "Closing a pending order will stop further crediting." : locale === "zh-TW" ? "關閉待處理訂單後將不再繼續入帳。" : "关闭待处理订单后将不再继续入账。",
     empty:
       locale === "en"
         ? "No coin recharge orders yet. Create one manually from the admin form above."
@@ -1163,46 +1529,65 @@ function FinanceRechargeOrdersPanel({
                     </span>
                   ) : null}
                 </div>
+                {order.memberNote ? <p className="mt-3 text-sm text-slate-300">{locale === "en" ? "Member note" : locale === "zh-TW" ? "會員備註" : "会员备注"}: {order.memberNote}</p> : null}
+                {order.proofUrl ? (
+                  <p className="mt-2 text-sm text-cyan-200">
+                    <a href={order.proofUrl} target="_blank" rel="noreferrer" className="underline underline-offset-4 transition hover:text-cyan-100">
+                      {locale === "en" ? "Open payment proof" : locale === "zh-TW" ? "查看付款憑證" : "查看付款凭证"}
+                    </a>
+                    {order.proofUploadedAt ? <span className="ml-2 text-xs text-slate-400">{formatDateTime(order.proofUploadedAt, locale)}</span> : null}
+                  </p>
+                ) : null}
                 {order.failureReason ? <p className="mt-3 text-sm text-orange-100">{order.failureReason}</p> : null}
                 {order.refundReason ? <p className="mt-3 text-sm text-slate-300">{order.refundReason}</p> : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {(order.status === "pending" || order.status === "failed" || order.status === "closed") ? (
-                    <form action="/api/admin/finance/recharge-orders" method="post">
-                      <input type="hidden" name="intent" value="mark-paid" />
-                      <input type="hidden" name="orderId" value={order.id} />
-                      <button type="submit" className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:bg-lime-300/15">
-                        {actionLabel.markPaid}
-                      </button>
-                    </form>
-                  ) : null}
-                  {order.status === "pending" ? (
-                    <>
-                      <form action="/api/admin/finance/recharge-orders" method="post">
-                        <input type="hidden" name="intent" value="mark-failed" />
-                        <input type="hidden" name="orderId" value={order.id} />
-                        <button type="submit" className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15">
-                          {actionLabel.markFailed}
+                <div className="mt-4 grid gap-3 rounded-[1rem] border border-white/8 bg-white/[0.02] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-white">{actionLabel.reviewTitle}</p>
+                    {order.status === "pending" ? <p className="text-xs text-slate-400">{actionLabel.closeHint}</p> : null}
+                  </div>
+                  <form action="/api/admin/finance/recharge-orders" method="post" className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                    <input type="hidden" name="orderId" value={order.id} />
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{actionLabel.referenceLabel}</span>
+                      <input
+                        name="paymentReference"
+                        defaultValue={order.paymentReference ?? ""}
+                        placeholder={actionLabel.referencePlaceholder}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{actionLabel.noteLabel}</span>
+                      <input
+                        name="reason"
+                        placeholder={order.status === "paid" ? actionLabel.refundPlaceholder : actionLabel.failPlaceholder}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none placeholder:text-slate-500"
+                      />
+                    </label>
+                    <div className="flex flex-wrap gap-2 md:justify-end">
+                      {(order.status === "pending" || order.status === "failed" || order.status === "closed") ? (
+                        <button type="submit" name="intent" value="mark-paid" className="rounded-full border border-lime-300/20 bg-lime-300/10 px-4 py-2 text-sm text-lime-100 transition hover:bg-lime-300/15">
+                          {actionLabel.markPaid}
                         </button>
-                      </form>
-                      <form action="/api/admin/finance/recharge-orders" method="post">
-                        <input type="hidden" name="intent" value="close" />
-                        <input type="hidden" name="orderId" value={order.id} />
-                        <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/20 hover:text-white">
-                          {actionLabel.close}
+                      ) : null}
+                      {order.status === "pending" ? (
+                        <>
+                          <button type="submit" name="intent" value="mark-failed" className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:bg-orange-300/15">
+                            {actionLabel.markFailed}
+                          </button>
+                          <button type="submit" name="intent" value="close" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-200 transition hover:border-white/20 hover:text-white">
+                            {actionLabel.close}
+                          </button>
+                        </>
+                      ) : null}
+                      {order.status === "paid" ? (
+                        <button type="submit" name="intent" value="refund" className="rounded-full border border-rose-300/20 bg-rose-400/10 px-4 py-2 text-sm text-rose-100 transition hover:bg-rose-400/15">
+                          {actionLabel.refund}
                         </button>
-                      </form>
-                    </>
-                  ) : null}
-                  {order.status === "paid" ? (
-                    <form action="/api/admin/finance/recharge-orders" method="post">
-                      <input type="hidden" name="intent" value="refund" />
-                      <input type="hidden" name="orderId" value={order.id} />
-                      <button type="submit" className="rounded-full border border-rose-300/20 bg-rose-400/10 px-4 py-2 text-sm text-rose-100 transition hover:bg-rose-400/15">
-                        {actionLabel.refund}
-                      </button>
-                    </form>
-                  ) : null}
-                  <form action="/api/admin/finance/recharge-orders" method="post">
+                      ) : null}
+                    </div>
+                  </form>
+                  <form action="/api/admin/finance/recharge-orders" method="post" className="flex flex-wrap gap-2">
                     <input type="hidden" name="intent" value="flag-reconciliation-issue" />
                     <input type="hidden" name="orderRef" value={order.id} />
                     <input type="hidden" name="paymentReference" value={order.paymentReference ?? ""} />
@@ -1249,6 +1634,7 @@ function FinanceReconciliationIssuesPanel({
   issueTypeOptions,
   filters,
   summary,
+  financeSection,
 }: {
   title: string;
   locale: Locale;
@@ -1303,6 +1689,7 @@ function FinanceReconciliationIssuesPanel({
     overdueCount: number;
     unassignedActiveCount: number;
   };
+  financeSection?: AdminFinanceSection;
 }) {
   const copy = {
     createTitle:
@@ -1612,6 +1999,7 @@ function FinanceReconciliationIssuesPanel({
           </div>
           <form method="get" action="/admin" className="mt-4 rounded-[1rem] border border-white/8 bg-white/[0.02] p-4">
             <input type="hidden" name="tab" value="finance" />
+            {financeSection ? <input type="hidden" name="financeSection" value={financeSection} /> : null}
             <p className="text-sm font-medium text-white">{copy.filterTitle}</p>
             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
               <label className="space-y-2 text-sm">
@@ -1677,7 +2065,10 @@ function FinanceReconciliationIssuesPanel({
               <button type="submit" className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/15">
                 {copy.applyFilters}
               </button>
-              <Link href="/admin?tab=finance" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+              <Link
+                href={financeSection ? `/admin?tab=finance&financeSection=${financeSection}` : "/admin?tab=finance"}
+                className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white"
+              >
                 {copy.clearFilters}
               </Link>
             </div>
@@ -2108,6 +2499,7 @@ function ReportsTrendCardsPanel({
   locale,
   reportsWindow,
   trendCards,
+  buildWindowHref,
 }: {
   locale: Locale;
   reportsWindow: AdminReportsWindow;
@@ -2122,6 +2514,7 @@ function ReportsTrendCardsPanel({
       value: number;
     }>;
   }>;
+  buildWindowHref?: (windowValue: AdminReportsWindow) => string;
 }) {
   return (
     <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
@@ -2146,7 +2539,7 @@ function ReportsTrendCardsPanel({
             return (
               <Link
                 key={`reports-window-${windowValue}`}
-                href={`/admin?tab=reports&reportsWindow=${windowValue}`}
+                href={buildWindowHref ? buildWindowHref(windowValue as AdminReportsWindow) : `/admin?tab=reports&reportsWindow=${windowValue}`}
                 className={`rounded-full border px-3 py-1.5 text-sm transition ${
                   active
                     ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
@@ -2421,7 +2814,7 @@ function getAgentCommissionStatusMeta(status: string, locale: Locale) {
 export default async function AdminPage({ searchParams }: { searchParams: SearchParams }) {
   const displayLocale = await getCurrentDisplayLocale();
   const locale = resolveRenderLocale(displayLocale);
-  const { entitlements } = await getSessionContext();
+  const { entitlements, session } = await getSessionContext();
 
   if (!entitlements.isAuthenticated) {
     redirect("/login?next=%2Fadmin");
@@ -2435,9 +2828,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const adminExpansion = getAdminExpansionData(locale);
   const aiImportPanelCopy = adminPageCopy.aiImport;
   const opsCopy = getOpsCopy(locale);
-  const paymentRuntime = getPaymentRuntimeConfig();
+  const paymentRuntime = await getResolvedPaymentRuntimeConfig();
   const agentPayoutRuntime = getAgentPayoutRuntimeConfig();
-  const manualCollection = getPaymentManualCollectionConfig();
+  const manualCollection = paymentRuntime.manualCollection;
   const paymentCheckoutFlow = getPaymentCheckoutFlow(paymentRuntime.provider);
   const paymentRuntimeCopy = getPaymentRuntimeCopy(locale, paymentRuntime, paymentCheckoutFlow);
   const { matchStatusLabels, roleLabels } = getSiteCopy(locale);
@@ -2446,9 +2839,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const editAuthorId = pickValue(resolved.editAuthor, "");
   const editPlanId = pickValue(resolved.editPlan, "");
   const editBannerId = pickValue(resolved.editBanner, "");
+  const editSiteAdId = pickValue(resolved.editSiteAd, "");
   const editFeaturedSlotId = pickValue(resolved.editFeaturedSlot, "");
   const editModuleId = pickValue(resolved.editModule, "");
   const editAnnouncementId = pickValue(resolved.editAnnouncement, "");
+  const editPushCampaignId = pickValue(resolved.editPushCampaign, "");
   const editLeagueId = pickValue(resolved.editLeague, "");
   const editMatchId = pickValue(resolved.editMatch, "");
   const editPredictionId = pickValue(resolved.editPrediction, "");
@@ -2476,6 +2871,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const contentAuthorId = pickValue(resolved.contentAuthorId, "").trim();
   const contentPlanStatus = normalizeAdminPlanStatusFilter(pickValue(resolved.contentPlanStatus, "all"));
   const contentQuery = pickValue(resolved.contentQuery, "").trim();
+  const requestedUsersSection = normalizeAdminUsersSection(pickValue(resolved.usersSection, ""));
+  const requestedContentSection = normalizeAdminContentSection(pickValue(resolved.contentSection, ""));
+  const requestedContentPane = normalizeAdminContentPane(pickValue(resolved.contentPane, ""));
+  const requestedFinanceSection = normalizeAdminFinanceSection(pickValue(resolved.financeSection, ""));
+  const requestedAgentsSection = normalizeAdminAgentsSection(pickValue(resolved.agentsSection, ""));
+  const requestedSystemSection = normalizeAdminSystemSection(pickValue(resolved.systemSection, ""));
   const aiSport = normalizeAdminSportFilter(pickValue(resolved.aiSport, "all"));
   const aiAuthorId = pickValue(resolved.aiAuthorId, "").trim();
   const aiResult = normalizeAdminPredictionResultFilter(pickValue(resolved.aiResult, "all"));
@@ -2505,9 +2906,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const agentFailed = pickPositiveInt(resolved.agentFailed, 0);
   const agentSkipped = pickPositiveInt(resolved.agentSkipped, 0);
   const agentTotal = pickPositiveInt(resolved.agentTotal, 0);
+  const agentChanged = pickPositiveInt(resolved.agentChanged, 0);
+  const agentPromoted = pickPositiveInt(resolved.agentPromoted, 0);
+  const agentDemoted = pickPositiveInt(resolved.agentDemoted, 0);
+  const agentCreated = pickPositiveInt(resolved.agentCreated, 0);
+  const agentMinimum = pickPositiveInt(resolved.agentMinimum, 0);
+  const auditDeletedCount = pickPositiveInt(resolved.auditDeletedCount, 0);
+  const auditRetentionDays = pickPositiveInt(resolved.auditRetentionDays, 0);
   const reportTaskId = pickValue(resolved.reportTaskId, "");
   const reportTaskStatus = pickValue(resolved.reportTaskStatus, "");
   const reportScope = pickValue(resolved.reportScope, "");
+  const requestedReportsSection = normalizeAdminReportsSection(pickValue(resolved.reportsSection, ""));
   const reportsWindow = normalizeAdminReportsWindow(pickValue(resolved.reportsWindow, "30"));
   const reportsFrom = pickValue(resolved.reportsFrom, "").trim();
   const reportsTo = pickValue(resolved.reportsTo, "").trim();
@@ -2521,7 +2930,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const membershipPage = pickPositiveInt(resolved.membershipPage, 1);
   const contentPage = pickPositiveInt(resolved.contentPage, 1);
 
-  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, homepageBanners, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard, agentsDashboard, reportsDashboard, exportTasks, systemDashboard, eventsDashboard] = await Promise.all([
+  const [footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageFeaturedPreview, homepageFeaturedSlots, articlePlans, authorTeams, authorApplications, homepageBanners, siteAds, homepageModules, siteAnnouncements, predictionRecords, supportKnowledgeItems, siteArticlePlans, siteAuthorTeams, sitePredictions, usersDashboard, paymentCallbackActivity, recentSyncRuns, syncRotationPlan, assistantHandoffRequests, financeDashboard, agentsDashboard, agentAutomationRuntime, reportsDashboard, exportTasks, systemDashboard, pushDashboard, appVersionInfo, eventsDashboard] = await Promise.all([
     getMatchesBySport("football", locale),
     getMatchesBySport("basketball", locale),
     getMatchesBySport("cricket", locale),
@@ -2532,7 +2941,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     getAdminHomepageFeaturedMatchSlots(locale),
     getAdminArticlePlans(),
     getAdminAuthorTeams(),
+    getAdminAuthorApplications(),
     getAdminHomepageBanners(),
+    getAdminSiteAds(),
     getAdminHomepageModules(),
     getAdminSiteAnnouncements(),
     getAdminPredictionRecords(),
@@ -2555,9 +2966,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     getAdminAssistantHandoffRequests(),
     getAdminFinanceDashboard(locale),
     getAdminAgentsDashboard(locale),
+    getAgentAutomationRuntime(),
     getAdminReportsDashboard(locale, { trendWindowDays: reportsWindow }),
     getRecentAdminExportTasks(),
     getAdminSystemDashboard(locale),
+    getAdminPushDashboard(locale),
+    getAppVersionInfo(),
     getAdminEventsDashboard({
       sport: eventsSport,
       leagueStatus: eventsLeagueStatus,
@@ -2576,6 +2990,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const currentAuthor = authorTeams.find((item) => item.id === editAuthorId);
   const currentPlan = articlePlans.find((item) => item.id === editPlanId);
   const currentBanner = homepageBanners.find((item) => item.id === editBannerId);
+  const currentSiteAd = siteAds.find((item) => item.id === editSiteAdId);
   const currentFeaturedSlot = homepageFeaturedSlots.find((item) => item.id === editFeaturedSlotId);
   const currentModule = homepageModules.find((item) => item.id === editModuleId);
   const exportCardMap = new Map(reportsDashboard.exportCards.map((item) => [item.scope, item]));
@@ -2603,6 +3018,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     homepageModuleRuntimePreview.map((module) => [module.key ?? module.id, module.metric]),
   );
   const currentAnnouncement = siteAnnouncements.find((item) => item.id === editAnnouncementId);
+  const currentPushCampaign = pushDashboard.campaigns.find((item) => item.id === editPushCampaignId);
+  const scheduledPushCampaignCount = pushDashboard.campaigns.filter((item) => item.status === "scheduled").length;
+  const pendingAuthorApplicationCount = authorApplications.filter((item) => item.status === "pending").length;
   const currentLeagueRecord = eventsDashboard.leagues.find((item) => item.id === editLeagueId);
   const currentMatchRecord = eventsDashboard.matches.find((item) => item.id === editMatchId);
   const currentPrediction = predictionRecords.find((item) => item.id === editPredictionId);
@@ -2711,15 +3129,27 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       titleZhCn: seed.translations["zh-CN"].title,
       titleZhTw: seed.translations["zh-TW"].title,
       titleEn: seed.translations.en.title,
+      titleTh: seed.translations.th.title,
+      titleVi: seed.translations.vi.title,
+      titleHi: seed.translations.hi.title,
       subtitleZhCn: seed.translations["zh-CN"].subtitle,
       subtitleZhTw: seed.translations["zh-TW"].subtitle,
       subtitleEn: seed.translations.en.subtitle,
+      subtitleTh: seed.translations.th.subtitle,
+      subtitleVi: seed.translations.vi.subtitle,
+      subtitleHi: seed.translations.hi.subtitle,
       descriptionZhCn: seed.translations["zh-CN"].description,
       descriptionZhTw: seed.translations["zh-TW"].description,
       descriptionEn: seed.translations.en.description,
+      descriptionTh: seed.translations.th.description,
+      descriptionVi: seed.translations.vi.description,
+      descriptionHi: seed.translations.hi.description,
       ctaLabelZhCn: seed.translations["zh-CN"].ctaLabel,
       ctaLabelZhTw: seed.translations["zh-TW"].ctaLabel,
       ctaLabelEn: seed.translations.en.ctaLabel,
+      ctaLabelTh: seed.translations.th.ctaLabel,
+      ctaLabelVi: seed.translations.vi.ctaLabel,
+      ctaLabelHi: seed.translations.hi.ctaLabel,
     },
   }));
   const bannerRunStates = homepageBanners.map((banner) => getBannerRunState(banner, locale));
@@ -2749,7 +3179,105 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             seededHomepageModuleCount,
             homepageModuleSeeds.length,
           );
-  const contentBaseHref = buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery });
+  const derivedContentSection =
+    requestedContentSection ??
+    (editBannerId || editFeaturedSlotId || editModuleId
+      ? "homepage"
+      : editAuthorId || editPlanId || contentSport !== "all" || !!contentAuthorId || contentPlanStatus !== "all" || !!contentQuery
+        ? "library"
+        : editAnnouncementId || editSiteAdId
+          ? "distribution"
+          : editKnowledgeId || knowledgeStatus !== "all" || !!knowledgeCategory || !!knowledgeQuery
+            ? "assistant"
+            : saved === "banner" || saved === "featured-slot" || saved === "featured-slot-deleted" || saved === "module" || saved === "module-seeded"
+              ? "homepage"
+              : saved === "author" || saved === "author-application" || !!seeded
+                ? "library"
+                : saved === "announcement" || saved === "site-ad" || saved === "site-ad-seeded"
+                  ? "distribution"
+                  : saved === "assistant-knowledge" || saved === "assistant-knowledge-seeded" || error === "assistant-knowledge"
+                    ? "assistant"
+                    : "overview");
+  const contentSection: AdminContentSection = derivedContentSection;
+  const isContentOverview = contentSection === "overview";
+  const isContentHomepage = contentSection === "homepage";
+  const isContentLibrary = contentSection === "library";
+  const isContentDistribution = contentSection === "distribution";
+  const isContentAssistant = contentSection === "assistant";
+  const derivedContentPane: AdminContentPane | undefined =
+    contentSection === "homepage"
+      ? requestedContentPane === "featured" || requestedContentPane === "banners" || requestedContentPane === "modules"
+        ? requestedContentPane
+        : editFeaturedSlotId || saved === "featured-slot" || saved === "featured-slot-deleted" || error === "featured-slot"
+          ? "featured"
+          : editBannerId || saved === "banner" || error === "banner"
+            ? "banners"
+            : editModuleId || saved === "module" || saved === "module-seeded" || error === "module"
+              ? "modules"
+              : "featured"
+      : contentSection === "library"
+        ? requestedContentPane === "authors" || requestedContentPane === "plans"
+          ? requestedContentPane
+          : editPlanId || saved === "plan" || error === "plan" || contentSport !== "all" || !!contentAuthorId || contentPlanStatus !== "all" || !!contentQuery
+            ? "plans"
+            : editAuthorId || saved === "author" || saved === "author-application" || error === "author" || error === "author-application"
+              ? "authors"
+              : "authors"
+        : contentSection === "distribution"
+          ? requestedContentPane === "announcements" || requestedContentPane === "ads"
+            ? requestedContentPane
+            : editSiteAdId || saved === "site-ad" || saved === "site-ad-seeded" || error === "site-ad"
+              ? "ads"
+              : editAnnouncementId || saved === "announcement" || error === "announcement"
+                ? "announcements"
+                : "announcements"
+          : undefined;
+  const contentPane = derivedContentPane;
+  const isHomepageFeaturedPane = contentSection === "homepage" && contentPane === "featured";
+  const isHomepageBannersPane = contentSection === "homepage" && contentPane === "banners";
+  const isHomepageModulesPane = contentSection === "homepage" && contentPane === "modules";
+  const isLibraryAuthorsPane = contentSection === "library" && contentPane === "authors";
+  const isLibraryPlansPane = contentSection === "library" && contentPane === "plans";
+  const isDistributionAnnouncementsPane = contentSection === "distribution" && contentPane === "announcements";
+  const isDistributionAdsPane = contentSection === "distribution" && contentPane === "ads";
+  const contentHomepageBaseHref = buildAdminContentHref({
+    contentSection: "homepage",
+    contentPane: "featured",
+    contentSport,
+    contentAuthorId,
+    contentPlanStatus,
+    contentQuery,
+  });
+  const systemParameterMap = new Map(systemDashboard.parameters.map((item) => [item.key, item]));
+  const auditRetentionParameter = systemParameterMap.get("system.audit.retention_days");
+  const auditRetentionDaysValue = Number.parseInt(auditRetentionParameter?.value ?? "180", 10) || 180;
+  const curatedAppParameterKeys = [
+    "app.version.current",
+    "app.version.minimum_supported",
+    "app.version.hot_update",
+    "app.version.force_update",
+    "app.version.update_strategy",
+    "app.version.channel",
+    "app.version.notes",
+    "app.version.download_url",
+    "app.web.install_enabled",
+    "app.web.fullscreen_enabled",
+    "app.web.asset_version",
+    "app.push.delivery_mode",
+    "app.push.webpush_enabled",
+    "app.push.webpush_public_key",
+    "app.cdn.asset_prefix",
+    "app.cdn.public_asset_host",
+    "app.android.package_id",
+    "app.android.version_code",
+    "app.apk.package_id",
+    "app.apk.splash_background",
+    "site.timezone_policy",
+    "site.timezone_label",
+  ];
+  const curatedAppParameters = curatedAppParameterKeys
+    .map((key) => systemParameterMap.get(key))
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
   const homepageReadinessItems = [
     {
       key: "banners-ready",
@@ -2764,7 +3292,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           ? undefined
           : {
               kind: "link" as const,
-              href: `${contentBaseHref}#homepage-banner-form`,
+              href: `${buildAdminContentHref(
+                {
+                  contentSection: "homepage",
+                  contentPane: "banners",
+                  contentSport,
+                  contentAuthorId,
+                  contentPlanStatus,
+                  contentQuery,
+                },
+              )}#homepage-banner-form`,
               label: adminPageCopy.content.homepageReadiness.actionLabels.createBanner,
             },
     },
@@ -2781,7 +3318,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           ? undefined
           : {
               kind: "link" as const,
-              href: `${contentBaseHref}#homepage-featured-slot-form`,
+              href: `${contentHomepageBaseHref}#homepage-featured-slot-form`,
               label: adminPageCopy.content.homepageReadiness.actionLabels.configureSlots,
             },
     },
@@ -2842,6 +3379,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     membershipPage: usersDashboard.appliedFilters.membershipPage,
     contentPage: usersDashboard.appliedFilters.contentPage,
   };
+  const usersRouteFilters = {
+    ...usersTabFilters,
+    usersSection: requestedUsersSection ?? "overview",
+  };
 
   const orderExportParams = new URLSearchParams();
   orderExportParams.set("type", usersTabFilters.orderType);
@@ -2850,7 +3391,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   setOptionalSearchParam(orderExportParams, "from", usersTabFilters.from);
   setOptionalSearchParam(orderExportParams, "to", usersTabFilters.to);
 
-  const usersTabHref = buildAdminUsersHref(usersTabFilters);
+  const usersTabHref = buildAdminUsersHref(usersRouteFilters);
   const orderExportHref = `/api/admin/orders/export?${orderExportParams.toString()}`;
   const currentOrderFilterSummary = buildAdminOrderFilterSummary(usersTabFilters, adminPageCopy, displayLocale);
 
@@ -2858,6 +3399,24 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     ? adminPageCopy.content.notices.saveFailed
     : seeded
       ? adminPageCopy.content.notices.seeded
+      : saved === "site-ad"
+        ? locale === "en"
+          ? "Site ad workspace was updated."
+          : locale === "zh-TW"
+            ? "站內廣告位已更新。"
+            : "站内广告位已更新。"
+      : saved === "site-ad-seeded"
+        ? locale === "en"
+          ? "Default site ads were initialized."
+          : locale === "zh-TW"
+            ? "預設站內廣告位已初始化。"
+            : "默认站内广告位已初始化。"
+      : saved === "author-application"
+        ? locale === "en"
+          ? "Author application queue was updated."
+          : locale === "zh-TW"
+            ? "作者申請隊列已更新。"
+            : "作者申请队列已更新。"
       : saved === "author"
         ? adminPageCopy.content.notices.authorSaved
         : saved === "banner"
@@ -3094,6 +3653,24 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : locale === "zh-TW"
           ? "代理與招商資料已更新。"
           : "代理与招商资料已更新。"
+      : saved === "agents-automation-policy"
+        ? locale === "en"
+          ? `Commission policy sync completed: ${agentChanged}/${agentProcessed} profiles updated.`
+          : locale === "zh-TW"
+            ? `佣金策略同步已完成：更新 ${agentChanged}/${agentProcessed} 個代理檔案。`
+            : `佣金策略同步已完成：更新 ${agentChanged}/${agentProcessed} 个代理档案。`
+      : saved === "agents-level-sync"
+        ? locale === "en"
+          ? `Level sync completed: ${agentChanged}/${agentProcessed} changed, ${agentPromoted} promoted, ${agentDemoted} demoted.`
+          : locale === "zh-TW"
+            ? `等級同步已完成：變更 ${agentChanged}/${agentProcessed}，升級 ${agentPromoted}，降級 ${agentDemoted}。`
+            : `等级同步已完成：变更 ${agentChanged}/${agentProcessed}，升级 ${agentPromoted}，降级 ${agentDemoted}。`
+      : saved === "agents-weekly-settlement"
+        ? locale === "en"
+          ? `Weekly settlement completed: ${agentCreated} requests created from ${agentProcessed} eligible agents, ${agentSkipped} skipped, threshold ${agentMinimum}.`
+          : locale === "zh-TW"
+            ? `週結算已完成：符合條件代理 ${agentProcessed}，建立 ${agentCreated} 筆申請，跳過 ${agentSkipped}，門檻 ${agentMinimum}。`
+            : `周结算已完成：符合条件代理 ${agentProcessed}，建立 ${agentCreated} 笔申请，跳过 ${agentSkipped}，门槛 ${agentMinimum}。`
       : saved === "agents-withdrawal-batch"
         ? locale === "en"
           ? `Batch withdrawal processing completed: ${agentProcessed}/${agentTotal} processed, ${agentSkipped} skipped, ${agentFailed} failed.`
@@ -3132,6 +3709,36 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
         : locale === "zh-TW"
           ? "系統配置已更新。"
           : "系统配置已更新。"
+      : saved === "push-campaign"
+        ? locale === "en"
+          ? "Push campaign draft was saved."
+          : locale === "zh-TW"
+            ? "推送活動草稿已保存。"
+            : "推送活动草稿已保存。"
+      : saved === "push-campaign-sent"
+        ? locale === "en"
+          ? "Push campaign was sent to the current audience."
+          : locale === "zh-TW"
+            ? "推送活動已發送到當前受眾。"
+            : "推送活动已发送到当前受众。"
+      : saved === "push-campaign-cancelled"
+        ? locale === "en"
+          ? "Push campaign was cancelled."
+          : locale === "zh-TW"
+            ? "推送活動已取消。"
+            : "推送活动已取消。"
+      : saved === "push-campaign-dispatched"
+        ? locale === "en"
+          ? `Scheduled push dispatch completed: ${pickPositiveInt(resolved.pushCampaignDispatched, 0)} sent, ${pickPositiveInt(resolved.pushCampaignFailed, 0)} failed.`
+          : locale === "zh-TW"
+            ? `定時推送派發已完成：成功 ${pickPositiveInt(resolved.pushCampaignDispatched, 0)} 條，失敗 ${pickPositiveInt(resolved.pushCampaignFailed, 0)} 條。`
+            : `定时推送派发已完成：成功 ${pickPositiveInt(resolved.pushCampaignDispatched, 0)} 条，失败 ${pickPositiveInt(resolved.pushCampaignFailed, 0)} 条。`
+      : saved === "audit-pruned"
+        ? locale === "en"
+          ? `Audit retention cleanup completed: ${auditDeletedCount} logs deleted, window ${auditRetentionDays || 180} days.`
+          : locale === "zh-TW"
+            ? `審計日誌清理已完成：刪除 ${auditDeletedCount} 條，保留視窗 ${auditRetentionDays || 180} 天。`
+            : `审计日志清理已完成：删除 ${auditDeletedCount} 条，保留窗口 ${auditRetentionDays || 180} 天。`
       : error === "system"
         ? locale === "en"
           ? "System action failed. Please check the form and try again."
@@ -3277,15 +3884,424 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     aiPage: resolvedAiPage,
     handoffStatus,
   };
-  const contentKnowledgeRouteState = {
+  const contentRouteState = {
+    contentSection,
+    contentPane,
     contentSport,
     contentAuthorId,
     contentPlanStatus,
     contentQuery,
+  };
+  const contentKnowledgeRouteState = {
+    ...contentRouteState,
     knowledgeStatus,
     knowledgeCategory,
     knowledgeQuery,
   };
+  const usersSection = requestedUsersSection ?? "overview";
+  const financeSection = requestedFinanceSection ?? "overview";
+  const agentsSection = requestedAgentsSection ?? "overview";
+  const systemSection = requestedSystemSection ?? "overview";
+  const reportsSection = requestedReportsSection ?? "overview";
+  const usersRouteState = {
+    ...usersDashboard.appliedFilters,
+    usersSection,
+  };
+  const financeRouteState = {
+    financeSection,
+    financeIssueScope,
+    financeIssueStatus,
+    financeIssueSeverity,
+    financeIssueType,
+    financeIssueQueue,
+    financeIssueQuery,
+  };
+  const agentsRouteState = {
+    agentsSection,
+  };
+  const systemRouteState = {
+    systemSection,
+  };
+  const reportsRouteState = {
+    reportsSection,
+    reportsWindow,
+    reportsFrom,
+    reportsTo,
+    reportsOrderType,
+    reportsDimension,
+  };
+  const showUsersOverview = usersSection === "overview";
+  const showUsersWorkspace = usersSection === "overview" || usersSection === "workspace";
+  const showUsersMembershipOrders = usersSection === "overview" || usersSection === "membership-orders";
+  const showUsersContentOrders = usersSection === "overview" || usersSection === "content-orders";
+  const showUsersPayments = usersSection === "overview" || usersSection === "payments";
+  const showUserFilters = usersSection !== "overview" && usersSection !== "payments" ? true : showUsersOverview;
+  const showFinanceRecharge = financeSection === "overview" || financeSection === "recharge";
+  const showFinanceReconciliation = financeSection === "overview" || financeSection === "reconciliation";
+  const showFinanceWallets = financeSection === "overview" || financeSection === "wallets";
+  const showAgentsOverview = agentsSection === "overview";
+  const showAgentsAutomation = agentsSection === "overview" || agentsSection === "automation";
+  const showAgentsNetwork = agentsSection === "overview" || agentsSection === "network";
+  const showAgentsWithdrawals = agentsSection === "overview" || agentsSection === "withdrawals";
+  const showSystemOverview = systemSection === "overview";
+  const showSystemSecurity = systemSection === "overview" || systemSection === "security";
+  const showSystemNotifications = systemSection === "overview" || systemSection === "notifications";
+  const showSystemRuntime = systemSection === "overview" || systemSection === "runtime";
+  const showReportsOverview = reportsSection === "overview";
+  const showReportsTrends = reportsSection === "overview" || reportsSection === "trends";
+  const showReportsBreakdowns = reportsSection === "overview" || reportsSection === "breakdowns";
+  const showReportsExports = reportsSection === "overview" || reportsSection === "exports";
+  const contentSectionItems: Array<{
+    key: AdminContentSection;
+    label: string;
+    description: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "overview",
+      label: locale === "en" ? "Overview" : locale === "zh-TW" ? "總覽" : "总览",
+      description:
+        locale === "en"
+          ? "Review homepage readiness, featured previews, and release checks in one place."
+          : locale === "zh-TW"
+            ? "集中查看首頁 readiness、焦點賽事預覽與發布前檢查。"
+            : "集中查看首页 readiness、焦点赛事预览与发布前检查。",
+      count:
+        locale === "en"
+          ? `${homepageReadinessIssueCount} issues`
+          : locale === "zh-TW"
+            ? `${homepageReadinessIssueCount} 項待處理`
+            : `${homepageReadinessIssueCount} 项待处理`,
+      href: buildAdminContentHref(contentRouteState, { contentSection: "overview" }),
+    },
+    {
+      key: "homepage",
+      label: locale === "en" ? "Homepage Ops" : locale === "zh-TW" ? "首頁運營" : "首页运营",
+      description:
+        locale === "en"
+          ? "Manage banners, featured matches, and homepage modules without mixing in content library work."
+          : locale === "zh-TW"
+            ? "集中管理 Banner、焦點賽事與首頁模組，不再和內容庫操作混在一起。"
+            : "集中管理 Banner、焦点赛事与首页模块，不再和内容库操作混在一起。",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(
+        homepageBanners.length + homepageFeaturedSlots.length + homepageModules.length,
+      ),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "homepage" }),
+    },
+    {
+      key: "library",
+      label: locale === "en" ? "Library" : locale === "zh-TW" ? "內容庫" : "内容库",
+      description:
+        locale === "en"
+          ? "Maintain authors, application review, and paid plan content in one editorial lane."
+          : locale === "zh-TW"
+            ? "把作者、投稿審核和付費計畫單維護收進同一條內容工作流。"
+            : "把作者、投稿审核和付费计划单维护收进同一条内容工作流。",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(
+        authorTeams.length + authorApplications.length + articlePlans.length,
+      ),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "library" }),
+    },
+    {
+      key: "distribution",
+      label: locale === "en" ? "Distribution" : locale === "zh-TW" ? "分發觸點" : "分发触点",
+      description:
+        locale === "en"
+          ? "Configure site announcements and page ad placements for real traffic entry points."
+          : locale === "zh-TW"
+            ? "配置站內公告與頁面廣告位，統一管理站內分發觸點。"
+            : "配置站内公告与页面广告位，统一管理站内分发触点。",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(
+        siteAnnouncements.length + siteAds.length,
+      ),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "distribution" }),
+    },
+    {
+      key: "assistant",
+      label: locale === "en" ? "AI Knowledge" : locale === "zh-TW" ? "AI 知識庫" : "AI 知识库",
+      description:
+        locale === "en"
+          ? "Maintain assistant FAQs, routing links, and reusable service answers."
+          : locale === "zh-TW"
+            ? "維護 AI 助手常見問答、路由入口與可複用客服回覆。"
+            : "维护 AI 助手常见问答、路由入口与可复用客服回复。",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(supportKnowledgeItems.length),
+      href: buildAdminContentHref(contentKnowledgeRouteState, { contentSection: "assistant" }),
+    },
+  ];
+  const activeContentSectionItem =
+    contentSectionItems.find((item) => item.key === contentSection) ?? contentSectionItems[0];
+  const adminCountFormatter = new Intl.NumberFormat(getIntlLocale(displayLocale));
+  const usersPaneItems: Array<{
+    key: AdminUsersSection;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "overview",
+      label: locale === "en" ? "Overview" : locale === "zh-TW" ? "總覽" : "总览",
+      count: adminCountFormatter.format(
+        usersDashboard.users.length +
+          (usersDashboard.membershipPagination?.total ?? usersDashboard.membershipOrders.length) +
+          (usersDashboard.contentPagination?.total ?? usersDashboard.contentOrders.length),
+      ),
+      href: buildAdminUsersHref(usersRouteFilters, { usersSection: "overview" }),
+    },
+    {
+      key: "workspace",
+      label: locale === "en" ? "Users" : locale === "zh-TW" ? "用戶工作台" : "用户工作台",
+      count: adminCountFormatter.format(usersDashboard.users.length),
+      href: buildAdminUsersHref(usersRouteFilters, { usersSection: "workspace" }),
+    },
+    {
+      key: "membership-orders",
+      label: locale === "en" ? "Membership" : locale === "zh-TW" ? "會員訂單" : "会员订单",
+      count: adminCountFormatter.format(
+        usersDashboard.membershipPagination?.total ?? usersDashboard.membershipOrders.length,
+      ),
+      href: buildAdminUsersHref(usersRouteFilters, { usersSection: "membership-orders" }),
+    },
+    {
+      key: "content-orders",
+      label: locale === "en" ? "Content" : locale === "zh-TW" ? "內容訂單" : "内容订单",
+      count: adminCountFormatter.format(
+        usersDashboard.contentPagination?.total ?? usersDashboard.contentOrders.length,
+      ),
+      href: buildAdminUsersHref(usersRouteFilters, { usersSection: "content-orders" }),
+    },
+    {
+      key: "payments",
+      label: locale === "en" ? "Payment Ops" : locale === "zh-TW" ? "支付運營" : "支付运营",
+      count: adminCountFormatter.format(paymentCallbackActivity.metrics.eventCount),
+      href: buildAdminUsersHref(usersRouteFilters, { usersSection: "payments" }),
+    },
+  ];
+  const financePaneItems: Array<{
+    key: AdminFinanceSection;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "overview",
+      label: locale === "en" ? "Overview" : locale === "zh-TW" ? "總覽" : "总览",
+      count: adminCountFormatter.format(
+        financeDashboard.coinPackages.length +
+          financeDashboard.rechargeOrders.length +
+          filteredFinanceReconciliationIssues.length +
+          financeDashboard.coinAccounts.length,
+      ),
+      href: buildAdminFinanceHref(financeRouteState, { financeSection: "overview" }),
+    },
+    {
+      key: "recharge",
+      label: locale === "en" ? "Recharge Ops" : locale === "zh-TW" ? "充值運營" : "充值运营",
+      count: adminCountFormatter.format(
+        financeDashboard.coinPackages.length + financeDashboard.rechargeOrders.length,
+      ),
+      href: buildAdminFinanceHref(financeRouteState, { financeSection: "recharge" }),
+    },
+    {
+      key: "reconciliation",
+      label: locale === "en" ? "Reconciliation" : locale === "zh-TW" ? "對帳中心" : "对账中心",
+      count: adminCountFormatter.format(filteredFinanceReconciliationIssues.length),
+      href: buildAdminFinanceHref(financeRouteState, { financeSection: "reconciliation" }),
+    },
+    {
+      key: "wallets",
+      label: locale === "en" ? "Wallets" : locale === "zh-TW" ? "帳戶流水" : "账户流水",
+      count: adminCountFormatter.format(
+        financeDashboard.coinAccounts.length + financeDashboard.recentLedgers.length,
+      ),
+      href: buildAdminFinanceHref(financeRouteState, { financeSection: "wallets" }),
+    },
+  ];
+  const agentsPaneItems: Array<{
+    key: AdminAgentsSection;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "overview",
+      label: locale === "en" ? "Overview" : locale === "zh-TW" ? "總覽" : "总览",
+      count: adminCountFormatter.format(
+        agentsDashboard.agents.length + agentsDashboard.withdrawals.length + agentsDashboard.applications.length,
+      ),
+      href: buildAdminAgentsHref(agentsRouteState, { agentsSection: "overview" }),
+    },
+    {
+      key: "automation",
+      label: locale === "en" ? "Automation" : locale === "zh-TW" ? "自動化" : "自动化",
+      count: adminCountFormatter.format(agentAutomationRuntime.policies.length),
+      href: buildAdminAgentsHref(agentsRouteState, { agentsSection: "automation" }),
+    },
+    {
+      key: "network",
+      label: locale === "en" ? "Recruiting" : locale === "zh-TW" ? "招商與代理" : "招商与代理",
+      count: adminCountFormatter.format(
+        agentsDashboard.applications.length +
+          agentsDashboard.leads.length +
+          agentsDashboard.campaigns.length +
+          agentsDashboard.agents.length,
+      ),
+      href: buildAdminAgentsHref(agentsRouteState, { agentsSection: "network" }),
+    },
+    {
+      key: "withdrawals",
+      label: locale === "en" ? "Withdrawals" : locale === "zh-TW" ? "提現結算" : "提现结算",
+      count: adminCountFormatter.format(
+        agentsDashboard.withdrawals.length + agentsDashboard.withdrawalExceptions.length,
+      ),
+      href: buildAdminAgentsHref(agentsRouteState, { agentsSection: "withdrawals" }),
+    },
+  ];
+  const systemPaneItems: Array<{
+    key: AdminSystemSection;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "overview",
+      label: locale === "en" ? "Overview" : locale === "zh-TW" ? "總覽" : "总览",
+      count: adminCountFormatter.format(
+        systemDashboard.policies.length +
+          systemDashboard.auditLogs.length +
+          systemDashboard.alertEvents.length +
+          systemDashboard.parameters.length,
+      ),
+      href: buildAdminSystemHref(systemRouteState, { systemSection: "overview" }),
+    },
+    {
+      key: "security",
+      label: locale === "en" ? "Security" : locale === "zh-TW" ? "安全與審計" : "安全与审计",
+      count: adminCountFormatter.format(systemDashboard.policies.length + systemDashboard.auditLogs.length),
+      href: buildAdminSystemHref(systemRouteState, { systemSection: "security" }),
+    },
+    {
+      key: "notifications",
+      label: locale === "en" ? "Notifications" : locale === "zh-TW" ? "通知告警" : "通知告警",
+      count: adminCountFormatter.format(
+        systemDashboard.alertEvents.length + pushDashboard.campaigns.length,
+      ),
+      href: buildAdminSystemHref(systemRouteState, { systemSection: "notifications" }),
+    },
+    {
+      key: "runtime",
+      label: locale === "en" ? "Runtime" : locale === "zh-TW" ? "運行配置" : "运行配置",
+      count: adminCountFormatter.format(systemDashboard.parameters.length),
+      href: buildAdminSystemHref(systemRouteState, { systemSection: "runtime" }),
+    },
+  ];
+  const reportsPaneItems: Array<{
+    key: AdminReportsSection;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "overview",
+      label: locale === "en" ? "Overview" : locale === "zh-TW" ? "總覽" : "总览",
+      count: adminCountFormatter.format(
+        reportsDashboard.metrics.length +
+          reportsDashboard.trendCards.length +
+          reportsDashboard.breakdownSections.length +
+          reportsDashboard.exportCards.length,
+      ),
+      href: buildAdminReportsHref(reportsRouteState, { reportsSection: "overview" }),
+    },
+    {
+      key: "trends",
+      label: locale === "en" ? "Trends" : locale === "zh-TW" ? "趨勢" : "趋势",
+      count: adminCountFormatter.format(
+        reportsDashboard.trendCards.length + reportsDashboard.longRangeRows.length,
+      ),
+      href: buildAdminReportsHref(reportsRouteState, { reportsSection: "trends" }),
+    },
+    {
+      key: "breakdowns",
+      label: locale === "en" ? "Breakdowns" : locale === "zh-TW" ? "拆分分析" : "拆分分析",
+      count: adminCountFormatter.format(
+        reportsDashboard.breakdownSections.length +
+          reportsDashboard.revenueRows.length +
+          reportsDashboard.growthRows.length +
+          reportsDashboard.agentBiRows.length,
+      ),
+      href: buildAdminReportsHref(reportsRouteState, { reportsSection: "breakdowns" }),
+    },
+    {
+      key: "exports",
+      label: locale === "en" ? "Exports" : locale === "zh-TW" ? "匯出中心" : "导出中心",
+      count: adminCountFormatter.format(reportsDashboard.exportCards.length + exportTasks.length),
+      href: buildAdminReportsHref(reportsRouteState, { reportsSection: "exports" }),
+    },
+  ];
+  const homepagePaneItems: Array<{
+    key: Extract<AdminContentPane, "featured" | "banners" | "modules">;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "featured",
+      label: locale === "en" ? "Featured Matches" : locale === "zh-TW" ? "焦點賽事" : "焦点赛事",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(homepageFeaturedSlots.length),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "homepage", contentPane: "featured" }),
+    },
+    {
+      key: "banners",
+      label: locale === "en" ? "Hero Banners" : locale === "zh-TW" ? "Hero Banner" : "Hero Banner",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(homepageBanners.length),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "homepage", contentPane: "banners" }),
+    },
+    {
+      key: "modules",
+      label: locale === "en" ? "Modules" : locale === "zh-TW" ? "首頁模組" : "首页模块",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(homepageModules.length),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "homepage", contentPane: "modules" }),
+    },
+  ];
+  const libraryPaneItems: Array<{
+    key: Extract<AdminContentPane, "authors" | "plans">;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "authors",
+      label: locale === "en" ? "Authors & Review" : locale === "zh-TW" ? "作者與審核" : "作者与审核",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(authorTeams.length + authorApplications.length),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "library", contentPane: "authors" }),
+    },
+    {
+      key: "plans",
+      label: locale === "en" ? "Plans" : locale === "zh-TW" ? "計畫單" : "计划单",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(filteredArticlePlans.length),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "library", contentPane: "plans" }),
+    },
+  ];
+  const distributionPaneItems: Array<{
+    key: Extract<AdminContentPane, "announcements" | "ads">;
+    label: string;
+    count: string;
+    href: string;
+  }> = [
+    {
+      key: "announcements",
+      label: locale === "en" ? "Announcements" : locale === "zh-TW" ? "站內公告" : "站内公告",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(siteAnnouncements.length),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "distribution", contentPane: "announcements" }),
+    },
+    {
+      key: "ads",
+      label: locale === "en" ? "Ad Placements" : locale === "zh-TW" ? "廣告位" : "广告位",
+      count: new Intl.NumberFormat(getIntlLocale(displayLocale)).format(siteAds.length),
+      href: buildAdminContentHref(contentRouteState, { contentSection: "distribution", contentPane: "ads" }),
+    },
+  ];
 
   const overviewCards = [
     {
@@ -3675,6 +4691,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           <SectionHeading eyebrow={adminPageCopy.content.eyebrow} title={adminPageCopy.content.title} />
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <form action="/api/admin/content/bootstrap" method="post">
+              <AdminHiddenFields values={contentRouteState} />
               <button
                 type="submit"
                 className="rounded-full bg-orange-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
@@ -3708,7 +4725,67 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {knowledgeNotice}
             </div>
           ) : null}
+          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-label">
+                  {locale === "en" ? "Content workflow" : locale === "zh-TW" ? "內容工作流" : "内容工作流"}
+                </p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {locale === "en"
+                    ? "Split homepage ops, library, distribution, and assistant work into shorter lanes."
+                    : locale === "zh-TW"
+                      ? "把首頁運營、內容庫、分發與 AI 助手拆成更短的工作區。"
+                      : "把首页运营、内容库、分发与 AI 助手拆成更短的工作区。"}
+                </h3>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">{activeContentSectionItem.description}</p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1.5 text-orange-100">
+                  {activeContentSectionItem.label}
+                </span>
+                <span className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5 text-slate-200">
+                  {activeContentSectionItem.count}
+                </span>
+              </div>
+            </div>
 
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              {contentSectionItems.map((item) => {
+                const isActive = item.key === contentSection;
+
+                return (
+                  <Link
+                    key={item.key}
+                    href={item.href}
+                    className={`rounded-[1.2rem] border p-4 transition ${
+                      isActive
+                        ? "border-orange-300/30 bg-orange-300/10 shadow-[0_0_0_1px_rgba(251,146,60,0.18)]"
+                        : "border-white/8 bg-slate-950/35 hover:border-white/20 hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className={`text-sm font-semibold ${isActive ? "text-white" : "text-slate-100"}`}>
+                        {item.label}
+                      </p>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] ${
+                          isActive ? "bg-orange-300/18 text-orange-100" : "bg-white/8 text-slate-300"
+                        }`}
+                      >
+                        {item.count}
+                      </span>
+                    </div>
+                    <p className={`mt-3 text-sm leading-6 ${isActive ? "text-orange-50/90" : "text-slate-400"}`}>
+                      {item.description}
+                    </p>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={isContentOverview ? "" : "hidden"}>
           <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -3947,7 +5024,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             )}
           </div>
+          </div>
 
+          <div className={isContentHomepage ? "" : "hidden"}>
+          <AdminContentPaneNav
+            title={locale === "en" ? "Homepage ops lanes" : locale === "zh-TW" ? "首頁運營子目錄" : "首页运营子目录"}
+            description={
+              locale === "en"
+                ? "Jump between featured matches, hero banners, and homepage modules so the page stays short during daily operations."
+                : locale === "zh-TW"
+                  ? "把焦點賽事、Hero Banner 與首頁模組拆成更短的操作面板，日常維護時不用一次看完整頁。"
+                  : "把焦点赛事、Hero Banner 与首页模块拆成更短的操作面板，日常维护时不用一次看完整页。"
+            }
+            items={homepagePaneItems}
+            activeKey={contentPane}
+          />
+          <div className={isHomepageFeaturedPane ? "" : "hidden"}>
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.92fr,1.08fr]">
             <form id="homepage-featured-slot-form" action="/api/admin/operations/homepage-featured-match-slots" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
@@ -3959,7 +5051,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 {currentFeaturedSlot ? (
                   <Link
-                    href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery })}
+                    href={buildAdminContentHref(contentRouteState)}
                     className="text-sm text-slate-400 transition hover:text-white"
                   >
                     {adminPageCopy.shared.cancelEdit}
@@ -3969,6 +5061,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
               <input type="hidden" name="intent" value="save" />
               <input type="hidden" name="id" value={currentFeaturedSlot?.id ?? ""} />
+              <AdminHiddenFields values={contentRouteState} />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
@@ -4057,12 +5150,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     )}
                     <div className="mt-4 flex flex-wrap gap-3">
                       <Link
-                        href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery }, { editFeaturedSlot: slot.id })}
+                        href={buildAdminContentHref(contentRouteState, { editFeaturedSlot: slot.id })}
                         className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
                       >
                         {adminPageCopy.content.featuredSlotList.edit}
                       </Link>
                       <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="move-up" />
                         <input type="hidden" name="id" value={slot.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -4070,6 +5164,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </button>
                       </form>
                       <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="move-down" />
                         <input type="hidden" name="id" value={slot.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -4077,6 +5172,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </button>
                       </form>
                       <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="toggle-status" />
                         <input type="hidden" name="id" value={slot.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
@@ -4084,6 +5180,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </button>
                       </form>
                       <form action="/api/admin/operations/homepage-featured-match-slots" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="delete" />
                         <input type="hidden" name="id" value={slot.id} />
                         <button type="submit" className="rounded-full border border-rose-400/20 px-3 py-1.5 text-sm text-rose-100 transition hover:border-rose-300/40 hover:text-white">
@@ -4101,9 +5198,28 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
+          </div>
+          </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
-            <form action="/api/admin/content/authors" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+          <div className={isContentLibrary ? "" : "hidden"}>
+          <AdminContentPaneNav
+            title={locale === "en" ? "Library lanes" : locale === "zh-TW" ? "內容庫子目錄" : "内容库子目录"}
+            description={
+              locale === "en"
+                ? "Separate author management from paid plan operations so editors can stay focused on one workflow at a time."
+                : locale === "zh-TW"
+                  ? "把作者審核與付費計畫單拆開，編輯日常維護時可以只看當前工作流。"
+                  : "把作者审核与付费计划单拆开，编辑日常维护时可以只看当前工作流。"
+            }
+            items={libraryPaneItems}
+            activeKey={contentPane}
+          />
+          <div className="mt-6 grid gap-6">
+            <form
+              action="/api/admin/content/authors"
+              method="post"
+              className={`${isLibraryAuthorsPane ? "" : "hidden"} rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5`}
+            >
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminPageCopy.content.authorForm.sectionLabel}</p>
@@ -4113,7 +5229,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 {currentAuthor ? (
                   <Link
-                    href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery })}
+                    href={buildAdminContentHref(contentRouteState)}
                     className="text-sm text-slate-400 transition hover:text-white"
                   >
                     {adminPageCopy.shared.cancelEdit}
@@ -4123,6 +5239,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
               <input type="hidden" name="intent" value="save" />
               <input type="hidden" name="id" value={currentAuthor?.id ?? ""} />
+              <AdminHiddenFields values={contentRouteState} />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 {(
@@ -4179,7 +5296,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </button>
             </form>
 
-            <form action="/api/admin/content/plans" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <form
+              action="/api/admin/content/plans"
+              method="post"
+              className={`${isLibraryPlansPane ? "" : "hidden"} rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5`}
+            >
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminPageCopy.content.planForm.sectionLabel}</p>
@@ -4189,7 +5310,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 {currentPlan ? (
                   <Link
-                    href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery })}
+                    href={buildAdminContentHref(contentRouteState)}
                     className="text-sm text-slate-400 transition hover:text-white"
                   >
                     {adminPageCopy.shared.cancelEdit}
@@ -4199,10 +5320,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
               <input type="hidden" name="intent" value="save" />
               <input type="hidden" name="id" value={currentPlan?.id ?? ""} />
-              <input type="hidden" name="contentSport" value={contentSport} />
-              <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-              <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-              <input type="hidden" name="contentQuery" value={contentQuery} />
+              <AdminHiddenFields values={contentRouteState} />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm md:col-span-2">
@@ -4312,14 +5430,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </form>
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[0.8fr,1.2fr]">
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+          <div className="mt-6 grid gap-6">
+            <div className={`${isLibraryAuthorsPane ? "" : "hidden"} rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5`}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminPageCopy.content.authorList.sectionLabel}</p>
                   <h3 className="mt-2 text-xl font-semibold text-white">{adminPageCopy.content.authorList.title}</h3>
                 </div>
-                <span className="text-sm text-slate-500">{adminPageCopy.content.authorList.count(authorTeams.length)}</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-sm text-slate-500">{adminPageCopy.content.authorList.count(authorTeams.length)}</span>
+                  <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
+                    {locale === "en"
+                      ? `${pendingAuthorApplicationCount} pending applications`
+                      : locale === "zh-TW"
+                        ? `${pendingAuthorApplicationCount} 個待審申請`
+                        : `${pendingAuthorApplicationCount} 个待审申请`}
+                  </span>
+                </div>
               </div>
 
               <div className="mt-5 grid gap-4">
@@ -4339,12 +5466,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     </p>
                     <div className="mt-4 flex flex-wrap gap-3">
                       <Link
-                        href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery }, { editAuthor: author.id })}
+                        href={buildAdminContentHref(contentRouteState, { editAuthor: author.id })}
                         className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
                       >
                         {adminPageCopy.content.authorList.edit}
                       </Link>
                       <form action="/api/admin/content/authors" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="toggle-status" />
                         <input type="hidden" name="id" value={author.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
@@ -4355,9 +5483,109 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   </div>
                 ))}
               </div>
+
+              <div className="mt-6 rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="section-label">
+                      {locale === "en" ? "Author applications" : locale === "zh-TW" ? "作者申請" : "作者申请"}
+                    </p>
+                    <h4 className="mt-2 text-lg font-semibold text-white">
+                      {locale === "en" ? "Application review queue" : locale === "zh-TW" ? "申請審核隊列" : "申请审核队列"}
+                    </h4>
+                  </div>
+                  <span className="text-sm text-slate-500">{authorApplications.length}</span>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  {authorApplications.map((application) => {
+                    const statusMeta = getAuthorApplicationStatusMeta(application.status, displayLocale);
+
+                    return (
+                      <div key={application.id} className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium text-white">{application.displayName}</p>
+                              <span className={`rounded-full px-3 py-1 text-xs ${statusMeta.className}`}>
+                                {statusMeta.label}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {application.email} | {application.focus}
+                              {application.userDisplayName ? ` | ${application.userDisplayName}` : ""}
+                            </p>
+                          </div>
+                          <span className="text-xs text-slate-500">
+                            {formatDateTime(application.createdAt, displayLocale)}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-sm leading-7 text-slate-300">{application.bio}</p>
+                        {application.sampleLinks ? (
+                          <p className="mt-3 break-all text-xs text-sky-100">{application.sampleLinks}</p>
+                        ) : null}
+                        {application.reviewNote ? (
+                          <p className="mt-3 text-xs text-slate-400">
+                            {locale === "en" ? "Review note" : locale === "zh-TW" ? "審核備註" : "审核备注"}: {application.reviewNote}
+                          </p>
+                        ) : null}
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <form action="/api/admin/content/author-applications" method="post" className="flex flex-wrap gap-3">
+                            <AdminHiddenFields values={contentRouteState} />
+                            <input type="hidden" name="id" value={application.id} />
+                            <input type="hidden" name="intent" value="approve" />
+                            <input type="hidden" name="reviewedByDisplayName" value={session.displayName} />
+                            <input
+                              type="text"
+                              name="reviewNote"
+                              placeholder={locale === "en" ? "Approval note" : locale === "zh-TW" ? "通過備註" : "通过备注"}
+                              className="min-w-44 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 text-sm text-white outline-none placeholder:text-slate-500"
+                            />
+                            <button type="submit" className="rounded-full border border-lime-300/25 bg-lime-300/10 px-3 py-1.5 text-sm text-lime-100 transition hover:border-lime-300/45 hover:bg-lime-300/15">
+                              {locale === "en" ? "Approve" : locale === "zh-TW" ? "通過" : "通过"}
+                            </button>
+                          </form>
+                          <form action="/api/admin/content/author-applications" method="post" className="flex flex-wrap gap-3">
+                            <AdminHiddenFields values={contentRouteState} />
+                            <input type="hidden" name="id" value={application.id} />
+                            <input type="hidden" name="intent" value="reject" />
+                            <input type="hidden" name="reviewedByDisplayName" value={session.displayName} />
+                            <input
+                              type="text"
+                              name="reviewNote"
+                              placeholder={locale === "en" ? "Rejection note" : locale === "zh-TW" ? "拒絕備註" : "拒绝备注"}
+                              className="min-w-44 rounded-full border border-white/10 bg-slate-950/60 px-3 py-1.5 text-sm text-white outline-none placeholder:text-slate-500"
+                            />
+                            <button type="submit" className="rounded-full border border-rose-300/25 bg-rose-400/10 px-3 py-1.5 text-sm text-rose-100 transition hover:border-rose-300/45 hover:bg-rose-400/15">
+                              {locale === "en" ? "Reject" : locale === "zh-TW" ? "拒絕" : "拒绝"}
+                            </button>
+                          </form>
+                          {application.approvedAuthorId ? (
+                            <Link
+                              href={buildAdminContentHref(contentRouteState, { editAuthor: application.approvedAuthorId })}
+                              className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
+                            >
+                              {locale === "en" ? "Open author profile" : locale === "zh-TW" ? "打開作者檔案" : "打开作者档案"}
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {authorApplications.length === 0 ? (
+                    <div className="rounded-[1rem] border border-dashed border-white/12 bg-white/[0.02] p-4 text-sm text-slate-400">
+                      {locale === "en"
+                        ? "No author applications yet."
+                        : locale === "zh-TW"
+                          ? "目前還沒有作者申請。"
+                          : "目前还没有作者申请。"}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className={`${isLibraryPlansPane ? "" : "hidden"} rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5`}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminPageCopy.content.planList.sectionLabel}</p>
@@ -4366,6 +5594,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 <div className="flex flex-wrap items-center gap-3">
                   <form action="/admin" method="get" className="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="tab" value="content" />
+                    <input type="hidden" name="contentSection" value={contentSection} />
+                    <input type="hidden" name="contentPane" value={contentPane ?? ""} />
                     <label className="text-sm text-slate-400">{adminPageCopy.content.planList.filterLabel}</label>
                     <select
                       name="contentSport"
@@ -4452,40 +5682,31 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
                       <Link
-                        href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery }, { editPlan: plan.id })}
+                        href={buildAdminContentHref(contentRouteState, { editPlan: plan.id })}
                         className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
                       >
                         {adminPageCopy.content.planList.edit}
                       </Link>
                       <form action="/api/admin/content/plans" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="toggle-status" />
                         <input type="hidden" name="id" value={plan.id} />
-                        <input type="hidden" name="contentSport" value={contentSport} />
-                        <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-                        <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-                        <input type="hidden" name="contentQuery" value={contentQuery} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-lime-300/30 hover:text-white">
                           {plan.status === "published" ? adminPageCopy.content.planList.switchToDraft : adminPageCopy.content.planList.publish}
                         </button>
                       </form>
                       <form action="/api/admin/content/plans" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="toggle-hot" />
                         <input type="hidden" name="id" value={plan.id} />
-                        <input type="hidden" name="contentSport" value={contentSport} />
-                        <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-                        <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-                        <input type="hidden" name="contentQuery" value={contentQuery} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
                           {plan.isHot ? adminPageCopy.content.planList.clearHot : adminPageCopy.content.planList.setHot}
                         </button>
                       </form>
                       <form action="/api/admin/content/plans" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="archive" />
                         <input type="hidden" name="id" value={plan.id} />
-                        <input type="hidden" name="contentSport" value={contentSport} />
-                        <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-                        <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-                        <input type="hidden" name="contentQuery" value={contentQuery} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-rose-300/30 hover:text-white">
                           {adminPageCopy.content.planList.archive}
                         </button>
@@ -4502,13 +5723,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           </div>
 
+          </div>
+
+          <div className={isHomepageBannersPane ? "" : "hidden"}>
           <div id="homepage-banner-form" className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
             <AdminBannerComposer
               locale={displayLocale}
               currentBanner={currentBanner}
               homepageBannerCount={homepageBanners.length}
               cancelLabel={adminPageCopy.shared.cancelEdit}
-              cancelHref="/admin?tab=content"
+              cancelHref={buildAdminContentHref(contentRouteState)}
+              hiddenFields={contentRouteState}
               formCopy={adminPageCopy.content.bannerForm}
               statusCopy={adminPageCopy.content.bannerList.statusLabels}
               seedTemplates={bannerSeedTemplates}
@@ -4753,6 +5978,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           <p className="mt-2 text-sm text-white">CN: {banner.titleZhCn}</p>
                           <p className="mt-1 text-sm text-slate-400">TW: {banner.titleZhTw}</p>
                           <p className="mt-1 text-sm text-slate-400">EN: {banner.titleEn}</p>
+                          <p className="mt-1 text-sm text-slate-400">TH: {banner.titleTh}</p>
+                          <p className="mt-1 text-sm text-slate-400">VI: {banner.titleVi}</p>
+                          <p className="mt-1 text-sm text-slate-400">HI: {banner.titleHi}</p>
                         </div>
                         <div className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-3 text-slate-300">
                           <p className="text-xs uppercase tracking-[0.22em] text-slate-500">{adminPageCopy.content.bannerList.activeWindow}</p>
@@ -4781,12 +6009,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
                       <div className="mt-4 flex flex-wrap gap-3">
                         <Link
-                          href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery }, { editBanner: banner.id })}
+                          href={buildAdminContentHref(contentRouteState, { editBanner: banner.id })}
                           className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
                         >
                           {adminPageCopy.content.bannerList.edit}
                         </Link>
                         <form action="/api/admin/operations/homepage-banners" method="post">
+                          <AdminHiddenFields values={contentRouteState} />
                           <input type="hidden" name="intent" value="duplicate" />
                           <input type="hidden" name="id" value={banner.id} />
                           <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-sky-300/30 hover:text-white">
@@ -4794,6 +6023,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           </button>
                         </form>
                         <form action="/api/admin/operations/homepage-banners" method="post">
+                          <AdminHiddenFields values={contentRouteState} />
                           <input type="hidden" name="intent" value="move-up" />
                           <input type="hidden" name="id" value={banner.id} />
                           <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -4801,6 +6031,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           </button>
                         </form>
                         <form action="/api/admin/operations/homepage-banners" method="post">
+                          <AdminHiddenFields values={contentRouteState} />
                           <input type="hidden" name="intent" value="move-down" />
                           <input type="hidden" name="id" value={banner.id} />
                           <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -4808,6 +6039,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           </button>
                         </form>
                         <form action="/api/admin/operations/homepage-banners" method="post">
+                          <AdminHiddenFields values={contentRouteState} />
                           <input type="hidden" name="intent" value="toggle-status" />
                           <input type="hidden" name="id" value={banner.id} />
                           <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
@@ -4830,6 +6062,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           </div>
 
+          </div>
+
+          <div className={isHomepageModulesPane ? "" : "hidden"}>
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
             <form id="homepage-module-form" action="/api/admin/operations/homepage-modules" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
@@ -4841,7 +6076,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 {currentModule ? (
                   <Link
-                    href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery })}
+                    href={buildAdminContentHref(contentRouteState)}
                     className="text-sm text-slate-400 transition hover:text-white"
                   >
                     {adminPageCopy.shared.cancelEdit}
@@ -4851,6 +6086,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
               <input type="hidden" name="intent" value="save" />
               <input type="hidden" name="id" value={currentModule?.id ?? ""} />
+              <AdminHiddenFields values={contentRouteState} />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
@@ -4922,6 +6158,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-slate-500">{adminPageCopy.content.moduleList.count(homepageModules.length)}</span>
                   <form action="/api/admin/operations/homepage-modules" method="post">
+                    <AdminHiddenFields values={contentRouteState} />
                     <input type="hidden" name="intent" value="bootstrap" />
                     <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
                       {adminPageCopy.content.moduleList.seedButton}
@@ -4952,12 +6189,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     </div>
                     <div className="mt-4 flex flex-wrap gap-3">
                       <Link
-                        href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery }, { editModule: module.id })}
+                        href={buildAdminContentHref(contentRouteState, { editModule: module.id })}
                         className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
                       >
                         {adminPageCopy.content.moduleList.edit}
                       </Link>
                       <form action="/api/admin/operations/homepage-modules" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="move-up" />
                         <input type="hidden" name="id" value={module.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -4965,6 +6203,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </button>
                       </form>
                       <form action="/api/admin/operations/homepage-modules" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="move-down" />
                         <input type="hidden" name="id" value={module.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -4972,6 +6211,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </button>
                       </form>
                       <form action="/api/admin/operations/homepage-modules" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="toggle-status" />
                         <input type="hidden" name="id" value={module.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
@@ -4985,6 +6225,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
                     <p>{adminPageCopy.content.moduleList.empty}</p>
                     <form action="/api/admin/operations/homepage-modules" method="post" className="mt-4">
+                      <AdminHiddenFields values={contentRouteState} />
                       <input type="hidden" name="intent" value="bootstrap" />
                       <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
                         {adminPageCopy.content.moduleList.seedButton}
@@ -4996,6 +6237,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           </div>
 
+          </div>
+
+          <div className={isContentDistribution ? "" : "hidden"}>
+          <AdminContentPaneNav
+            title={locale === "en" ? "Distribution lanes" : locale === "zh-TW" ? "分發觸點子目錄" : "分发触点子目录"}
+            description={
+              locale === "en"
+                ? "Split site-wide announcements from page ad placements so traffic touchpoints are easier to maintain."
+                : locale === "zh-TW"
+                  ? "把全站公告與頁面廣告位拆開，維護站內分發觸點時不必來回翻很長的列表。"
+                  : "把全站公告与页面广告位拆开，维护站内分发触点时不必来回翻很长的列表。"
+            }
+            items={distributionPaneItems}
+            activeKey={contentPane}
+          />
+          <div className={isDistributionAnnouncementsPane ? "" : "hidden"}>
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
             <form action="/api/admin/operations/site-announcements" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
@@ -5009,7 +6266,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
                 {currentAnnouncement ? (
                   <Link
-                    href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery })}
+                    href={buildAdminContentHref(contentRouteState)}
                     className="text-sm text-slate-400 transition hover:text-white"
                   >
                     {adminPageCopy.shared.cancelEdit}
@@ -5019,6 +6276,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
               <input type="hidden" name="intent" value="save" />
               <input type="hidden" name="id" value={currentAnnouncement?.id ?? ""} />
+              <AdminHiddenFields values={contentRouteState} />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
@@ -5062,9 +6320,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   ["titleZhCn", adminPageCopy.content.announcementForm.fields.titleZhCn, currentAnnouncement?.titleZhCn ?? ""],
                   ["titleZhTw", adminPageCopy.content.announcementForm.fields.titleZhTw, currentAnnouncement?.titleZhTw ?? ""],
                   ["titleEn", adminPageCopy.content.announcementForm.fields.titleEn, currentAnnouncement?.titleEn ?? ""],
+                  ["titleTh", locale === "en" ? "Title (Thai)" : locale === "zh-TW" ? "標題（泰語）" : "标题（泰语）", currentAnnouncement?.titleTh ?? ""],
+                  ["titleVi", locale === "en" ? "Title (Vietnamese)" : locale === "zh-TW" ? "標題（越語）" : "标题（越语）", currentAnnouncement?.titleVi ?? ""],
+                  ["titleHi", locale === "en" ? "Title (Hindi)" : locale === "zh-TW" ? "標題（印地語）" : "标题（印地语）", currentAnnouncement?.titleHi ?? ""],
                   ["ctaLabelZhCn", adminPageCopy.content.announcementForm.fields.ctaLabelZhCn, currentAnnouncement?.ctaLabelZhCn ?? ""],
                   ["ctaLabelZhTw", adminPageCopy.content.announcementForm.fields.ctaLabelZhTw, currentAnnouncement?.ctaLabelZhTw ?? ""],
                   ["ctaLabelEn", adminPageCopy.content.announcementForm.fields.ctaLabelEn, currentAnnouncement?.ctaLabelEn ?? ""],
+                  ["ctaLabelTh", locale === "en" ? "CTA (Thai)" : locale === "zh-TW" ? "按鈕（泰語）" : "按钮（泰语）", currentAnnouncement?.ctaLabelTh ?? ""],
+                  ["ctaLabelVi", locale === "en" ? "CTA (Vietnamese)" : locale === "zh-TW" ? "按鈕（越語）" : "按钮（越语）", currentAnnouncement?.ctaLabelVi ?? ""],
+                  ["ctaLabelHi", locale === "en" ? "CTA (Hindi)" : locale === "zh-TW" ? "按鈕（印地語）" : "按钮（印地语）", currentAnnouncement?.ctaLabelHi ?? ""],
                 ].map(([name, label, defaultValue]) => (
                   <label key={name} className="space-y-2 text-sm">
                     <span className="text-slate-400">{label}</span>
@@ -5075,6 +6339,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   ["messageZhCn", adminPageCopy.content.announcementForm.fields.messageZhCn, currentAnnouncement?.messageZhCn ?? ""],
                   ["messageZhTw", adminPageCopy.content.announcementForm.fields.messageZhTw, currentAnnouncement?.messageZhTw ?? ""],
                   ["messageEn", adminPageCopy.content.announcementForm.fields.messageEn, currentAnnouncement?.messageEn ?? ""],
+                  ["messageTh", locale === "en" ? "Message (Thai)" : locale === "zh-TW" ? "內容（泰語）" : "内容（泰语）", currentAnnouncement?.messageTh ?? ""],
+                  ["messageVi", locale === "en" ? "Message (Vietnamese)" : locale === "zh-TW" ? "內容（越語）" : "内容（越语）", currentAnnouncement?.messageVi ?? ""],
+                  ["messageHi", locale === "en" ? "Message (Hindi)" : locale === "zh-TW" ? "內容（印地語）" : "内容（印地语）", currentAnnouncement?.messageHi ?? ""],
                 ].map(([name, label, defaultValue]) => (
                   <label key={name} className="space-y-2 text-sm md:col-span-2">
                     <span className="text-slate-400">{label}</span>
@@ -5117,7 +6384,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     <div className="mt-4 grid gap-3 text-sm text-slate-300">
                       <p>{announcement.messageZhCn}</p>
                       <p className="text-slate-400">
-                        {adminPageCopy.content.announcementList.localePreview}: TW {announcement.titleZhTw} / EN {announcement.titleEn}
+                        {adminPageCopy.content.announcementList.localePreview}: TW {announcement.titleZhTw} / EN {announcement.titleEn} / TH {announcement.titleTh} / VI {announcement.titleVi} / HI {announcement.titleHi}
                       </p>
                       <p className="text-slate-400">
                         {adminPageCopy.content.announcementList.activeWindow}: {formatAnnouncementWindow(
@@ -5137,12 +6404,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
                     <div className="mt-4 flex flex-wrap gap-3">
                       <Link
-                        href={buildAdminContentHref({ contentSport, contentAuthorId, contentPlanStatus, contentQuery }, { editAnnouncement: announcement.id })}
+                        href={buildAdminContentHref(contentRouteState, { editAnnouncement: announcement.id })}
                         className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
                       >
                         {adminPageCopy.content.announcementList.edit}
                       </Link>
                       <form action="/api/admin/operations/site-announcements" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="move-up" />
                         <input type="hidden" name="id" value={announcement.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -5150,6 +6418,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </button>
                       </form>
                       <form action="/api/admin/operations/site-announcements" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="move-down" />
                         <input type="hidden" name="id" value={announcement.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
@@ -5157,6 +6426,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                         </button>
                       </form>
                       <form action="/api/admin/operations/site-announcements" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
                         <input type="hidden" name="intent" value="toggle-status" />
                         <input type="hidden" name="id" value={announcement.id} />
                         <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
@@ -5176,7 +6446,305 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
+          </div>
 
+          <div className={isDistributionAdsPane ? "" : "hidden"}>
+          <div className="mt-6 grid gap-6 xl:grid-cols-[0.92fr,1.08fr]">
+            <form action="/api/admin/operations/site-ads" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "Site Ads" : locale === "zh-TW" ? "站內廣告位" : "站内广告位"}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {currentSiteAd
+                      ? locale === "en"
+                        ? "Edit site ad slot"
+                        : locale === "zh-TW"
+                          ? "編輯站內廣告位"
+                          : "编辑站内广告位"
+                      : locale === "en"
+                        ? "Create site ad slot"
+                        : locale === "zh-TW"
+                          ? "新增站內廣告位"
+                          : "新增站内广告位"}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "Manage real page ad placements for home, member center, plans, database, match detail, and live boards with multilingual fallback copy."
+                      : locale === "zh-TW"
+                        ? "管理首頁、會員中心、計畫頁、資料庫、賽事詳情與直播頁的站內廣告位，支持多語文案與統一兜底。"
+                        : "管理首页、会员中心、计划页、资料库、赛事详情与直播页的站内广告位，支持多语文案与统一兜底。"}
+                  </p>
+                </div>
+                {currentSiteAd ? (
+                  <Link
+                    href={buildAdminContentHref(contentRouteState)}
+                    className="text-sm text-slate-400 transition hover:text-white"
+                  >
+                    {adminPageCopy.shared.cancelEdit}
+                  </Link>
+                ) : null}
+              </div>
+
+              <input type="hidden" name="intent" value="save" />
+              <input type="hidden" name="id" value={currentSiteAd?.id ?? ""} />
+              <AdminHiddenFields values={contentRouteState} />
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">Key</span>
+                  <input type="text" name="key" defaultValue={currentSiteAd?.key ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Placement" : locale === "zh-TW" ? "投放位置" : "投放位置"}</span>
+                  <select name="placement" defaultValue={currentSiteAd?.placement ?? "home-inline"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    {siteAdPlacements.map((placement) => (
+                      <option key={placement} value={placement}>
+                        {getSiteAdPlacementLabel(placement, locale)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Format" : locale === "zh-TW" ? "形式" : "形式"}</span>
+                  <select name="format" defaultValue={currentSiteAd?.format ?? "image"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="image">image</option>
+                    <option value="text">text</option>
+                    <option value="html-snippet">html-snippet</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Theme" : locale === "zh-TW" ? "視覺主題" : "视觉主题"}</span>
+                  <select name="theme" defaultValue={currentSiteAd?.theme ?? "neutral"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="neutral">neutral</option>
+                    <option value="highlight">highlight</option>
+                    <option value="premium">premium</option>
+                  </select>
+                </label>
+                <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4 text-xs text-slate-400 md:col-span-2">
+                  <p className="font-medium uppercase tracking-[0.18em] text-slate-500">
+                    {locale === "en" ? "Placement guide" : locale === "zh-TW" ? "投放說明" : "投放说明"}
+                  </p>
+                  <div className="mt-3 grid gap-2">
+                    {siteAdPlacements.map((placement) => (
+                      <p key={placement}>
+                        <span className="text-slate-200">{getSiteAdPlacementLabel(placement, locale)}</span>
+                        {" · "}
+                        {getSiteAdPlacementHint(placement, locale)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <span className="text-slate-400">Href</span>
+                  <input type="text" name="href" defaultValue={currentSiteAd?.href ?? ""} placeholder="/member" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <span className="text-slate-400">{locale === "en" ? "Image URL" : locale === "zh-TW" ? "圖片 URL" : "图片 URL"}</span>
+                  <input type="text" name="imageUrl" defaultValue={currentSiteAd?.imageUrl ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm md:col-span-2">
+                  <span className="text-slate-400">HTML snippet</span>
+                  <textarea name="htmlSnippet" rows={3} defaultValue={currentSiteAd?.htmlSnippet ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Sort order" : locale === "zh-TW" ? "排序" : "排序"}</span>
+                  <input type="number" name="sortOrder" defaultValue={currentSiteAd?.sortOrder ?? siteAds.length} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态"}</span>
+                  <select name="status" defaultValue={currentSiteAd?.status ?? "active"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                    <option value="active">{locale === "en" ? "Active" : locale === "zh-TW" ? "啟用" : "启用"}</option>
+                    <option value="inactive">{locale === "en" ? "Inactive" : locale === "zh-TW" ? "停用" : "停用"}</option>
+                  </select>
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Starts at" : locale === "zh-TW" ? "開始時間" : "开始时间"}</span>
+                  <input type="datetime-local" name="startsAt" defaultValue={toDateTimeLocalValue(currentSiteAd?.startsAt)} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                <label className="space-y-2 text-sm">
+                  <span className="text-slate-400">{locale === "en" ? "Ends at" : locale === "zh-TW" ? "結束時間" : "结束时间"}</span>
+                  <input type="datetime-local" name="endsAt" defaultValue={toDateTimeLocalValue(currentSiteAd?.endsAt)} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                </label>
+                {[
+                  ["titleZhCn", locale === "en" ? "Title (zh-CN)" : locale === "zh-TW" ? "標題（簡中）" : "标题（简中）", currentSiteAd?.titleZhCn ?? ""],
+                  ["titleZhTw", locale === "en" ? "Title (zh-TW)" : locale === "zh-TW" ? "標題（繁中）" : "标题（繁中）", currentSiteAd?.titleZhTw ?? ""],
+                  ["titleEn", "Title (EN)", currentSiteAd?.titleEn ?? ""],
+                  ["titleTh", "Title (TH)", currentSiteAd?.titleTh ?? ""],
+                  ["titleVi", "Title (VI)", currentSiteAd?.titleVi ?? ""],
+                  ["titleHi", "Title (HI)", currentSiteAd?.titleHi ?? ""],
+                ].map(([name, label, value]) => (
+                  <label key={String(name)} className="space-y-2 text-sm">
+                    <span className="text-slate-400">{String(label)}</span>
+                    <input type="text" name={String(name)} defaultValue={String(value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  </label>
+                ))}
+                {[
+                  ["descriptionZhCn", locale === "en" ? "Description (zh-CN)" : locale === "zh-TW" ? "說明（簡中）" : "说明（简中）", currentSiteAd?.descriptionZhCn ?? ""],
+                  ["descriptionZhTw", locale === "en" ? "Description (zh-TW)" : locale === "zh-TW" ? "說明（繁中）" : "说明（繁中）", currentSiteAd?.descriptionZhTw ?? ""],
+                  ["descriptionEn", "Description (EN)", currentSiteAd?.descriptionEn ?? ""],
+                  ["descriptionTh", "Description (TH)", currentSiteAd?.descriptionTh ?? ""],
+                  ["descriptionVi", "Description (VI)", currentSiteAd?.descriptionVi ?? ""],
+                  ["descriptionHi", "Description (HI)", currentSiteAd?.descriptionHi ?? ""],
+                ].map(([name, label, value]) => (
+                  <label key={String(name)} className="space-y-2 text-sm md:col-span-2">
+                    <span className="text-slate-400">{String(label)}</span>
+                    <textarea name={String(name)} rows={2} defaultValue={String(value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  </label>
+                ))}
+                {[
+                  ["ctaLabelZhCn", "CTA (zh-CN)", currentSiteAd?.ctaLabelZhCn ?? ""],
+                  ["ctaLabelZhTw", "CTA (zh-TW)", currentSiteAd?.ctaLabelZhTw ?? ""],
+                  ["ctaLabelEn", "CTA (EN)", currentSiteAd?.ctaLabelEn ?? ""],
+                  ["ctaLabelTh", "CTA (TH)", currentSiteAd?.ctaLabelTh ?? ""],
+                  ["ctaLabelVi", "CTA (VI)", currentSiteAd?.ctaLabelVi ?? ""],
+                  ["ctaLabelHi", "CTA (HI)", currentSiteAd?.ctaLabelHi ?? ""],
+                ].map(([name, label, value]) => (
+                  <label key={String(name)} className="space-y-2 text-sm">
+                    <span className="text-slate-400">{String(label)}</span>
+                    <input type="text" name={String(name)} defaultValue={String(value)} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  </label>
+                ))}
+              </div>
+
+              <button type="submit" className="mt-5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300">
+                {currentSiteAd
+                  ? locale === "en"
+                    ? "Save site ad"
+                    : locale === "zh-TW"
+                      ? "保存廣告位"
+                      : "保存广告位"
+                  : locale === "en"
+                    ? "Create site ad"
+                    : locale === "zh-TW"
+                      ? "建立廣告位"
+                      : "建立广告位"}
+              </button>
+            </form>
+
+            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "Site Ads" : locale === "zh-TW" ? "站內廣告位" : "站内广告位"}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Placement queue" : locale === "zh-TW" ? "投放列表" : "投放列表"}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-slate-500">{siteAds.length}</span>
+                  <form action="/api/admin/operations/site-ads" method="post">
+                    <AdminHiddenFields values={contentRouteState} />
+                    <input type="hidden" name="intent" value="bootstrap" />
+                    <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
+                      {locale === "en" ? "Import defaults" : locale === "zh-TW" ? "導入預設位" : "导入默认位"}
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4">
+                {siteAds.map((ad) => {
+                  const ctr = ad.impressionCount > 0 ? `${((ad.clickCount / ad.impressionCount) * 100).toFixed(1)}%` : "--";
+
+                  return (
+                    <div key={ad.id} className="rounded-[1.2rem] border border-white/8 bg-slate-950/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-white">{ad.titleZhCn}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {ad.key} | {getSiteAdPlacementLabel(ad.placement, locale)} | {ad.format} | {ad.theme}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${ad.status === "active" ? "bg-lime-300/12 text-lime-100" : "bg-white/8 text-slate-300"}`}>
+                          {ad.status}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-sm text-slate-300">{ad.descriptionZhCn}</p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{locale === "en" ? "Order" : locale === "zh-TW" ? "排序" : "排序"} {ad.sortOrder}</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{locale === "en" ? "Impressions" : locale === "zh-TW" ? "曝光" : "曝光"} {ad.impressionCount}</span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{locale === "en" ? "Clicks" : locale === "zh-TW" ? "點擊" : "点击"} {ad.clickCount}</span>
+                        <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1 text-orange-100">CTR {ctr}</span>
+                        {ad.href ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">{ad.href}</span> : null}
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+                        <p>
+                          {locale === "en" ? "Window" : locale === "zh-TW" ? "生效時間" : "生效时间"}:{" "}
+                          <span className="text-slate-300">
+                            {formatAnnouncementWindow(ad.startsAt, ad.endsAt, displayLocale, locale === "en" ? "Always on" : locale === "zh-TW" ? "長期展示" : "长期展示")}
+                          </span>
+                        </p>
+                        <p>
+                          {locale === "en" ? "Last activity" : locale === "zh-TW" ? "最近活動" : "最近活动"}:{" "}
+                          <span className="text-slate-300">
+                            {ad.lastClickAt
+                              ? formatDateTime(ad.lastClickAt, displayLocale)
+                              : ad.lastImpressionAt
+                                ? formatDateTime(ad.lastImpressionAt, displayLocale)
+                                : "--"}
+                          </span>
+                        </p>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-500">
+                        TW {ad.titleZhTw} / EN {ad.titleEn} / TH {ad.titleTh} / VI {ad.titleVi} / HI {ad.titleHi}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <Link
+                          href={buildAdminContentHref(contentRouteState, { editSiteAd: ad.id })}
+                          className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30"
+                        >
+                          {locale === "en" ? "Edit" : locale === "zh-TW" ? "編輯" : "编辑"}
+                      </Link>
+                      <form action="/api/admin/operations/site-ads" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
+                        <input type="hidden" name="intent" value="move-up" />
+                        <input type="hidden" name="id" value={ad.id} />
+                          <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
+                            {locale === "en" ? "Move up" : locale === "zh-TW" ? "上移" : "上移"}
+                          </button>
+                      </form>
+                      <form action="/api/admin/operations/site-ads" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
+                        <input type="hidden" name="intent" value="move-down" />
+                        <input type="hidden" name="id" value={ad.id} />
+                          <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-white/30 hover:text-white">
+                            {locale === "en" ? "Move down" : locale === "zh-TW" ? "下移" : "下移"}
+                          </button>
+                      </form>
+                      <form action="/api/admin/operations/site-ads" method="post">
+                        <AdminHiddenFields values={contentRouteState} />
+                        <input type="hidden" name="intent" value="toggle-status" />
+                        <input type="hidden" name="id" value={ad.id} />
+                          <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-orange-300/30 hover:text-white">
+                            {ad.status === "active"
+                              ? locale === "en"
+                                ? "Disable"
+                                : locale === "zh-TW"
+                                  ? "停用"
+                                  : "停用"
+                              : locale === "en"
+                                ? "Enable"
+                                : locale === "zh-TW"
+                                  ? "啟用"
+                                  : "启用"}
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  );
+                })}
+                {siteAds.length === 0 ? (
+                  <div className="rounded-[1.2rem] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-slate-400">
+                    {locale === "en" ? "No site ads yet. Import defaults or create the first slot." : locale === "zh-TW" ? "目前沒有站內廣告位，可先導入預設位或建立第一條。" : "目前没有站内广告位，可先导入默认位或建立第一条。"}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          </div>
+
+          </div>
+
+          <div className={isContentAssistant ? "" : "hidden"}>
           <div className="mt-6 grid gap-6 xl:grid-cols-[0.92fr,1.28fr]">
             <form action="/api/admin/operations/site-assistant-knowledge" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -5207,13 +6775,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
               </div>
               <input type="hidden" name="id" value={currentKnowledgeItem?.id ?? ""} />
-              <input type="hidden" name="contentSport" value={contentSport} />
-              <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-              <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-              <input type="hidden" name="contentQuery" value={contentQuery} />
-              <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
-              <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
-              <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
+              <AdminHiddenFields values={contentKnowledgeRouteState} />
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label className="space-y-2 text-sm">
@@ -5296,6 +6858,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
               <form action="/admin" method="get" className="mt-4 grid gap-3 md:grid-cols-[1.1fr,0.8fr,0.8fr,auto,auto]">
                 <input type="hidden" name="tab" value="content" />
+                <input type="hidden" name="contentSection" value={contentSection} />
                 <input type="hidden" name="contentSport" value={contentSport} />
                 <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
                 <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
@@ -5391,43 +6954,25 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                           {assistantKnowledgeCopy.edit}
                         </Link>
                         <form action="/api/admin/operations/site-assistant-knowledge" method="post">
+                          <AdminHiddenFields values={contentKnowledgeRouteState} />
                           <input type="hidden" name="intent" value="move-up" />
                           <input type="hidden" name="id" value={item.id} />
-                          <input type="hidden" name="contentSport" value={contentSport} />
-                          <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-                          <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-                          <input type="hidden" name="contentQuery" value={contentQuery} />
-                          <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
-                          <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
-                          <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
                           <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
                             {assistantKnowledgeCopy.moveUp}
                           </button>
                         </form>
                         <form action="/api/admin/operations/site-assistant-knowledge" method="post">
+                          <AdminHiddenFields values={contentKnowledgeRouteState} />
                           <input type="hidden" name="intent" value="move-down" />
                           <input type="hidden" name="id" value={item.id} />
-                          <input type="hidden" name="contentSport" value={contentSport} />
-                          <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-                          <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-                          <input type="hidden" name="contentQuery" value={contentQuery} />
-                          <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
-                          <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
-                          <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
                           <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
                             {assistantKnowledgeCopy.moveDown}
                           </button>
                         </form>
                         <form action="/api/admin/operations/site-assistant-knowledge" method="post">
+                          <AdminHiddenFields values={contentKnowledgeRouteState} />
                           <input type="hidden" name="intent" value="toggle-status" />
                           <input type="hidden" name="id" value={item.id} />
-                          <input type="hidden" name="contentSport" value={contentSport} />
-                          <input type="hidden" name="contentAuthorId" value={contentAuthorId} />
-                          <input type="hidden" name="contentPlanStatus" value={contentPlanStatus} />
-                          <input type="hidden" name="contentQuery" value={contentQuery} />
-                          <input type="hidden" name="knowledgeStatus" value={knowledgeStatus} />
-                          <input type="hidden" name="knowledgeCategory" value={knowledgeCategory} />
-                          <input type="hidden" name="knowledgeQuery" value={knowledgeQuery} />
                           <button type="submit" className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-100 transition hover:border-orange-300/30 hover:text-white">
                             {item.status === "active" ? assistantKnowledgeCopy.disable : assistantKnowledgeCopy.enable}
                           </button>
@@ -5444,6 +6989,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 ) : null}
               </div>
             </div>
+          </div>
           </div>
 
         </section>
@@ -5475,7 +7021,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           ) : null}
 
-          <div className="mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-5">
+          <AdminContentPaneNav
+            title={locale === "en" ? "User order lanes" : locale === "zh-TW" ? "用戶訂單子目錄" : "用户订单子目录"}
+            description={
+              locale === "en"
+                ? "Switch between user workspace, membership orders, content orders, and payment callbacks without scrolling through the whole console."
+                : locale === "zh-TW"
+                  ? "把用戶工作台、會員訂單、內容訂單與支付回調拆成更短的操作子目錄。"
+                  : "把用户工作台、会员订单、内容订单与支付回调拆成更短的操作子目录。"
+            }
+            items={usersPaneItems}
+            activeKey={usersSection}
+          />
+
+          <div className={showUsersOverview ? "mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="section-label">{adminPageCopy.users.eyebrow}</p>
@@ -5499,7 +7058,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           </div>
 
-          <div className="mt-6 rounded-[1.4rem] border border-sky-300/15 bg-sky-400/10 p-4">
+          <div className={showUsersPayments ? "mt-6 rounded-[1.4rem] border border-sky-300/15 bg-sky-400/10 p-4" : "hidden"}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="section-label">{paymentRuntimeCopy.runtimeTitle}</p>
@@ -5558,7 +7117,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           </div>
 
-          <div className="mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-4">
+          <div className={showUsersPayments ? "mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-4" : "hidden"}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="section-label">{paymentRuntimeCopy.callbacks.title}</p>
@@ -5645,9 +7204,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
           </div>
 
-          <div className="mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-4">
+          <div className={showUserFilters ? "mt-6 rounded-[1.4rem] border border-white/8 bg-white/[0.03] p-4" : "hidden"}>
             <form className="grid gap-3 lg:grid-cols-[1.15fr,0.75fr,0.75fr,0.95fr,0.95fr,auto,auto,auto]" action="/admin" method="get">
               <input type="hidden" name="tab" value="users" />
+              <input type="hidden" name="usersSection" value={usersSection} />
               <input
                 type="text"
                 name="q"
@@ -5680,7 +7240,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               <button type="submit" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300">
                 {adminPageCopy.users.filters.apply}
               </button>
-              <Link href="/admin?tab=users" className="inline-flex items-center justify-center rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+              <Link href={`/admin?tab=users&usersSection=${usersSection}`} className="inline-flex items-center justify-center rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
                 {adminPageCopy.users.filters.reset}
               </Link>
               <Link href={orderExportHref} className="inline-flex items-center justify-center rounded-full border border-sky-300/25 bg-sky-400/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/45 hover:bg-sky-400/20">
@@ -5692,8 +7252,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </p>
           </div>
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+          <div className={(showUsersWorkspace || showUsersMembershipOrders || showUsersContentOrders) ? "mt-6 grid gap-6 xl:grid-cols-[1.1fr,0.9fr]" : "hidden"}>
+            <div className={showUsersWorkspace ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminPageCopy.users.userList.sectionLabel}</p>
@@ -5776,7 +7336,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
 
             <div className="space-y-6">
-              {usersTabFilters.orderType !== "content" ? (
+              {showUsersMembershipOrders && usersTabFilters.orderType !== "content" ? (
                 <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -5899,7 +7459,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
               ) : null}
 
-              {usersTabFilters.orderType !== "membership" ? (
+              {showUsersContentOrders && usersTabFilters.orderType !== "membership" ? (
                 <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -6051,7 +7611,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {financeNotice}
             </div>
           ) : null}
-          <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
+          <AdminContentPaneNav
+            title={locale === "en" ? "Finance lanes" : locale === "zh-TW" ? "球幣財務子目錄" : "球币财务子目录"}
+            description={
+              locale === "en"
+                ? "Jump between recharge operations, reconciliation, and wallet ledgers with the same short navigation used in content ops."
+                : locale === "zh-TW"
+                  ? "把充值運營、對帳中心與帳戶流水拆成更短的財務子目錄。"
+                  : "把充值运营、对账中心与账户流水拆成更短的财务子目录。"
+            }
+            items={financePaneItems}
+            activeKey={financeSection}
+          />
+          <div className={showFinanceRecharge ? "mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.25fr]" : "hidden"}>
             <div className="grid gap-6">
               <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -6409,18 +7981,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-3">
+          <div className={showFinanceRecharge ? "mt-6 grid gap-6 xl:grid-cols-3" : "hidden"}>
             <ExpansionRowsPanel title={adminExpansion.finance.coinPackages.title} rows={financePackageRows} />
             <FinanceRechargeOrdersPanel title={adminExpansion.finance.rechargeOrders.title} locale={locale} orders={financeDashboard.rechargeOrders} />
             <ExpansionRowsPanel title={adminExpansion.finance.settlements.title} rows={financeSettlementRows} />
           </div>
-          <div className="mt-6">
+          <div className={showFinanceReconciliation ? "mt-6" : "hidden"}>
             <ExpansionRowsPanel
               title={locale === "en" ? "Recharge reconciliation" : locale === "zh-TW" ? "充值對帳總覽" : "充值对账总览"}
               rows={financeDashboard.reconciliationRows}
             />
           </div>
-          <div className="mt-6">
+          <div className={showFinanceReconciliation ? "mt-6" : "hidden"}>
             <FinanceReconciliationIssuesPanel
               title={locale === "en" ? "Reconciliation issue center" : locale === "zh-TW" ? "對帳問題中心" : "对账问题中心"}
               locale={locale}
@@ -6435,9 +8007,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 query: financeIssueQuery,
               }}
               summary={financeDashboard.reconciliationSummary}
+              financeSection={financeSection}
             />
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showFinanceWallets ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <FinanceCoinAccountsPanel
               title={locale === "en" ? "Top coin balances" : locale === "zh-TW" ? "球幣餘額帳戶" : "球币余额账户"}
               locale={locale}
@@ -6468,13 +8041,142 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {agentsNotice}
             </div>
           ) : null}
-          <div className="mt-6">
+          <AdminContentPaneNav
+            title={locale === "en" ? "Agent lanes" : locale === "zh-TW" ? "代理招商子目錄" : "代理招商子目录"}
+            description={
+              locale === "en"
+                ? "Separate automation, recruiting operations, and withdrawal settlement into shorter admin lanes."
+                : locale === "zh-TW"
+                  ? "把自動化、招商運營與提現結算拆成更短的代理子目錄。"
+                  : "把自动化、招商运营与提现结算拆成更短的代理子目录。"
+            }
+            items={agentsPaneItems}
+            activeKey={agentsSection}
+          />
+          <div className={showAgentsOverview ? "mt-6" : "hidden"}>
             <ExpansionMetricGrid items={agentsDashboard.metrics} />
           </div>
-          <div className="mt-6">
+          <div className={showAgentsOverview ? "mt-6" : "hidden"}>
             <ExpansionMetricGrid items={agentsDashboard.performanceMetrics} />
           </div>
-          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+          <div className={showAgentsAutomation ? "mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="section-label">{locale === "en" ? "Automation" : locale === "zh-TW" ? "自動化運營" : "自动化运营"}</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {locale === "en" ? "Agent ladder and weekly settlement" : locale === "zh-TW" ? "代理階梯與週結算" : "代理阶梯与周结算"}
+                </h3>
+                <p className="mt-2 max-w-3xl text-sm text-slate-400">
+                  {locale === "en"
+                    ? "Run ladder synchronization, commission policy refresh, and weekly withdrawal creation from one runtime panel."
+                    : locale === "zh-TW"
+                      ? "在同一個面板中執行代理階梯同步、佣金策略刷新與週結算提現申請建立。"
+                      : "在同一个面板中执行代理阶梯同步、佣金策略刷新与周结算提现申请建立。"}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+                <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1.5 text-orange-100">
+                  {locale === "en" ? "Weekly threshold" : locale === "zh-TW" ? "週結算門檻" : "周结算门槛"} {agentAutomationRuntime.weeklySettlementMinimum}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
+                  {locale === "en" ? "Policies" : locale === "zh-TW" ? "階梯策略" : "阶梯策略"} {agentAutomationRuntime.policies.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-[1.05fr,0.95fr]">
+              <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  {locale === "en" ? "Ladder policy" : locale === "zh-TW" ? "階梯規則" : "阶梯规则"}
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {agentAutomationRuntime.policies.map((policy) => (
+                    <div key={`agent-policy-${policy.level}`} className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-3">
+                      <p className="font-medium text-white">{getAgentLevelLabel(policy.level, locale)}</p>
+                      <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                        <p>{locale === "en" ? "Direct" : locale === "zh-TW" ? "直推" : "直推"} {formatPercentValue(policy.directRate)}</p>
+                        <p>{locale === "en" ? "Downstream" : locale === "zh-TW" ? "下級" : "下级"} {formatPercentValue(policy.downstreamRate)}</p>
+                        <p>{locale === "en" ? "Min users" : locale === "zh-TW" ? "最低直推" : "最低直推"} {policy.minReferredUsers}</p>
+                        <p>{locale === "en" ? "Min recharge" : locale === "zh-TW" ? "最低充值" : "最低充值"} CNY {formatAdminCoinAmount(policy.minMonthlyRecharge, displayLocale)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                  {locale === "en" ? "Automation actions" : locale === "zh-TW" ? "自動化動作" : "自动化动作"}
+                </p>
+                <div className="mt-4 grid gap-3">
+                  <form action="/api/admin/agents" method="post" className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-4">
+                    <input type="hidden" name="intent" value="sync-agent-commission-policy" />
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{locale === "en" ? "Sync commission policy" : locale === "zh-TW" ? "同步佣金策略" : "同步佣金策略"}</p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {locale === "en" ? "Refresh all agent rates from the current ladder table." : locale === "zh-TW" ? "按目前階梯表刷新所有代理的佣金比例。" : "按当前阶梯表刷新所有代理的佣金比例。"}
+                        </p>
+                      </div>
+                      <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                        {locale === "en" ? "Run now" : locale === "zh-TW" ? "立即執行" : "立即执行"}
+                      </button>
+                    </div>
+                  </form>
+                  <form action="/api/admin/agents" method="post" className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-4">
+                    <input type="hidden" name="intent" value="run-agent-level-sync" />
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{locale === "en" ? "Run ladder sync" : locale === "zh-TW" ? "執行階梯同步" : "执行阶梯同步"}</p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {locale === "en" ? "Promote or demote active agents according to referred users and monthly recharge thresholds." : locale === "zh-TW" ? "根據直推用戶與月充值門檻，自動升降活躍代理等級。" : "根据直推用户与月充值门槛，自动升降活跃代理等级。"}
+                        </p>
+                      </div>
+                      <button type="submit" className="rounded-full border border-orange-300/20 bg-orange-300/10 px-4 py-2 text-sm text-orange-100 transition hover:border-orange-300/35 hover:bg-orange-300/15">
+                        {locale === "en" ? "Run sync" : locale === "zh-TW" ? "執行同步" : "执行同步"}
+                      </button>
+                    </div>
+                  </form>
+                  <form action="/api/admin/agents" method="post" className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-4">
+                    <input type="hidden" name="intent" value="run-agent-weekly-settlement" />
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{locale === "en" ? "Run weekly settlement" : locale === "zh-TW" ? "執行週結算" : "执行周结算"}</p>
+                        <p className="mt-2 text-sm text-slate-400">
+                          {locale === "en" ? "Create reviewing withdrawals for active agents over the weekly settlement threshold." : locale === "zh-TW" ? "為超過週結算門檻的活躍代理建立待審提現申請。" : "为超过周结算门槛的活跃代理建立待审提现申请。"}
+                        </p>
+                      </div>
+                      <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-4 py-2 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
+                        {locale === "en" ? "Create batch" : locale === "zh-TW" ? "建立批次" : "建立批次"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-3 text-sm text-slate-300">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                      {locale === "en" ? "Last level sync" : locale === "zh-TW" ? "最近階梯同步" : "最近阶梯同步"}
+                    </p>
+                    <p className="mt-2 font-medium text-white">
+                      {agentAutomationRuntime.lastLevelSyncAt ? formatDateTime(agentAutomationRuntime.lastLevelSyncAt, displayLocale) : "--"}
+                    </p>
+                    {agentAutomationRuntime.lastLevelSyncDetail ? <p className="mt-2 text-xs text-slate-400">{agentAutomationRuntime.lastLevelSyncDetail}</p> : null}
+                  </div>
+                  <div className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-3 text-sm text-slate-300">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                      {locale === "en" ? "Last weekly settlement" : locale === "zh-TW" ? "最近週結算" : "最近周结算"}
+                    </p>
+                    <p className="mt-2 font-medium text-white">
+                      {agentAutomationRuntime.lastWeeklySettlementAt ? formatDateTime(agentAutomationRuntime.lastWeeklySettlementAt, displayLocale) : "--"}
+                    </p>
+                    {agentAutomationRuntime.lastWeeklySettlementDetail ? <p className="mt-2 text-xs text-slate-400">{agentAutomationRuntime.lastWeeklySettlementDetail}</p> : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className={showAgentsNetwork ? "mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="section-label">
@@ -6539,7 +8241,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               ) : null}
             </div>
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showAgentsNetwork ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -6659,7 +8361,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
-          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+          <div className={showAgentsNetwork ? "mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="section-label">{adminExpansion.agents.withdrawals.title}</p>
@@ -6759,7 +8461,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               ) : null}
             </div>
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showAgentsNetwork ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -6902,7 +8604,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showAgentsNetwork ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -7039,7 +8741,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showAgentsWithdrawals ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -7213,7 +8915,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showAgentsWithdrawals ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <form action="/api/admin/agents" method="post" className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -7652,11 +9354,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               {systemNotice}
             </div>
           ) : null}
-          <div className="mt-6">
+          <AdminContentPaneNav
+            title={locale === "en" ? "System lanes" : locale === "zh-TW" ? "系統安全子目錄" : "系统安全子目录"}
+            description={
+              locale === "en"
+                ? "Split security, alerts, and runtime configuration into shorter operating lanes, matching the content workspace pattern."
+                : locale === "zh-TW"
+                  ? "把安全、通知告警與運行配置拆成更短的系統子目錄，和內容管理保持一致。"
+                  : "把安全、通知告警与运行配置拆成更短的系统子目录，和内容管理保持一致。"
+            }
+            items={systemPaneItems}
+            activeKey={systemSection}
+          />
+          <div className={showSystemOverview ? "mt-6" : "hidden"}>
             <ExpansionMetricGrid items={systemDashboard.metrics} />
           </div>
           <div className="mt-6 grid gap-6 xl:grid-cols-2">
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className={showSystemSecurity ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminExpansion.system.roleMatrix.title}</p>
@@ -7707,7 +9421,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className={showSystemSecurity ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminExpansion.system.auditLogs.title}</p>
@@ -7746,7 +9460,65 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className={showSystemSecurity ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "Audit retention" : locale === "zh-TW" ? "審計保留策略" : "审计保留策略"}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Retention window and cleanup" : locale === "zh-TW" ? "保留窗口與清理" : "保留窗口与清理"}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "Keep audit logs in UTC+0 and prune stale records with the current retention policy."
+                      : locale === "zh-TW"
+                        ? "以 UTC+0 為統一時區保留審計日誌，並按當前策略清理過期記錄。"
+                        : "以 UTC+0 为统一时区保留审计日志，并按当前策略清理过期记录。"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
+                    {locale === "en" ? "Current retention" : locale === "zh-TW" ? "當前保留" : "当前保留"} {auditRetentionDaysValue}d
+                  </span>
+                  <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sky-100">
+                    {appVersionInfo.timezoneLabel}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <form action="/api/admin/system" method="post" className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                  <input type="hidden" name="intent" value="save-parameter" />
+                  <input type="hidden" name="key" value="system.audit.retention_days" />
+                  <input type="hidden" name="category" value={auditRetentionParameter?.category ?? "system"} />
+                  <input type="hidden" name="description" value={auditRetentionParameter?.description ?? "Audit log retention window in days."} />
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">{locale === "en" ? "Retention days" : locale === "zh-TW" ? "保留天數" : "保留天数"}</span>
+                    <input type="number" min="1" name="value" defaultValue={auditRetentionDaysValue} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  </label>
+                  <button type="submit" className="mt-4 rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                    {locale === "en" ? "Update policy" : locale === "zh-TW" ? "更新策略" : "更新策略"}
+                  </button>
+                </form>
+                <form action="/api/admin/system" method="post" className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                  <input type="hidden" name="intent" value="prune-audit-logs" />
+                  <label className="space-y-2 text-sm">
+                    <span className="text-slate-400">{locale === "en" ? "Run cleanup with days" : locale === "zh-TW" ? "按天數執行清理" : "按天数执行清理"}</span>
+                    <input type="number" min="1" name="retentionDays" defaultValue={auditRetentionDaysValue} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                  </label>
+                  <p className="mt-3 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "Use this for immediate cleanup after policy changes or before log exports."
+                      : locale === "zh-TW"
+                        ? "策略調整後或導出前，可立即執行一次審計清理。"
+                        : "策略调整后或导出前，可立即执行一次审计清理。"}
+                  </p>
+                  <button type="submit" className="mt-4 rounded-full border border-rose-300/20 bg-rose-400/10 px-4 py-2 text-sm text-rose-100 transition hover:border-rose-300/35 hover:bg-rose-400/15">
+                    {locale === "en" ? "Prune now" : locale === "zh-TW" ? "立即清理" : "立即清理"}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <div className={showSystemNotifications ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminExpansion.system.alerts.title}</p>
@@ -7829,7 +9601,334 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+            <div className={showSystemNotifications ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5 md:col-span-2" : "hidden"}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "Browser push" : locale === "zh-TW" ? "瀏覽器推送" : "浏览器推送"}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Push campaign composer" : locale === "zh-TW" ? "推送活動編排" : "推送活动编排"}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "Use notification permission + in-site message fanout to simulate campaign delivery before external push providers are connected."
+                      : locale === "zh-TW"
+                        ? "在外部推送供應商接入前，先用瀏覽器通知權限與站內消息分發完成推送運營閉環。"
+                        : "在外部推送供应商接入前，先用浏览器通知权限与站内消息分发完成推送运营闭环。"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
+                    {locale === "en" ? "Devices" : locale === "zh-TW" ? "設備數" : "设备数"} {pushDashboard.totalDevices}
+                  </span>
+                  <span className="rounded-full border border-lime-300/20 bg-lime-300/10 px-3 py-1.5 text-lime-100">
+                    {locale === "en" ? "Granted" : locale === "zh-TW" ? "已授權" : "已授权"} {pushDashboard.grantedDevices}
+                  </span>
+                  <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sky-100">
+                    {locale === "en" ? "Active users" : locale === "zh-TW" ? "活躍用戶" : "活跃用户"} {pushDashboard.activeUsers}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-6 xl:grid-cols-[0.92fr,1.08fr]">
+                <form action="/api/admin/system" method="post" className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">
+                        {currentPushCampaign
+                          ? locale === "en"
+                            ? "Edit campaign"
+                            : locale === "zh-TW"
+                              ? "編輯活動"
+                              : "编辑活动"
+                          : locale === "en"
+                            ? "Create campaign"
+                            : locale === "zh-TW"
+                              ? "新建活動"
+                              : "新建活动"}
+                      </p>
+                    </div>
+                    {currentPushCampaign ? (
+                      <Link href={buildAdminSystemHref(systemRouteState, { systemSection })} className="text-sm text-slate-400 transition hover:text-white">
+                        {adminPageCopy.shared.cancelEdit}
+                      </Link>
+                    ) : null}
+                  </div>
+                  <input type="hidden" name="intent" value="save-push-campaign" />
+                  <input type="hidden" name="id" value={currentPushCampaign?.id ?? ""} />
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">Key</span>
+                      <input type="text" name="key" defaultValue={currentPushCampaign?.key ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Audience" : locale === "zh-TW" ? "受眾" : "受众"}</span>
+                      <select name="audience" defaultValue={currentPushCampaign?.audience ?? "all"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                        <option value="all">{locale === "en" ? "All users" : locale === "zh-TW" ? "全部用戶" : "全部用户"}</option>
+                        <option value="members">{locale === "en" ? "Members" : locale === "zh-TW" ? "會員" : "会员"}</option>
+                        <option value="verified">{locale === "en" ? "Verified email" : locale === "zh-TW" ? "已驗證郵箱" : "已验证邮箱"}</option>
+                        <option value="locale">{locale === "en" ? "Locale segment" : locale === "zh-TW" ? "按語言分群" : "按语言分群"}</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm md:col-span-2">
+                      <span className="text-slate-400">{locale === "en" ? "Title" : locale === "zh-TW" ? "標題" : "标题"}</span>
+                      <input type="text" name="title" defaultValue={currentPushCampaign?.title ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm md:col-span-2">
+                      <span className="text-slate-400">{locale === "en" ? "Message" : locale === "zh-TW" ? "消息內容" : "消息内容"}</span>
+                      <textarea name="message" rows={4} defaultValue={currentPushCampaign?.message ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Locale" : locale === "zh-TW" ? "語言" : "语言"}</span>
+                      <select name="locale" defaultValue={currentPushCampaign?.locale ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                        <option value="">{locale === "en" ? "All locales" : locale === "zh-TW" ? "全部語言" : "全部语言"}</option>
+                        <option value="zh-CN">zh-CN</option>
+                        <option value="zh-TW">zh-TW</option>
+                        <option value="en">en</option>
+                        <option value="th">th</option>
+                        <option value="vi">vi</option>
+                        <option value="hi">hi</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Status" : locale === "zh-TW" ? "狀態" : "状态"}</span>
+                      <select name="status" defaultValue={currentPushCampaign?.status ?? "draft"} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none">
+                        <option value="draft">draft</option>
+                        <option value="scheduled">scheduled</option>
+                        <option value="sent">sent</option>
+                        <option value="cancelled">cancelled</option>
+                      </select>
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">{locale === "en" ? "Schedule at" : locale === "zh-TW" ? "預定發送時間" : "预定发送时间"}</span>
+                      <input
+                        type="datetime-local"
+                        name="scheduledForAt"
+                        defaultValue={toDateTimeLocalValue(currentPushCampaign?.scheduledForAt)}
+                        className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none"
+                      />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">Action href</span>
+                      <input type="text" name="actionHref" defaultValue={currentPushCampaign?.actionHref ?? ""} placeholder="/member" className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                    <label className="space-y-2 text-sm">
+                      <span className="text-slate-400">Action label</span>
+                      <input type="text" name="actionLabel" defaultValue={currentPushCampaign?.actionLabel ?? ""} className="w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-white outline-none" />
+                    </label>
+                  </div>
+                  <button type="submit" className="mt-5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-orange-300">
+                    {locale === "en" ? "Save campaign" : locale === "zh-TW" ? "保存活動" : "保存活动"}
+                  </button>
+                </form>
+
+                <div className="rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">{locale === "en" ? "Campaign queue" : locale === "zh-TW" ? "活動隊列" : "活动队列"}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {locale === "en"
+                          ? "Cron can call /api/internal/system/push-campaigns/dispatch with SYSTEM_TRIGGER_TOKEN."
+                          : locale === "zh-TW"
+                            ? "伺服器 cron 可攜帶 SYSTEM_TRIGGER_TOKEN 呼叫 /api/internal/system/push-campaigns/dispatch。"
+                            : "服务器 cron 可携带 SYSTEM_TRIGGER_TOKEN 调用 /api/internal/system/push-campaigns/dispatch。"}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-xs text-sky-100">
+                        {locale === "en" ? "Scheduled" : locale === "zh-TW" ? "待派發" : "待派发"} {scheduledPushCampaignCount}
+                      </span>
+                      <span className="text-sm text-slate-500">{pushDashboard.campaigns.length}</span>
+                    </div>
+                  </div>
+                  <form action="/api/admin/system" method="post" className="mt-4 flex flex-wrap items-center gap-3 rounded-[1rem] border border-white/8 bg-white/[0.03] p-3">
+                    <input type="hidden" name="intent" value="dispatch-scheduled-push-campaigns" />
+                    <input type="hidden" name="limit" value="20" />
+                    <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
+                      {locale === "en" ? "Dispatch due scheduled campaigns" : locale === "zh-TW" ? "派發到時活動" : "派发到时活动"}
+                    </button>
+                    <span className="text-xs text-slate-500">
+                      {locale === "en"
+                        ? "Runs the same dispatcher used by the internal cron endpoint."
+                        : locale === "zh-TW"
+                          ? "與內部 cron 入口共用同一套派發邏輯。"
+                          : "与内部 cron 入口共用同一套派发逻辑。"}
+                    </span>
+                  </form>
+                  <div className="mt-4 grid gap-4">
+                    {pushDashboard.campaigns.map((campaign) => (
+                      <div key={campaign.id} className="rounded-[1rem] border border-white/8 bg-white/[0.03] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-white">{campaign.title}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {campaign.key} | {campaign.audience}
+                              {campaign.locale ? ` | ${campaign.locale}` : ""}
+                            </p>
+                          </div>
+                          <span className={`rounded-full px-3 py-1 text-xs ${
+                            campaign.status === "sent"
+                              ? "bg-lime-300/12 text-lime-100"
+                              : campaign.status === "cancelled"
+                                ? "bg-white/8 text-slate-300"
+                                : "bg-orange-300/12 text-orange-100"
+                          }`}>
+                            {campaign.status}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-300">{campaign.message}</p>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            {locale === "en" ? "Targets" : locale === "zh-TW" ? "目標數" : "目标数"} {campaign.targetCount}
+                          </span>
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            {locale === "en" ? "Delivered" : locale === "zh-TW" ? "已送達" : "已送达"} {campaign.deliveredCount}
+                          </span>
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                            {formatDateTime(campaign.createdAt, displayLocale)}
+                          </span>
+                          {campaign.scheduledForAt ? (
+                            <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1 text-sky-100">
+                              {locale === "en" ? "Schedule" : locale === "zh-TW" ? "排程" : "排程"} {formatDateTime(campaign.scheduledForAt, displayLocale)}
+                            </span>
+                          ) : null}
+                          {campaign.sentAt ? (
+                            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                              {locale === "en" ? "Sent" : locale === "zh-TW" ? "已發送" : "已发送"} {formatDateTime(campaign.sentAt, displayLocale)}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <Link href={buildAdminSystemHref(systemRouteState, { systemSection, editPushCampaign: campaign.id })} className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-100 transition hover:border-white/30">
+                            {locale === "en" ? "Edit" : locale === "zh-TW" ? "編輯" : "编辑"}
+                          </Link>
+                          {campaign.status !== "sent" ? (
+                            <form action="/api/admin/system" method="post">
+                              <input type="hidden" name="intent" value="send-push-campaign" />
+                              <input type="hidden" name="id" value={campaign.id} />
+                              <button type="submit" className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-300/15">
+                                {locale === "en" ? "Send" : locale === "zh-TW" ? "發送" : "发送"}
+                              </button>
+                            </form>
+                          ) : null}
+                          {campaign.status !== "cancelled" ? (
+                            <form action="/api/admin/system" method="post">
+                              <input type="hidden" name="intent" value="cancel-push-campaign" />
+                              <input type="hidden" name="id" value={campaign.id} />
+                              <button type="submit" className="rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition hover:border-rose-300/30 hover:text-white">
+                                {locale === "en" ? "Cancel" : locale === "zh-TW" ? "取消" : "取消"}
+                              </button>
+                            </form>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                    {pushDashboard.campaigns.length === 0 ? (
+                      <div className="rounded-[1rem] border border-dashed border-white/12 bg-white/[0.02] p-4 text-sm text-slate-400">
+                        {locale === "en" ? "No push campaigns yet." : locale === "zh-TW" ? "目前沒有推送活動。" : "当前没有推送活动。"}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={showSystemRuntime ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5 md:col-span-2" : "hidden"}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "App runtime" : locale === "zh-TW" ? "應用版本控制" : "应用版本控制"}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Version, hot update, and timezone facade" : locale === "zh-TW" ? "版本、熱更新與時區面板" : "版本、热更新与时区面板"}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "Structured controls for the app version API and H5 shell compatibility, without digging into raw parameters first."
+                      : locale === "zh-TW"
+                        ? "在不先翻原始參數表的前提下，直接維護版本 API、H5 殼兼容與站點時區策略。"
+                        : "在不先翻原始参数表的前提下，直接维护版本 API、H5 壳兼容与站点时区策略。"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">v{appVersionInfo.currentVersion}</span>
+                  <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sky-100">{appVersionInfo.releaseChannel}</span>
+                  <span className="rounded-full border border-orange-300/20 bg-orange-300/10 px-3 py-1.5 text-orange-100">{appVersionInfo.timezoneLabel}</span>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4 xl:grid-cols-3">
+                <div className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{locale === "en" ? "Current build" : locale === "zh-TW" ? "當前版本" : "当前版本"}</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">v{appVersionInfo.currentVersion}</p>
+                  <p className="mt-2 text-sm text-slate-400">{appVersionInfo.updateNotes}</p>
+                </div>
+                <div className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{locale === "en" ? "Hot update" : locale === "zh-TW" ? "熱更新版本" : "热更新版本"}</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{appVersionInfo.hotUpdateVersion}</p>
+                  <p className="mt-2 text-sm text-slate-400">{appVersionInfo.updateStrategy}</p>
+                </div>
+                <div className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{locale === "en" ? "Minimum support" : locale === "zh-TW" ? "最低支持版本" : "最低支持版本"}</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{appVersionInfo.minimumSupportedVersion}</p>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {appVersionInfo.forceUpdate
+                      ? locale === "en"
+                        ? "Force update enabled"
+                        : locale === "zh-TW"
+                          ? "已開啟強制更新"
+                          : "已开启强制更新"
+                      : locale === "en"
+                        ? "Soft update only"
+                        : locale === "zh-TW"
+                          ? "目前為柔性升級"
+                          : "目前为柔性升级"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4 xl:grid-cols-2">
+                {curatedAppParameters.map((parameter) => (
+                  <form key={parameter.id} action="/api/admin/system" method="post" className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                    <input type="hidden" name="intent" value="save-parameter" />
+                    <input type="hidden" name="key" value={parameter.key} />
+                    <input type="hidden" name="category" value={parameter.category} />
+                    <input type="hidden" name="description" value={parameter.description ?? ""} />
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-white">{parameter.key}</p>
+                        <p className="mt-2 text-sm text-slate-400">{parameter.description ?? parameter.category}</p>
+                      </div>
+                      <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-300">{parameter.category}</span>
+                    </div>
+                    {isBooleanSystemParameterKey(parameter.key) ? (
+                      <select
+                        name="value"
+                        defaultValue={parameter.value.toLowerCase() === "false" ? "false" : "true"}
+                        className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                      >
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                      </select>
+                    ) : isTextareaSystemParameterKey(parameter.key) ? (
+                      <textarea
+                        name="value"
+                        rows={4}
+                        defaultValue={parameter.value}
+                        className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                      />
+                    ) : (
+                      <input name="value" defaultValue={parameter.value} className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none" />
+                    )}
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                      <span className="text-xs text-slate-500">{formatDateTime(parameter.updatedAt, displayLocale)}</span>
+                      <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                        {locale === "en" ? "Update" : locale === "zh-TW" ? "更新" : "更新"}
+                      </button>
+                    </div>
+                  </form>
+                ))}
+              </div>
+            </div>
+
+            <div className={showSystemRuntime ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="section-label">{adminExpansion.system.parameters.title}</p>
@@ -7905,26 +10004,44 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               ) : null}
             </div>
           ) : null}
-          <div className="mt-6">
+          <AdminContentPaneNav
+            title={locale === "en" ? "Report lanes" : locale === "zh-TW" ? "報表中心子目錄" : "报表中心子目录"}
+            description={
+              locale === "en"
+                ? "Break the report dashboard into overview, trends, breakdowns, and exports so operators can jump to the exact layer they need."
+                : locale === "zh-TW"
+                  ? "把報表中心拆成總覽、趨勢、拆分分析與匯出中心，方便直接跳到需要的層級。"
+                  : "把报表中心拆成总览、趋势、拆分分析与导出中心，方便直接跳到需要的层级。"
+            }
+            items={reportsPaneItems}
+            activeKey={reportsSection}
+          />
+          <div className={showReportsOverview ? "mt-6" : "hidden"}>
             <ExpansionMetricGrid items={reportsDashboard.metrics} />
           </div>
-          <div className="mt-6">
+          <div className={showReportsOverview ? "mt-6" : "hidden"}>
             <ExpansionMetricGrid items={reportsDashboard.agentBiMetrics} />
           </div>
-          <div className="mt-6">
+          <div className={showReportsTrends ? "mt-6" : "hidden"}>
             <ReportsTrendCardsPanel
               locale={locale}
               reportsWindow={reportsWindow}
               trendCards={reportsDashboard.trendCards}
+              buildWindowHref={(windowValue) =>
+                buildAdminReportsHref(reportsRouteState, {
+                  reportsSection,
+                  reportsWindow: windowValue,
+                })
+              }
             />
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showReportsTrends ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <ExpansionRowsPanel
               title={locale === "en" ? "Long-range aggregates" : locale === "zh-TW" ? "長週期聚合" : "长周期聚合"}
               rows={reportsDashboard.longRangeRows}
             />
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-3">
+          <div className={showReportsBreakdowns ? "mt-6 grid gap-6 xl:grid-cols-3" : "hidden"}>
             {reportsDashboard.breakdownSections.map((section) => (
               <ExpansionRowsPanel
                 key={section.key}
@@ -7934,7 +10051,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               />
             ))}
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showReportsBreakdowns ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <ExpansionRowsPanel
               title={locale === "en" ? "Revenue and conversion" : locale === "zh-TW" ? "營收與轉化" : "营收与转化"}
               rows={reportsDashboard.revenueRows}
@@ -7944,13 +10061,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               rows={reportsDashboard.growthRows}
             />
           </div>
-          <div className="mt-6">
+          <div className={showReportsBreakdowns ? "mt-6" : "hidden"}>
             <ExpansionRowsPanel
               title={locale === "en" ? "Agent BI snapshot" : locale === "zh-TW" ? "代理 BI 快照" : "代理 BI 快照"}
               rows={reportsDashboard.agentBiRows}
             />
           </div>
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <div className={showReportsBreakdowns ? "mt-6 grid gap-6 xl:grid-cols-2" : "hidden"}>
             <ExpansionRowsPanel
               title={locale === "en" ? "Operations snapshot" : locale === "zh-TW" ? "運營快照" : "运营快照"}
               rows={reportsDashboard.operationsRows}
@@ -7960,7 +10077,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               rows={reportsDashboard.stabilityRows}
             />
           </div>
-          <div className="mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5">
+          <div className={showReportsExports ? "mt-6 rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="section-label">{adminExpansion.reports.exports.title}</p>
@@ -7979,6 +10096,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
             </div>
             <form method="get" action="/admin" className="mt-5 rounded-[1.2rem] border border-white/8 bg-slate-950/35 p-4">
               <input type="hidden" name="tab" value="reports" />
+              <input type="hidden" name="reportsSection" value={reportsSection} />
               <input type="hidden" name="reportsWindow" value={reportsWindow} />
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <label className="space-y-2 text-sm">
@@ -8030,7 +10148,13 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                   {locale === "en" ? "Apply export filters" : locale === "zh-TW" ? "套用匯出篩選" : "应用导出筛选"}
                 </button>
                 <Link
-                  href={`/admin?tab=reports&reportsWindow=${reportsWindow}`}
+                  href={buildAdminReportsHref(reportsRouteState, {
+                    reportsSection,
+                    reportsFrom: "",
+                    reportsTo: "",
+                    reportsOrderType: "all",
+                    reportsDimension: "",
+                  })}
                   className="inline-flex items-center justify-center rounded-full border border-white/8 bg-white/[0.04] px-4 py-2 text-sm text-slate-300 transition hover:border-white/20 hover:text-white"
                 >
                   {locale === "en" ? "Reset" : locale === "zh-TW" ? "重置" : "重置"}

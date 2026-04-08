@@ -12,15 +12,26 @@ model User {
   email               String            @unique
   displayName         String
   role                String
+  passwordHash        String?
+  emailVerifiedAt     DateTime?
+  pendingEmail        String?
+  contactMethod       String?
+  contactValue        String?
+  preferredLocale     String?
+  countryCode         String?
   membershipPlanId    String?
   membershipExpiresAt DateTime?
   referredAt          DateTime?
   referredByAgentId   String?
   sessions            Session[]
+  notifications       UserNotification[]
+  pushDevices         UserPushDevice[]
+  emailVerificationTokens EmailVerificationToken[]
   membershipOrders    MembershipOrder[]
   contentOrders       ContentOrder[]
   coinAccount         CoinAccount?
   coinRechargeOrders  CoinRechargeOrder[]
+  authorApplications  AuthorApplication[]
   agentApplications   AgentApplication[]
   agentProfile        AgentProfile?     @relation("AgentAccount")
   adminAuditLogs      AdminAuditLog[]
@@ -28,6 +39,7 @@ model User {
   agentCommissionLedgers AgentCommissionLedger[]
   assistantConversations AssistantConversation[]
   assistantHandoffRequests AssistantHandoffRequest[]
+  createdPushCampaigns PushCampaign[] @relation("PushCampaignCreatedByUser")
   adminExportTasks    AdminExportTask[]
   financeReconciliationIssues FinanceReconciliationIssue[] @relation("FinanceIssueCreatedByUser")
   loginActivities     UserLoginActivity[]
@@ -36,6 +48,8 @@ model User {
   updatedAt           DateTime          @updatedAt
 
   @@index([referredByAgentId, createdAt])
+  @@index([preferredLocale, createdAt])
+  @@index([countryCode, createdAt])
 }
 
 model Session {
@@ -45,6 +59,96 @@ model Session {
   createdAt DateTime @default(now())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  email      String
+  purpose    String   @default("verify_email")
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([purpose, expiresAt])
+}
+
+model UserNotification {
+  id          String   @id @default(cuid())
+  category    String
+  type        String
+  level       String   @default("info")
+  title       String?
+  message     String?
+  actionHref  String?
+  actionLabel String?
+  payloadJson String?
+  readAt      DateTime?
+  createdAt   DateTime @default(now())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt, createdAt])
+  @@index([category, createdAt])
+}
+
+model UserPushDevice {
+  id               String   @id @default(cuid())
+  deviceKey        String   @unique
+  permission       String   @default("default")
+  status           String   @default("active")
+  locale           String?
+  platform         String?
+  userAgent        String?
+  pushEndpoint     String?
+  pushP256dhKey    String?
+  pushAuthKey      String?
+  pushSubscriptionJson String?
+  lastSeenAt       DateTime?
+  lastPermissionAt DateTime?
+  lastNotifiedAt   DateTime?
+  lastPushAttemptAt DateTime?
+  lastPushSuccessAt DateTime?
+  lastPushError    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, updatedAt])
+  @@index([permission, status, updatedAt])
+  @@index([locale, updatedAt])
+}
+
+model PushCampaign {
+  id                   String   @id @default(cuid())
+  key                  String   @unique
+  title                String
+  message              String
+  actionHref           String?
+  actionLabel          String?
+  audience             String   @default("all")
+  locale               String?
+  status               String   @default("draft")
+  payloadJson          String?
+  scheduledForAt       DateTime?
+  targetCount          Int      @default(0)
+  deliveredCount       Int      @default(0)
+  sentAt               DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdByDisplayName String?
+  createdByUserId      String?
+  createdByUser        User?    @relation("PushCampaignCreatedByUser", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([status, scheduledForAt])
+  @@index([audience, createdAt])
+  @@index([createdByUserId, createdAt])
 }
 
 model UserLoginActivity {
@@ -206,6 +310,9 @@ model CoinRechargeOrder {
   refundedAt       DateTime?
   refundReason     String?
   creditedAt       DateTime?
+  memberNote       String?
+  proofUrl         String?
+  proofUploadedAt  DateTime?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   packageId        String
@@ -465,6 +572,7 @@ model SystemAlertChannel {
 
 model SystemAlertEvent {
   id          String              @id @default(cuid())
+  eventKey    String?             @unique
   source      String
   title       String
   message     String
@@ -781,11 +889,40 @@ model AuthorTeam {
   status        String             @default("active")
   articlePlans  ArticlePlan[]
   predictions   PredictionRecord[]
+  approvedApplications AuthorApplication[] @relation("AuthorApplicationApprovedAuthor")
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
   @@unique([source, sourceKey])
   @@index([status, updatedAt])
+}
+
+model AuthorApplication {
+  id                    String      @id @default(cuid())
+  source                String      @default("web")
+  displayName           String
+  email                 String
+  contactMethod         String?
+  contactValue          String?
+  focus                 String
+  badge                 String?
+  bio                   String
+  sampleLinks           String?
+  status                String      @default("pending")
+  reviewNote            String?
+  reviewedAt            DateTime?
+  reviewedByDisplayName String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  userId                String?
+  approvedAuthorId      String?
+  user                  User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  approvedAuthor        AuthorTeam? @relation("AuthorApplicationApprovedAuthor", fields: [approvedAuthorId], references: [id], onDelete: SetNull)
+
+  @@index([status, updatedAt])
+  @@index([email, createdAt])
+  @@index([userId, createdAt])
+  @@index([approvedAuthorId, createdAt])
 }
 
 model PredictionRecord {
@@ -888,16 +1025,28 @@ model HomepageBanner {
   titleZhCn      String
   titleZhTw      String
   titleEn        String
+  titleTh        String
+  titleVi        String
+  titleHi        String
   subtitleZhCn   String
   subtitleZhTw   String
   subtitleEn     String
+  subtitleTh     String
+  subtitleVi     String
+  subtitleHi     String
   descriptionZhCn String
   descriptionZhTw String
   descriptionEn   String
+  descriptionTh   String
+  descriptionVi   String
+  descriptionHi   String
   href           String
   ctaLabelZhCn   String
   ctaLabelZhTw   String
   ctaLabelEn     String
+  ctaLabelTh     String
+  ctaLabelVi     String
+  ctaLabelHi     String
   imageUrl       String
   startsAt       DateTime?
   endsAt         DateTime?
@@ -940,13 +1089,22 @@ model SiteAnnouncement {
   titleZhCn    String
   titleZhTw    String
   titleEn      String
+  titleTh      String
+  titleVi      String
+  titleHi      String
   messageZhCn  String
   messageZhTw  String
   messageEn    String
+  messageTh    String
+  messageVi    String
+  messageHi    String
   href         String?
   ctaLabelZhCn String?
   ctaLabelZhTw String?
   ctaLabelEn   String?
+  ctaLabelTh   String?
+  ctaLabelVi   String?
+  ctaLabelHi   String?
   startsAt     DateTime?
   endsAt       DateTime?
   status       String   @default("active")
@@ -956,6 +1114,63 @@ model SiteAnnouncement {
 
   @@index([status, sortOrder])
   @@index([startsAt, endsAt])
+}
+
+model SiteAd {
+  id               String   @id @default(cuid())
+  key              String   @unique
+  placement        String
+  format           String   @default("image")
+  theme            String   @default("neutral")
+  titleZhCn        String
+  titleZhTw        String
+  titleEn          String
+  titleTh          String
+  titleVi          String
+  titleHi          String
+  descriptionZhCn  String
+  descriptionZhTw  String
+  descriptionEn    String
+  descriptionTh    String
+  descriptionVi    String
+  descriptionHi    String
+  ctaLabelZhCn     String
+  ctaLabelZhTw     String
+  ctaLabelEn       String
+  ctaLabelTh       String
+  ctaLabelVi       String
+  ctaLabelHi       String
+  href             String?
+  imageUrl         String?
+  htmlSnippet      String?
+  status           String   @default("active")
+  sortOrder        Int      @default(0)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  impressionCount  Int      @default(0)
+  clickCount       Int      @default(0)
+  lastImpressionAt DateTime?
+  lastClickAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  dailyStats       SiteAdDailyStat[]
+
+  @@index([placement, status, sortOrder])
+  @@index([startsAt, endsAt])
+}
+
+model SiteAdDailyStat {
+  id              String   @id @default(cuid())
+  metricDate      DateTime
+  impressionCount Int      @default(0)
+  clickCount      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  adId            String
+  ad              SiteAd   @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@unique([adId, metricDate])
+  @@index([metricDate])
 }
 
 model SyncRun {

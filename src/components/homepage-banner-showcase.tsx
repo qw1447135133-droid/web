@@ -5,21 +5,30 @@ import { useEffect, useRef, useState } from "react";
 import { resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 import type { HomepageBanner } from "@/lib/types";
 
-const themeStyles: Record<HomepageBanner["theme"], { glow: string; chip: string; card: string }> = {
+const themeStyles: Record<
+  HomepageBanner["theme"],
+  { glow: string; chip: string; card: string; primaryPosition: string; secondaryPosition: string }
+> = {
   sunrise: {
     glow: "from-orange-400/35 via-orange-500/10 to-amber-200/5",
     chip: "border-orange-300/30 bg-orange-300/10 text-orange-100",
     card: "hover:border-orange-300/35 hover:bg-orange-300/10",
+    primaryPosition: "center 30%",
+    secondaryPosition: "center 24%",
   },
   field: {
     glow: "from-lime-300/30 via-emerald-400/8 to-cyan-300/5",
     chip: "border-lime-300/30 bg-lime-300/10 text-lime-100",
     card: "hover:border-lime-300/35 hover:bg-lime-300/10",
+    primaryPosition: "center 24%",
+    secondaryPosition: "center 20%",
   },
   midnight: {
     glow: "from-sky-300/30 via-indigo-400/10 to-fuchsia-300/5",
     chip: "border-sky-300/30 bg-sky-300/10 text-sky-100",
     card: "hover:border-sky-300/35 hover:bg-sky-300/10",
+    primaryPosition: "center 22%",
+    secondaryPosition: "center 18%",
   },
 };
 
@@ -218,41 +227,43 @@ export function HomepageBannerShowcase({
       <div
         data-banner-id={primaryBanner.id}
         data-banner-placement="primary"
-        className="relative overflow-hidden rounded-[2rem] border border-white/10 p-6 sm:p-8"
+        className="relative aspect-[6/5] min-h-[26rem] overflow-hidden rounded-[2rem] border border-white/10 p-6 sm:aspect-[16/10] sm:min-h-[28rem] sm:p-8 lg:aspect-[16/8.6] lg:min-h-[30rem]"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
         style={{
-          backgroundImage: `linear-gradient(135deg, rgba(3, 8, 20, 0.9), rgba(6, 17, 27, 0.78)), url(${primaryBanner.imageUrl})`,
+          backgroundImage: `linear-gradient(108deg, rgba(2, 8, 18, 0.96) 0%, rgba(5, 16, 26, 0.88) 48%, rgba(6, 17, 27, 0.66) 100%), url(${primaryBanner.imageUrl})`,
           backgroundSize: "cover",
-          backgroundPosition: "center",
+          backgroundPosition: primaryTheme.primaryPosition,
         }}
       >
         <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${primaryTheme.glow}`} />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(5,12,20,0.32)_0%,rgba(5,12,20,0.18)_42%,rgba(5,12,20,0.04)_100%)]" />
         <div className="pointer-events-none absolute -top-20 right-0 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-16 left-10 h-40 w-40 rounded-full bg-orange-300/10 blur-3xl" />
 
-        <div className="relative max-w-3xl">
+        <div className="relative flex h-full max-w-3xl flex-col">
           <span className={`inline-flex rounded-full border px-3 py-1 text-xs uppercase tracking-[0.28em] ${primaryTheme.chip}`}>
             {primaryBanner.subtitle}
           </span>
-          <h1 className="display-title mt-5 max-w-4xl text-5xl leading-none font-semibold text-white sm:text-6xl lg:text-7xl">
+          <h1 className="display-title mt-5 max-w-4xl text-5xl leading-none font-semibold text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)] sm:text-6xl lg:text-7xl">
             {primaryBanner.title}
           </h1>
-          <p className="mt-5 max-w-2xl text-base leading-8 text-slate-200 sm:text-lg">
+          <p className="mt-5 max-w-2xl text-base leading-8 text-slate-50/95 drop-shadow-[0_6px_20px_rgba(0,0,0,0.35)] sm:text-lg">
             {primaryBanner.description}
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link
               href={primaryBanner.href}
               onClick={() => trackBannerEvent(primaryBanner.id, "click", "primary")}
-              className="rounded-full bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-orange-300"
+              className="inline-flex items-center justify-center rounded-full border border-white/70 bg-white/96 px-5 py-3 text-sm font-semibold shadow-[0_12px_32px_rgba(0,0,0,0.28)] transition hover:border-orange-100 hover:bg-orange-100"
+              style={{ color: "#08131f" }}
             >
               {primaryBanner.ctaLabel}
             </Link>
           </div>
-          <div className="mt-7 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-5">
+          <div className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-5">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-slate-400">{copy.deckLabel}</p>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-slate-300">{copy.deckLabel}</p>
               <p className="mt-2 text-sm font-medium text-white">
                 {copy.slideLabel(activeIndex + 1, banners.length)}
               </p>
@@ -266,7 +277,7 @@ export function HomepageBannerShowcase({
                     aria-label={copy.jumpTo(index + 1)}
                     onClick={() => setActiveIndex(index)}
                     className={`h-2.5 rounded-full transition ${
-                      index === activeIndex ? "w-10 bg-white" : "w-2.5 bg-white/35 hover:bg-white/60"
+                      index === activeIndex ? "w-10 bg-white shadow-[0_0_14px_rgba(255,255,255,0.22)]" : "w-2.5 bg-white/40 hover:bg-white/68"
                     }`}
                   />
                 ))}
@@ -294,15 +305,16 @@ export function HomepageBannerShowcase({
                   setActiveIndex(index);
                 }}
                 onBlur={() => setIsPaused(false)}
-                className={`group relative overflow-hidden rounded-[1.6rem] border border-white/10 bg-white/[0.03] p-5 transition ${style.card}`}
+                className={`group relative flex min-h-[17rem] overflow-hidden rounded-[1.6rem] border border-white/10 bg-white/[0.03] p-5 transition md:h-full ${style.card}`}
                 style={{
-                  backgroundImage: `linear-gradient(135deg, rgba(3, 8, 20, 0.92), rgba(6, 17, 27, 0.82)), url(${banner.imageUrl})`,
+                  backgroundImage: `linear-gradient(128deg, rgba(2, 8, 18, 0.95) 0%, rgba(6, 17, 27, 0.86) 62%, rgba(6, 17, 27, 0.72) 100%), url(${banner.imageUrl})`,
                   backgroundSize: "cover",
-                  backgroundPosition: "center",
+                  backgroundPosition: style.secondaryPosition,
                 }}
               >
                 <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${style.glow}`} />
-                <div className="relative">
+                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(5,12,20,0.08)_0%,rgba(5,12,20,0.22)_100%)]" />
+                <div className="relative flex h-full flex-1 flex-col">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-slate-200">
                       {copy.nextUp}
@@ -311,13 +323,13 @@ export function HomepageBannerShowcase({
                       {banner.subtitle}
                     </span>
                   </div>
-                  <h2 className="mt-4 text-2xl font-semibold text-white">{banner.title}</h2>
-                  <p className="mt-3 text-sm leading-7 text-slate-200">{banner.description}</p>
-                  <div className="mt-5 flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-white/90 transition group-hover:text-white">
+                  <h2 className="mt-4 text-2xl font-semibold text-white drop-shadow-[0_8px_20px_rgba(0,0,0,0.35)]">{banner.title}</h2>
+                  <p className="mt-3 text-sm leading-7 text-slate-100/92">{banner.description}</p>
+                  <div className="mt-auto flex items-center justify-between gap-3 pt-5">
+                    <p className="text-sm font-semibold text-white transition group-hover:text-white">
                       {banner.ctaLabel}
                     </p>
-                    <span className="text-xs uppercase tracking-[0.24em] text-slate-400">
+                    <span className="text-xs uppercase tracking-[0.24em] text-slate-300">
                       {copy.slideLabel(index + 1, banners.length)}
                     </span>
                   </div>

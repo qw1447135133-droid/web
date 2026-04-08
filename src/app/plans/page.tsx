@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { SectionHeading } from "@/components/section-heading";
 import { getArticleCoinPrice } from "@/lib/coin-wallet";
 import { canAccessContent } from "@/lib/entitlements";
@@ -7,7 +8,7 @@ import type { DisplayLocale } from "@/lib/i18n-config";
 import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getPaymentResultMeta } from "@/lib/payment-ui";
 import { getSessionContext } from "@/lib/session";
-import { getArticlePlans, getAuthorTeams } from "@/lib/content-data";
+import { getArticlePlans, getAuthorTeams, getSiteAds } from "@/lib/content-data";
 import type { Sport } from "@/lib/types";
 import { getSiteCopy } from "@/lib/ui-copy";
 
@@ -192,10 +193,11 @@ export default async function PlansPage({
   const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
   const { plansPageCopy, uiCopy } = getSiteCopy(displayLocale);
   const filterCopy = getPlanFilterCopy(displayLocale);
-  const [{ session, entitlements }, articlePlans, authorTeams, resolved] = await Promise.all([
+  const [{ session, entitlements }, articlePlans, authorTeams, plansInlineAds, resolved] = await Promise.all([
     getSessionContext(),
     getArticlePlans(undefined, locale),
     getAuthorTeams(locale),
+    getSiteAds(locale, "plans-inline"),
     searchParams,
   ]);
   const payment = readValue(resolved.payment);
@@ -246,17 +248,24 @@ export default async function PlansPage({
 
         <div className="mt-6 grid gap-4 md:grid-cols-4">
           {visibleAuthors.map((author) => (
-            <div key={author.id} className="rounded-[1.3rem] border border-white/8 bg-white/[0.03] p-4">
+            <Link
+              key={author.id}
+              href={`/authors/${author.id}`}
+              className="rounded-[1.3rem] border border-white/8 bg-white/[0.03] p-4 transition hover:border-orange-300/25 hover:bg-white/[0.05]"
+            >
               <p className="text-sm font-medium text-white">{author.name}</p>
               <p className="mt-2 text-xs text-slate-500">{author.focus}</p>
               <p className="mt-4 text-2xl font-semibold text-orange-200">{author.streak}</p>
               <p className="mt-2 text-sm text-slate-300">
                 {plansPageCopy.winRate} {author.winRate} | ROI {author.monthlyRoi}
               </p>
-            </div>
+              <p className="mt-4 text-xs text-sky-100">{plansPageCopy.viewDetails}</p>
+            </Link>
           ))}
         </div>
       </section>
+
+      <SiteAdSlot ads={plansInlineAds} locale={displayLocale} />
 
       <section className="grid gap-4 xl:grid-cols-3">
         {filteredPlans.length === 0 ? (

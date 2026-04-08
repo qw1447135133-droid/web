@@ -19,12 +19,19 @@ const bodyFont = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
+  applicationName: "Signal Nine Sports",
   title: {
     default: "Signal Nine Sports",
     template: "%s | Signal Nine Sports",
   },
   description:
     "A sports data MVP covering live scores, statistics, member plans, AI picks, and admin operations.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Signal Nine Sports",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export default async function RootLayout({

@@ -4,11 +4,8 @@ import {
   saveSiteAnnouncement,
   toggleSiteAnnouncementStatus,
 } from "@/lib/admin-operations";
+import { redirectToAdminContent } from "@/lib/admin-content-redirect";
 import { getSessionContext } from "@/lib/session";
-
-function redirectToAdmin(request: NextRequest, suffix = "") {
-  return NextResponse.redirect(new URL(`/admin?tab=content${suffix}`, request.url));
-}
 
 export async function POST(request: NextRequest) {
   const { entitlements } = await getSessionContext();
@@ -36,8 +33,16 @@ export async function POST(request: NextRequest) {
       await saveSiteAnnouncement(formData);
     }
   } catch {
-    return redirectToAdmin(request, "&error=announcement");
+    return redirectToAdminContent(request, {
+      formData,
+      fallbackSection: "distribution",
+      suffix: "&error=announcement",
+    });
   }
 
-  return redirectToAdmin(request, "&saved=announcement");
+  return redirectToAdminContent(request, {
+    formData,
+    fallbackSection: "distribution",
+    suffix: "&saved=announcement",
+  });
 }

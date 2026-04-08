@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrapMockContent } from "@/lib/admin-content";
+import { redirectToAdminContent } from "@/lib/admin-content-redirect";
 import {
   bootstrapHomepageFeaturedMatchSlots,
   bootstrapMockHomepageBanners,
   bootstrapMockHomepageModules,
   bootstrapMockSiteAnnouncements,
 } from "@/lib/admin-operations";
+import { bootstrapMockSiteAds } from "@/lib/site-ads";
 import { bootstrapSupportKnowledgeBase } from "@/lib/site-assistant-service";
 import { getSessionContext } from "@/lib/session";
-
-function redirectToAdmin(request: NextRequest, suffix = "") {
-  return NextResponse.redirect(new URL(`/admin?tab=content${suffix}`, request.url));
-}
 
 export async function POST(request: NextRequest) {
   const { entitlements } = await getSessionContext();
@@ -24,16 +22,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(new URL("/member", request.url));
   }
 
+  const formData = await request.formData();
+
   try {
     await bootstrapMockContent();
     await bootstrapMockHomepageBanners();
     await bootstrapMockHomepageModules();
     await bootstrapHomepageFeaturedMatchSlots();
     await bootstrapMockSiteAnnouncements();
+    await bootstrapMockSiteAds();
     await bootstrapSupportKnowledgeBase();
   } catch {
-    return redirectToAdmin(request, "&error=bootstrap");
+    return redirectToAdminContent(request, {
+      formData,
+      fallbackSection: "overview",
+      suffix: "&error=bootstrap",
+    });
   }
 
-  return redirectToAdmin(request, "&seeded=content");
+  return redirectToAdminContent(request, {
+    formData,
+    fallbackSection: "overview",
+    suffix: "&seeded=content",
+  });
 }

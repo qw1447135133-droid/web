@@ -74,6 +74,9 @@ type SiteAnnouncementSeed = {
     "zh-CN": { title: string; message: string; ctaLabel?: string };
     "zh-TW": { title: string; message: string; ctaLabel?: string };
     en: { title: string; message: string; ctaLabel?: string };
+    th: { title: string; message: string; ctaLabel?: string };
+    vi: { title: string; message: string; ctaLabel?: string };
+    hi: { title: string; message: string; ctaLabel?: string };
   };
 };
 
@@ -100,6 +103,21 @@ export const siteAnnouncementSeeds: SiteAnnouncementSeed[] = [
         message: "Payments are currently reviewed manually, and member entitlements are usually synced within five minutes.",
         ctaLabel: "Open member center",
       },
+      th: {
+        title: "ประกาศการดำเนินงาน",
+        message: "ขณะนี้เส้นทางการชำระเงินอยู่ในโหมดตรวจสอบด้วยตนเอง โดยปกติสิทธิ์สมาชิกจะซิงก์เสร็จภายใน 5 นาทีหลังเปิดใช้งาน",
+        ctaLabel: "เปิดศูนย์สมาชิก",
+      },
+      vi: {
+        title: "Thông báo vận hành",
+        message: "Luồng thanh toán hiện đang ở chế độ duyệt thủ công và quyền hội viên thường được đồng bộ trong vòng 5 phút sau khi kích hoạt.",
+        ctaLabel: "Mở trung tâm hội viên",
+      },
+      hi: {
+        title: "ऑपरेशन सूचना",
+        message: "फिलहाल भुगतान प्रक्रिया मैनुअल समीक्षा मोड में है, और सदस्यता अधिकार आमतौर पर सक्रिय होने के 5 मिनट के भीतर सिंक हो जाते हैं।",
+        ctaLabel: "मेंबर सेंटर खोलें",
+      },
     },
   },
   {
@@ -124,6 +142,21 @@ export const siteAnnouncementSeeds: SiteAnnouncementSeed[] = [
         message: "Football, basketball, cricket, and esports feeds are refreshed in league batches. Check the live boards if an update looks delayed.",
         ctaLabel: "Open live scores",
       },
+      th: {
+        title: "การซิงก์ข้อมูล",
+        message: "ข้อมูลฟุตบอล บาสเกตบอล คริกเก็ต และอีสปอร์ตจะรีเฟรชเป็นรอบตามลีก หากมีความล่าช้าสามารถตรวจสอบได้ที่หน้าสด",
+        ctaLabel: "เปิดสกอร์สด",
+      },
+      vi: {
+        title: "Đồng bộ dữ liệu",
+        message: "Dữ liệu bóng đá, bóng rổ, cricket và esports đang được làm mới theo từng đợt giải đấu. Nếu thấy chậm hãy kiểm tra bảng tỷ số trực tiếp.",
+        ctaLabel: "Mở tỷ số trực tiếp",
+      },
+      hi: {
+        title: "डेटा सिंक",
+        message: "फुटबॉल, बास्केटबॉल, क्रिकेट और ईस्पोर्ट्स डेटा लीग बैचों में रीफ्रेश हो रहा है। अपडेट देर से दिखे तो लाइव बोर्ड देखें।",
+        ctaLabel: "लाइव स्कोर खोलें",
+      },
     },
   },
 ];
@@ -141,6 +174,9 @@ type HomepageBannerSeed = {
     "zh-CN": { title: string; subtitle: string; description: string; ctaLabel: string };
     "zh-TW": { title: string; subtitle: string; description: string; ctaLabel: string };
     en: { title: string; subtitle: string; description: string; ctaLabel: string };
+    th: { title: string; subtitle: string; description: string; ctaLabel: string };
+    vi: { title: string; subtitle: string; description: string; ctaLabel: string };
+    hi: { title: string; subtitle: string; description: string; ctaLabel: string };
   };
 };
 
@@ -172,6 +208,24 @@ export const homepageBannerSeeds: HomepageBannerSeed[] = [
         description: "Bring football, basketball, cricket, and esports live scores, odds snapshots, and hot-match discovery into one front-page command surface.",
         ctaLabel: "Open live scores",
       },
+      th: {
+        title: "ศูนย์ควบคุมการแข่งขันสด",
+        subtitle: "Live Match Command",
+        description: "รวมสกอร์สด สรุปราคา และทางเข้าคู่เด่นของฟุตบอล บาสเกตบอล คริกเก็ต และอีสปอร์ตไว้บนหน้าหลักเพื่อรับทราฟฟิกได้ทันที",
+        ctaLabel: "เข้าสู่ศูนย์สกอร์สด",
+      },
+      vi: {
+        title: "Bàn điều khiển trận đấu trực tiếp",
+        subtitle: "Live Match Command",
+        description: "Tập trung tỷ số trực tiếp, tóm tắt kèo và lối vào trận nóng của bóng đá, bóng rổ, cricket và esports ngay tại màn hình đầu trang chủ.",
+        ctaLabel: "Vào trung tâm tỷ số",
+      },
+      hi: {
+        title: "रियल-टाइम मैच कंट्रोल डेक",
+        subtitle: "Live Match Command",
+        description: "फुटबॉल, बास्केटबॉल, क्रिकेट और ईस्पोर्ट्स के लाइव स्कोर, ऑड्स सारांश और हॉट मैच एंट्री को होमपेज के पहले स्क्रीन पर एक साथ लाएं।",
+        ctaLabel: "लाइव स्कोर हब खोलें",
+      },
     },
   },
   {
@@ -201,6 +255,24 @@ export const homepageBannerSeeds: HomepageBannerSeed[] = [
         description: "A conversion-led banner for big matchdays, pushing homepage traffic straight into membership and single-plan unlock flows.",
         ctaLabel: "Browse plans",
       },
+      th: {
+        title: "ช่องทางแปลงสมาชิกและแผนทีเด็ด",
+        subtitle: "Paid Insight Funnel",
+        description: "เหมาะสำหรับวันแข่งขันใหญ่เพื่อพาผู้ใช้จากหน้าแรกไปยังการเปิดสมาชิกและปลดล็อกคอนเทนต์แบบรายชิ้นโดยตรง",
+        ctaLabel: "ดูแผนทีเด็ด",
+      },
+      vi: {
+        title: "Vị trí chuyển đổi hội viên và kèo trả phí",
+        subtitle: "Paid Insight Funnel",
+        description: "Phù hợp cho ngày thi đấu lớn, đẩy lưu lượng từ trang chủ vào luồng mua hội viên và mở khóa từng nội dung trả phí.",
+        ctaLabel: "Xem danh sách kèo",
+      },
+      hi: {
+        title: "मेंबरशिप और प्लान कन्वर्ज़न स्लॉट",
+        subtitle: "Paid Insight Funnel",
+        description: "बड़े मैच दिनों में होमपेज ट्रैफिक को सीधे सदस्यता और सिंगल कंटेंट अनलॉक फ्लो में ले जाने के लिए उपयुक्त बैनर।",
+        ctaLabel: "प्लान देखें",
+      },
     },
   },
   {
@@ -229,6 +301,24 @@ export const homepageBannerSeeds: HomepageBannerSeed[] = [
         subtitle: "Cricket Launch Window",
         description: "Reserve a front-page spotlight for IPL, PSL, and other cricket campaigns so the module can scale with seasonal promotions.",
         ctaLabel: "Open cricket hub",
+      },
+      th: {
+        title: "ตำแหน่งเปิดตัวโซนคริกเก็ต",
+        subtitle: "Cricket Launch Window",
+        description: "สงวนพื้นที่หน้าแรกสำหรับ IPL, PSL และแคมเปญคริกเก็ตอื่น ๆ เพื่อใช้โปรโมตตามฤดูกาลได้สะดวก",
+        ctaLabel: "เปิดโซนคริกเก็ต",
+      },
+      vi: {
+        title: "Vị trí mở rộng chuyên mục cricket",
+        subtitle: "Cricket Launch Window",
+        description: "Dành vị trí nổi bật trên trang chủ cho IPL, PSL và các chiến dịch cricket để dễ triển khai hoạt động theo mùa giải.",
+        ctaLabel: "Mở chuyên mục cricket",
+      },
+      hi: {
+        title: "क्रिकेट लॉन्च फ्रंट स्लॉट",
+        subtitle: "Cricket Launch Window",
+        description: "IPL, PSL और अन्य क्रिकेट अभियानों के लिए होमपेज स्पॉटलाइट सुरक्षित रखें ताकि मौसमी प्रमोशन सीधे चलाए जा सकें।",
+        ctaLabel: "क्रिकेट हब खोलें",
       },
     },
   },

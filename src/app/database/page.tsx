@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { SectionHeading } from "@/components/section-heading";
-import { getArticlePlans } from "@/lib/content-data";
+import { getArticlePlans, getSiteAds } from "@/lib/content-data";
 import { getCricketLeagueDepth, type CricketNarrative, type CricketTeamIntel } from "@/lib/cricket-depth";
 import { getEsportsLeagueDepth } from "@/lib/esports-depth";
 import type { DisplayLocale } from "@/lib/i18n-config";
@@ -534,9 +535,10 @@ export default async function DatabasePage({
   const isEsports = normalizedSport === "esports";
   const specialDatabaseCopy =
     isCricket || isEsports ? getSpecialDatabaseCopy(displayLocale, isCricket ? "cricket" : "esports") : null;
-  const [snapshot, articlePlans] = await Promise.all([
+  const [snapshot, articlePlans, databaseInlineAds] = await Promise.all([
     getDatabaseSnapshot(normalizedSport, leagueSlug, locale),
     view === "schedule" || isCricket || isEsports ? getArticlePlans(normalizedSport, locale) : Promise.resolve([]),
+    getSiteAds(locale, "database-inline"),
   ]);
   const availableLeagues = snapshot.leagues.filter((item) => item.sport === normalizedSport);
   const leagueMeta = availableLeagues.find((item) => item.slug === leagueSlug) ?? availableLeagues[0];
@@ -727,6 +729,8 @@ export default async function DatabasePage({
           </label>
         </form>
       </section>
+
+      <SiteAdSlot ads={databaseInlineAds} locale={displayLocale} />
 
       <section className="glass-panel rounded-[2rem] p-6">
         <SectionHeading

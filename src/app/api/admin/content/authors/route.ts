@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { saveAuthorTeam, toggleAuthorTeamStatus } from "@/lib/admin-content";
+import { redirectToAdminContent } from "@/lib/admin-content-redirect";
 import { getSessionContext } from "@/lib/session";
-
-function redirectToAdmin(request: NextRequest, suffix = "") {
-  return NextResponse.redirect(new URL(`/admin?tab=content${suffix}`, request.url));
-}
 
 export async function POST(request: NextRequest) {
   const { entitlements } = await getSessionContext();
@@ -27,8 +24,8 @@ export async function POST(request: NextRequest) {
       await saveAuthorTeam(formData);
     }
   } catch {
-    return redirectToAdmin(request, "&error=author");
+    return redirectToAdminContent(request, { formData, fallbackSection: "library", suffix: "&error=author" });
   }
 
-  return redirectToAdmin(request, "&saved=author");
+  return redirectToAdminContent(request, { formData, fallbackSection: "library", suffix: "&saved=author" });
 }

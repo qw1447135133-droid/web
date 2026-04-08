@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NowScore Offline</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(245, 158, 11, 0.2), transparent 28%),
+          linear-gradient(180deg, #07111f 0%, #030712 100%);
+        color: #f8fafc;
+      }
+      main {
+        width: min(92vw, 32rem);
+        padding: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 1.75rem;
+        background: rgba(15, 23, 42, 0.82);
+        box-shadow: 0 24px 80px rgba(2, 6, 23, 0.35);
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.75rem, 5vw, 2.4rem);
+      }
+      p {
+        margin: 0;
+        line-height: 1.8;
+        color: #cbd5e1;
+      }
+      a {
+        display: inline-block;
+        margin-top: 1.25rem;
+        color: #f59e0b;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>NowScore is offline</h1>
+      <p>The last cached shell is still available. Reconnect to refresh live scores, payments, and member data.</p>
+      <a href="/">Return to home</a>
+    </main>
+  </body>
+</html>

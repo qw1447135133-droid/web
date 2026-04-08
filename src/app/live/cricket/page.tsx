@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { ScoreboardTable } from "@/components/scoreboard-table";
 import { SectionHeading } from "@/components/section-heading";
 import { getArticleCoinPrice } from "@/lib/coin-wallet";
 import { formatDateTime, formatOdd } from "@/lib/format";
-import { getArticlePlans, getAuthorTeams, getPredictions } from "@/lib/content-data";
+import { getArticlePlans, getAuthorTeams, getPredictions, getSiteAds } from "@/lib/content-data";
 import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 import { getDatabaseSnapshot, getMatchesBySport, getTrackedLeagues } from "@/lib/sports-data";
@@ -297,12 +298,13 @@ export default async function CricketLivePage({
   const league = pickValue(resolved.league, "all");
   const status = pickValue(resolved.status, "all");
   const sort = pickValue(resolved.sort, "time");
-  const [allLeagues, allMatches, cricketPlans, cricketPredictions, allAuthors] = await Promise.all([
+  const [allLeagues, allMatches, cricketPlans, cricketPredictions, allAuthors, liveFooterAds] = await Promise.all([
     getTrackedLeagues("cricket", locale),
     getMatchesBySport("cricket", locale),
     getArticlePlans("cricket", locale),
     getPredictions("cricket", locale),
     getAuthorTeams(locale),
+    getSiteAds(locale, "live-footer"),
   ]);
   const snapshotLeagueSlug =
     league !== "all"
@@ -586,6 +588,7 @@ export default async function CricketLivePage({
       </section>
 
       <ScoreboardTable matches={items} sportLabel={livePageCopy.cricket.sportLabel} locale={displayLocale} />
+      <SiteAdSlot ads={liveFooterAds} locale={displayLocale} />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="glass-panel rounded-[2rem] p-6">

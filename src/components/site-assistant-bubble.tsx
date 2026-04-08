@@ -301,6 +301,22 @@ export function SiteAssistantBubble({ locale }: { locale: Locale | DisplayLocale
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleOpen = () => {
+      setOpen(true);
+      setTeaserVisible(false);
+    };
+
+    window.addEventListener("signal-nine-assistant:open", handleOpen);
+    return () => {
+      window.removeEventListener("signal-nine-assistant:open", handleOpen);
+    };
+  }, []);
+
+  useEffect(() => {
     syncRequestRef.current += 1;
     setMessages([
       {

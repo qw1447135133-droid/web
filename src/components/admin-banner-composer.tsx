@@ -47,6 +47,7 @@ type Props = {
   homepageBannerCount: number;
   cancelLabel: string;
   cancelHref: string;
+  hiddenFields?: Record<string, string | number | undefined>;
   formCopy: BannerFormCopy;
   statusCopy: BannerStatusCopy;
   seedTemplates: Array<{
@@ -56,7 +57,7 @@ type Props = {
   }>;
 };
 
-type PreviewLocale = Locale;
+type PreviewLocale = DisplayLocale;
 
 type BannerDraft = {
   key: string;
@@ -70,15 +71,27 @@ type BannerDraft = {
   titleZhCn: string;
   titleZhTw: string;
   titleEn: string;
+  titleTh: string;
+  titleVi: string;
+  titleHi: string;
   subtitleZhCn: string;
   subtitleZhTw: string;
   subtitleEn: string;
+  subtitleTh: string;
+  subtitleVi: string;
+  subtitleHi: string;
   descriptionZhCn: string;
   descriptionZhTw: string;
   descriptionEn: string;
+  descriptionTh: string;
+  descriptionVi: string;
+  descriptionHi: string;
   ctaLabelZhCn: string;
   ctaLabelZhTw: string;
   ctaLabelEn: string;
+  ctaLabelTh: string;
+  ctaLabelVi: string;
+  ctaLabelHi: string;
 };
 
 const previewLocaleLabels: Record<Locale, Record<PreviewLocale, string>> = {
@@ -86,18 +99,80 @@ const previewLocaleLabels: Record<Locale, Record<PreviewLocale, string>> = {
     "zh-CN": "简体",
     "zh-TW": "繁體",
     en: "English",
+    th: "泰语",
+    vi: "越语",
+    hi: "印地语",
   },
   "zh-TW": {
     "zh-CN": "簡體",
     "zh-TW": "繁體",
     en: "English",
+    th: "泰語",
+    vi: "越語",
+    hi: "印地語",
   },
   en: {
     "zh-CN": "简体",
     "zh-TW": "繁體",
     en: "English",
+    th: "Thai",
+    vi: "Vietnamese",
+    hi: "Hindi",
   },
 };
+
+const previewLocales: PreviewLocale[] = ["zh-CN", "zh-TW", "en", "th", "vi", "hi"];
+
+function getExtendedFieldLabels(locale: Locale) {
+  if (locale === "en") {
+    return {
+      titleTh: "Title (Thai)",
+      titleVi: "Title (Vietnamese)",
+      titleHi: "Title (Hindi)",
+      subtitleTh: "Subtitle (Thai)",
+      subtitleVi: "Subtitle (Vietnamese)",
+      subtitleHi: "Subtitle (Hindi)",
+      descriptionTh: "Description (Thai)",
+      descriptionVi: "Description (Vietnamese)",
+      descriptionHi: "Description (Hindi)",
+      ctaLabelTh: "CTA (Thai)",
+      ctaLabelVi: "CTA (Vietnamese)",
+      ctaLabelHi: "CTA (Hindi)",
+    };
+  }
+
+  if (locale === "zh-TW") {
+    return {
+      titleTh: "標題（泰語）",
+      titleVi: "標題（越語）",
+      titleHi: "標題（印地語）",
+      subtitleTh: "副標（泰語）",
+      subtitleVi: "副標（越語）",
+      subtitleHi: "副標（印地語）",
+      descriptionTh: "正文（泰語）",
+      descriptionVi: "正文（越語）",
+      descriptionHi: "正文（印地語）",
+      ctaLabelTh: "CTA（泰語）",
+      ctaLabelVi: "CTA（越語）",
+      ctaLabelHi: "CTA（印地語）",
+    };
+  }
+
+  return {
+    titleTh: "标题（泰语）",
+    titleVi: "标题（越语）",
+    titleHi: "标题（印地语）",
+    subtitleTh: "副标题（泰语）",
+    subtitleVi: "副标题（越语）",
+    subtitleHi: "副标题（印地语）",
+    descriptionTh: "正文（泰语）",
+    descriptionVi: "正文（越语）",
+    descriptionHi: "正文（印地语）",
+    ctaLabelTh: "CTA（泰语）",
+    ctaLabelVi: "CTA（越语）",
+    ctaLabelHi: "CTA（印地语）",
+  };
+}
 
 function resolveAdminBannerLocale(locale: Locale | DisplayLocale): Locale {
   return resolveRenderLocale(locale as DisplayLocale);
@@ -131,15 +206,27 @@ function getInitialDraft(currentBanner: AdminHomepageBannerRecord | undefined, h
     titleZhCn: currentBanner?.titleZhCn ?? "",
     titleZhTw: currentBanner?.titleZhTw ?? "",
     titleEn: currentBanner?.titleEn ?? "",
+    titleTh: currentBanner?.titleTh ?? "",
+    titleVi: currentBanner?.titleVi ?? "",
+    titleHi: currentBanner?.titleHi ?? "",
     subtitleZhCn: currentBanner?.subtitleZhCn ?? "",
     subtitleZhTw: currentBanner?.subtitleZhTw ?? "",
     subtitleEn: currentBanner?.subtitleEn ?? "",
+    subtitleTh: currentBanner?.subtitleTh ?? "",
+    subtitleVi: currentBanner?.subtitleVi ?? "",
+    subtitleHi: currentBanner?.subtitleHi ?? "",
     descriptionZhCn: currentBanner?.descriptionZhCn ?? "",
     descriptionZhTw: currentBanner?.descriptionZhTw ?? "",
     descriptionEn: currentBanner?.descriptionEn ?? "",
+    descriptionTh: currentBanner?.descriptionTh ?? "",
+    descriptionVi: currentBanner?.descriptionVi ?? "",
+    descriptionHi: currentBanner?.descriptionHi ?? "",
     ctaLabelZhCn: currentBanner?.ctaLabelZhCn ?? "",
     ctaLabelZhTw: currentBanner?.ctaLabelZhTw ?? "",
     ctaLabelEn: currentBanner?.ctaLabelEn ?? "",
+    ctaLabelTh: currentBanner?.ctaLabelTh ?? "",
+    ctaLabelVi: currentBanner?.ctaLabelVi ?? "",
+    ctaLabelHi: currentBanner?.ctaLabelHi ?? "",
   };
 }
 
@@ -180,6 +267,33 @@ function getLocalizedBannerValue(draft: BannerDraft, locale: PreviewLocale) {
       subtitle: draft.subtitleEn || draft.subtitleZhCn || draft.titleZhCn,
       description: draft.descriptionEn || draft.descriptionZhCn,
       cta: draft.ctaLabelEn || draft.ctaLabelZhCn || "View details",
+    };
+  }
+
+  if (locale === "th") {
+    return {
+      title: draft.titleTh || draft.titleEn || draft.titleZhCn,
+      subtitle: draft.subtitleTh || draft.subtitleEn || draft.subtitleZhCn || draft.titleTh || draft.titleEn || draft.titleZhCn,
+      description: draft.descriptionTh || draft.descriptionEn || draft.descriptionZhCn,
+      cta: draft.ctaLabelTh || draft.ctaLabelEn || draft.ctaLabelZhCn || "View details",
+    };
+  }
+
+  if (locale === "vi") {
+    return {
+      title: draft.titleVi || draft.titleEn || draft.titleZhCn,
+      subtitle: draft.subtitleVi || draft.subtitleEn || draft.subtitleZhCn || draft.titleVi || draft.titleEn || draft.titleZhCn,
+      description: draft.descriptionVi || draft.descriptionEn || draft.descriptionZhCn,
+      cta: draft.ctaLabelVi || draft.ctaLabelEn || draft.ctaLabelZhCn || "View details",
+    };
+  }
+
+  if (locale === "hi") {
+    return {
+      title: draft.titleHi || draft.titleEn || draft.titleZhCn,
+      subtitle: draft.subtitleHi || draft.subtitleEn || draft.subtitleZhCn || draft.titleHi || draft.titleEn || draft.titleZhCn,
+      description: draft.descriptionHi || draft.descriptionEn || draft.descriptionZhCn,
+      cta: draft.ctaLabelHi || draft.ctaLabelEn || draft.ctaLabelZhCn || "View details",
     };
   }
 
@@ -283,6 +397,7 @@ export function AdminBannerComposer({
   homepageBannerCount,
   cancelLabel,
   cancelHref,
+  hiddenFields,
   formCopy,
   statusCopy,
   seedTemplates,
@@ -294,6 +409,7 @@ export function AdminBannerComposer({
   const previewStatus = getPreviewStatus(draft, adminLocale);
   const themeSurface = getThemeSurface(draft.theme);
   const hrefMeta = getHrefMeta(draft.href, adminLocale);
+  const extendedFieldLabels = getExtendedFieldLabels(adminLocale);
   const sortOrder = Number.parseInt(draft.sortOrder || "0", 10);
   const projectedSlot =
     Number.isFinite(sortOrder) && sortOrder >= 0 && sortOrder < 3 && previewStatus.label !== statusCopy.inactive
@@ -369,6 +485,11 @@ export function AdminBannerComposer({
 
       <input type="hidden" name="intent" value="save" />
       <input type="hidden" name="id" value={currentBanner?.id ?? ""} />
+      {hiddenFields
+        ? Object.entries(hiddenFields).map(([name, value]) =>
+            value === undefined ? null : <input key={name} type="hidden" name={name} value={value} />,
+          )
+        : null}
 
       <div className="mt-5 rounded-[1.35rem] border border-white/8 bg-slate-950/35 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -379,7 +500,7 @@ export function AdminBannerComposer({
             <p className="mt-2 text-sm text-slate-300">{hrefMeta}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(["zh-CN", "zh-TW", "en"] as const).map((item) => (
+            {previewLocales.map((item) => (
               <button
                 key={item}
                 type="button"
@@ -489,12 +610,21 @@ export function AdminBannerComposer({
           ["titleZhCn", formCopy.fields.titleZhCn],
           ["titleZhTw", formCopy.fields.titleZhTw],
           ["titleEn", formCopy.fields.titleEn],
+          ["titleTh", extendedFieldLabels.titleTh],
+          ["titleVi", extendedFieldLabels.titleVi],
+          ["titleHi", extendedFieldLabels.titleHi],
           ["subtitleZhCn", formCopy.fields.subtitleZhCn],
           ["subtitleZhTw", formCopy.fields.subtitleZhTw],
           ["subtitleEn", formCopy.fields.subtitleEn],
+          ["subtitleTh", extendedFieldLabels.subtitleTh],
+          ["subtitleVi", extendedFieldLabels.subtitleVi],
+          ["subtitleHi", extendedFieldLabels.subtitleHi],
           ["ctaLabelZhCn", formCopy.fields.ctaLabelZhCn],
           ["ctaLabelZhTw", formCopy.fields.ctaLabelZhTw],
           ["ctaLabelEn", formCopy.fields.ctaLabelEn],
+          ["ctaLabelTh", extendedFieldLabels.ctaLabelTh],
+          ["ctaLabelVi", extendedFieldLabels.ctaLabelVi],
+          ["ctaLabelHi", extendedFieldLabels.ctaLabelHi],
         ] as const).map(([name, label]) => (
           <label key={name} className="space-y-2 text-sm">
             <span className="text-slate-400">{label}</span>
@@ -511,6 +641,9 @@ export function AdminBannerComposer({
           ["descriptionZhCn", formCopy.fields.descriptionZhCn],
           ["descriptionZhTw", formCopy.fields.descriptionZhTw],
           ["descriptionEn", formCopy.fields.descriptionEn],
+          ["descriptionTh", extendedFieldLabels.descriptionTh],
+          ["descriptionVi", extendedFieldLabels.descriptionVi],
+          ["descriptionHi", extendedFieldLabels.descriptionHi],
         ] as const).map(([name, label]) => (
           <label key={name} className="space-y-2 text-sm md:col-span-2">
             <span className="text-slate-400">{label}</span>

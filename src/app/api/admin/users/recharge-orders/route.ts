@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       await markCoinRechargeOrderPaidByAdmin({
         orderId,
         paymentReference,
+        note: reason,
         allowRecoverFromTerminal: true,
         operatorUserId: currentUser?.id,
         operatorDisplayName: session.displayName,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
         scope: "finance.coin-recharge-order",
         targetType: "coin-recharge-order",
         targetId: orderId,
-        detail: `paymentReference: ${paymentReference || "--"} | source: user-workspace`,
+        detail: `paymentReference: ${paymentReference || "--"} | note: ${reason || "--"} | source: user-workspace`,
         ipAddress,
       });
       return redirectToPath(request, returnTo, "saved", "order-status");

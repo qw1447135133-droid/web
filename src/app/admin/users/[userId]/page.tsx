@@ -1848,6 +1848,22 @@ export default async function AdminUserWorkspacePage({
             <p className="mt-2 text-sm text-slate-400">{workspace.summary.email}</p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-400">
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">User ID {workspace.summary.id}</span>
+              <span
+                className={`rounded-full border px-3 py-1 ${
+                  workspace.summary.emailVerifiedAt
+                    ? "border-lime-300/20 bg-lime-300/10 text-lime-100"
+                    : "border-amber-300/20 bg-amber-300/10 text-amber-100"
+                }`}
+              >
+                {workspace.summary.emailVerifiedAt
+                  ? t(displayLocale, "邮箱已验证", "信箱已驗證", "Email verified")
+                  : t(displayLocale, "邮箱待验证", "信箱待驗證", "Email pending")}
+              </span>
+              {workspace.summary.preferredLocale ? (
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+                  {t(displayLocale, "偏好语言", "偏好語言", "Preferred locale")} {workspace.summary.preferredLocale}
+                </span>
+              ) : null}
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
                 {t(displayLocale, "最近更新", "最近更新", "Updated")} {formatDateTime(workspace.summary.updatedAt, intlLocale)}
               </span>
@@ -2156,6 +2172,12 @@ export default async function AdminUserWorkspacePage({
                 <p>{t(displayLocale, "角色", "角色", "Role")}: {workspace.summary.role}</p>
                 <p>{t(displayLocale, "注册时间", "註冊時間", "Registered")}: {formatDateTime(workspace.summary.createdAt, intlLocale)}</p>
                 <p>{t(displayLocale, "归因时间", "歸因時間", "Referred at")}: {formatDateTime(workspace.summary.referredAt, intlLocale)}</p>
+                <p>{t(displayLocale, "邮箱验证", "信箱驗證", "Email verification")}: {workspace.summary.emailVerifiedAt ? formatDateTime(workspace.summary.emailVerifiedAt, intlLocale) : "--"}</p>
+                <p>{t(displayLocale, "待更新邮箱", "待更新信箱", "Pending email")}: {workspace.summary.pendingEmail ?? "--"}</p>
+                <p>{t(displayLocale, "联系渠道", "聯絡渠道", "Contact method")}: {workspace.summary.contactMethod ?? "--"}</p>
+                <p>{t(displayLocale, "联系信息", "聯絡資訊", "Contact value")}: {workspace.summary.contactValue ?? "--"}</p>
+                <p>{t(displayLocale, "偏好语言", "偏好語言", "Preferred locale")}: {workspace.summary.preferredLocale ?? "--"}</p>
+                <p>{t(displayLocale, "国家/地区", "國家 / 地區", "Country / region")}: {workspace.summary.countryCode ?? "--"}</p>
                 <p>{t(displayLocale, "会员方案", "會員方案", "Membership plan")}: {workspace.summary.membershipPlanName ?? "--"}</p>
                 <p>{t(displayLocale, "会员到期", "會員到期", "Membership expiry")}: {formatDateTime(workspace.summary.membershipExpiresAt, intlLocale)}</p>
                 <p>{t(displayLocale, "钱包最近活动", "錢包最近活動", "Wallet last activity")}: {formatDateTime(workspace.summary.coinLastActivityAt, intlLocale)}</p>

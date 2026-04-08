@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { HomepageCommandFeed } from "@/components/homepage-command-feed";
 import { HomepageBannerShowcase } from "@/components/homepage-banner-showcase";
 import { SectionHeading } from "@/components/section-heading";
+import { SiteAdSlot } from "@/components/site-ad-slot";
 import { getArticleCoinPrice, getMembershipCoinPrice } from "@/lib/coin-wallet";
-import { applyHomepageModuleMetrics, getArticlePlans, getAuthorTeams, getHomepageBanners, getHomepageModules, getPredictions } from "@/lib/content-data";
+import { applyHomepageModuleMetrics, getArticlePlans, getAuthorTeams, getHomepageBanners, getHomepageModules, getPredictions, getSiteAds } from "@/lib/content-data";
 import { formatDateTime } from "@/lib/format";
 import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { localizeMembershipPlan } from "@/lib/localized-content";
@@ -14,7 +16,7 @@ import { getSiteCopy } from "@/lib/ui-copy";
 export default async function HomePage() {
   const [locale, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
   const { homePageCopy, matchStatusLabels } = getSiteCopy(displayLocale);
-  const [featuredMatches, homepageBanners, homepageModules, articlePlans, predictions, authorTeams, footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues] = await Promise.all([
+  const [featuredMatches, homepageBanners, homepageModules, articlePlans, predictions, authorTeams, footballMatches, basketballMatches, cricketMatches, cricketLeagues, esportsMatches, esportsLeagues, homepageInlineAds] = await Promise.all([
     getFeaturedMatches(locale),
     getHomepageBanners(locale),
     getHomepageModules(locale),
@@ -27,6 +29,7 @@ export default async function HomePage() {
     getTrackedLeagues("cricket", locale),
     getMatchesBySport("esports", locale),
     getTrackedLeagues("esports", locale),
+    getSiteAds(locale, "home-inline"),
   ]);
   const homepageModulesWithMetrics = applyHomepageModuleMetrics(
     homepageModules,
@@ -78,41 +81,34 @@ export default async function HomePage() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
       <section className="hero-noise glass-panel overflow-hidden rounded-[2.25rem] p-6 sm:p-8 lg:p-10">
-        <div className="grid gap-8 lg:grid-cols-[1.55fr_0.9fr]">
+        <div className="grid gap-8 lg:grid-cols-[1.22fr_1.12fr]">
           <HomepageBannerShowcase initialBanners={homepageBanners} locale={displayLocale} />
-          <div className="glass-panel rounded-[1.9rem] p-5">
-            <p className="section-label">{homePageCopy.commandFeed}</p>
-            <div className="mt-4 space-y-4">
-              {featuredMatches.map((match) => (
-                <Link
-                  key={match.id}
-                  href={`/matches/${encodeURIComponent(match.id)}`}
-                  className="block rounded-[1.25rem] border border-white/8 bg-white/[0.04] p-4 transition hover:border-orange-300/25 hover:bg-white/[0.07]"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="section-label">{match.leagueName ?? match.leagueSlug}</p>
-                      <p className="mt-2 text-sm font-medium text-white">
-                        {match.homeTeam} <span className="text-slate-500">vs</span> {match.awayTeam}
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-white/10 px-2 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                      {matchStatusLabels[match.status]}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-end justify-between gap-4">
-                    <p className="text-2xl font-semibold text-orange-200">{match.score}</p>
-                    <p className="text-xs text-slate-500">
-                      {match.clock ? match.clock : formatDateTime(match.kickoff, displayLocale)}
-                    </p>
-                  </div>
-                  <p className="mt-2 text-xs leading-6 text-slate-400">{match.statLine}</p>
-                </Link>
-              ))}
-            </div>
-          </div>
+          <HomepageCommandFeed
+            title={homePageCopy.commandFeed}
+            matches={featuredMatches}
+            matchStatusLabels={matchStatusLabels}
+            locale={displayLocale}
+          />
         </div>
       </section>
+
+      <SiteAdSlot
+        ads={homepageInlineAds}
+        locale={displayLocale}
+        title={
+          displayLocale === "en"
+            ? "Sponsored picks"
+            : displayLocale === "zh-TW"
+              ? "推薦入口"
+              : displayLocale === "th"
+                ? "ช่องแนะนำ"
+                : displayLocale === "vi"
+                  ? "Lua chon de xuat"
+                  : displayLocale === "hi"
+                    ? "Recommended picks"
+                    : "推荐入口"
+        }
+      />
 
       <section className="glass-panel rounded-[2rem] p-6">
         <SectionHeading
@@ -129,7 +125,7 @@ export default async function HomePage() {
               </Link>
               <Link
                 href="/member"
-                className="rounded-full border border-white/12 px-5 py-3 text-sm text-slate-100 transition hover:border-lime-300/28 hover:text-white"
+                className="rounded-full border border-white/14 bg-white/[0.045] px-5 py-3 text-sm font-medium text-slate-50 transition hover:border-lime-300/28 hover:bg-white/[0.07] hover:text-white"
               >
                 {homePageCopy.viewMembershipPlans}
               </Link>
@@ -141,12 +137,12 @@ export default async function HomePage() {
             <Link
               key={module.id}
               href={module.href}
-              className="rounded-[1.5rem] border border-white/8 bg-white/[0.04] p-5 transition hover:border-orange-300/20 hover:bg-white/[0.07]"
+              className="rounded-[1.5rem] border border-white/8 bg-slate-950/38 p-5 transition hover:border-orange-300/20 hover:bg-slate-900/70"
             >
               <p className="section-label">{module.eyebrow}</p>
               <h2 className="mt-3 text-xl font-semibold text-white">{module.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-400">{module.description}</p>
-              <p className="mt-5 text-sm font-medium text-orange-200">{module.metric}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{module.description}</p>
+              <p className="mt-5 text-sm font-semibold text-orange-100">{module.metric}</p>
             </Link>
           ))}
         </div>
@@ -188,7 +184,7 @@ export default async function HomePage() {
             <h3 className="mt-3 text-xl font-semibold text-white">
               {displayLocale === "th" ? "บอร์ดสด LoL, Dota 2 และ CS2" : displayLocale === "vi" ? "Bảng trực tiếp LoL, Dota 2 và CS2" : displayLocale === "hi" ? "LoL, Dota 2 और CS2 लाइव बोर्ड" : displayLocale === "en" ? "LoL, Dota 2, and CS2 live board" : displayLocale === "zh-TW" ? "LoL、Dota 2、CS2 即時面板" : "LoL、Dota 2、CS2 即时面板"}
             </h3>
-            <p className="mt-2 text-sm leading-7 text-slate-400">
+            <p className="mt-2 text-sm leading-7 text-slate-300">
               {displayLocale === "th"
                 ? "รวมสถานะซีรีส์ แนวโน้มแผนที่/รอบ และทางเข้ารายละเอียดแมตช์ไว้ในช่องอีสปอร์ตเดียว"
                 : displayLocale === "vi"
@@ -211,19 +207,19 @@ export default async function HomePage() {
                 </Link>
                 <Link
                   href="/plans?sport=esports"
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
+                  className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-2 text-sm font-medium text-slate-50 transition hover:border-lime-300/30 hover:bg-white/[0.08] hover:text-white"
                 >
                   {displayLocale === "th" ? "แผนอีสปอร์ต" : displayLocale === "vi" ? "Kế hoạch esports" : displayLocale === "hi" ? "ईस्पोर्ट्स प्लान" : displayLocale === "en" ? "Esports plans" : displayLocale === "zh-TW" ? "電競計畫單" : "电竞计划单"}
                 </Link>
                 <Link
                   href="/ai-predictions?sport=esports"
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
+                  className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-2 text-sm font-medium text-slate-50 transition hover:border-lime-300/30 hover:bg-white/[0.08] hover:text-white"
                 >
                   {displayLocale === "th" ? "AI อีสปอร์ต" : displayLocale === "vi" ? "AI esports" : displayLocale === "hi" ? "ईस्पोर्ट्स AI" : displayLocale === "en" ? "Esports AI" : displayLocale === "zh-TW" ? "電競 AI" : "电竞 AI"}
                 </Link>
                 <Link
                   href="/database?sport=esports&league=lpl&view=standings"
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-slate-100 transition hover:border-lime-300/30 hover:text-white"
+                  className="rounded-full border border-white/12 bg-white/[0.05] px-4 py-2 text-sm font-medium text-slate-50 transition hover:border-lime-300/30 hover:bg-white/[0.08] hover:text-white"
                 >
                   {displayLocale === "th" ? "ฐานข้อมูลอีสปอร์ต" : displayLocale === "vi" ? "CSDL esports" : displayLocale === "hi" ? "ईस्पोर्ट्स डेटाबेस" : displayLocale === "en" ? "Esports database" : displayLocale === "zh-TW" ? "電競資料庫" : "电竞资料库"}
                 </Link>

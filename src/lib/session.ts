@@ -10,6 +10,7 @@ const SESSION_COOKIE = "signal-nine-session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 
 const defaultSession: SessionUser = {
+  id: undefined,
   displayName: "Guest",
   email: "",
   role: "visitor",
@@ -20,9 +21,16 @@ const defaultSession: SessionUser = {
 };
 
 function toSessionUser(user: {
+  id: string;
   displayName: string;
   email: string;
   role: string;
+  emailVerifiedAt: Date | null;
+  pendingEmail: string | null;
+  preferredLocale: string | null;
+  countryCode: string | null;
+  contactMethod: string | null;
+  contactValue: string | null;
   membershipPlanId: string | null;
   membershipExpiresAt: Date | null;
   coinAccount: {
@@ -83,9 +91,16 @@ function toSessionUser(user: {
   };
 
   return {
+    id: user.id,
     displayName: user.displayName,
     email: user.email,
     role: (user.role as UserRole) ?? "member",
+    emailVerifiedAt: user.emailVerifiedAt?.toISOString(),
+    pendingEmail: user.pendingEmail ?? undefined,
+    preferredLocale: user.preferredLocale ?? undefined,
+    countryCode: user.countryCode ?? undefined,
+    contactMethod: user.contactMethod ?? undefined,
+    contactValue: user.contactValue ?? undefined,
     membershipPlanId: (user.membershipPlanId as MembershipPlanId | undefined) ?? undefined,
     membershipExpiresAt: user.membershipExpiresAt?.toISOString(),
     coinBalance: user.coinAccount?.balance ?? 0,
@@ -147,9 +162,22 @@ export async function getSessionUser() {
 
   const session = await prisma.session.findUnique({
     where: { token },
-    include: {
+    select: {
+      expiresAt: true,
       user: {
-        include: {
+        select: {
+          id: true,
+          displayName: true,
+          email: true,
+          role: true,
+          emailVerifiedAt: true,
+          pendingEmail: true,
+          preferredLocale: true,
+          countryCode: true,
+          contactMethod: true,
+          contactValue: true,
+          membershipPlanId: true,
+          membershipExpiresAt: true,
           coinAccount: {
             select: {
               balance: true,

@@ -11,9 +11,11 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const type = normalizePaymentOrderType(String(formData.get("type") || "content"));
   const orderId = String(formData.get("orderId") || "");
+  const fallbackReturnTo =
+    type === "membership" ? "/member" : type === "coin-recharge" ? `/member/recharge/${encodeURIComponent(orderId)}` : "/plans";
   const returnTo = sanitizeReturnTo(
-    String(formData.get("returnTo") || (type === "membership" ? "/member" : "/plans")),
-    type === "membership" ? "/member" : "/plans",
+    String(formData.get("returnTo") || fallbackReturnTo),
+    fallbackReturnTo,
   );
   const current = await getCurrentUserRecord();
 

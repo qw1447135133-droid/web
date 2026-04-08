@@ -160,6 +160,7 @@ function formatShortDate(value: Date, locale: Locale) {
   return new Intl.DateTimeFormat(getIntlLocale(locale), {
     month: "numeric",
     day: "numeric",
+    timeZone: "UTC",
   }).format(value);
 }
 
@@ -220,6 +221,7 @@ function formatMonthLabel(value: Date, locale: Locale) {
   return new Intl.DateTimeFormat(getIntlLocale(locale), {
     year: "2-digit",
     month: "short",
+    timeZone: "UTC",
   }).format(value);
 }
 
@@ -726,28 +728,27 @@ async function rebuildAdminReportOverviewDailyFacts(windowDays: number) {
     ).values(),
   );
 
-  const { deletedCount, insertedCount } = await prisma.$transaction(async (tx) => {
-    const deleted = await tx.adminReportDailyFact.deleteMany({
-      where: {
-        scope: "overview",
-      },
-    });
-
-    if (dedupedRows.length === 0) {
-      return {
-        deletedCount: deleted.count,
-        insertedCount: 0,
-      };
+  let insertedCount = 0;
+  await prisma.$transaction(async (tx) => {
+    for (const row of dedupedRows) {
+      await tx.adminReportDailyFact.upsert({
+        where: {
+          metricDate_scope_metricKey_dimensionKey: {
+            metricDate: row.metricDate,
+            scope: row.scope,
+            metricKey: row.metricKey,
+            dimensionKey: row.dimensionKey,
+          },
+        },
+        update: {
+          countValue: row.countValue,
+          amountValue: row.amountValue,
+          extraJson: row.extraJson,
+        },
+        create: row,
+      });
+      insertedCount += 1;
     }
-
-    const inserted = await tx.adminReportDailyFact.createMany({
-      data: dedupedRows,
-    });
-
-    return {
-      deletedCount: deleted.count,
-      insertedCount: inserted.count,
-    };
   });
 
   return {
@@ -755,7 +756,7 @@ async function rebuildAdminReportOverviewDailyFacts(windowDays: number) {
     endDate: end.toISOString(),
     dayCount: dateKeys.length,
     recordCount: insertedCount,
-    deletedCount,
+    deletedCount: 0,
   };
 }
 
@@ -1110,37 +1111,37 @@ async function rebuildAdminReportContentBreakdownFacts(
     });
   }
 
-  const rows = Array.from(aggregated.values());
-  const { deletedCount, insertedCount } = await prisma.$transaction(async (tx) => {
-    const deleted = await tx.adminReportDailyFact.deleteMany({
-      where: {
-        scope,
-      },
-    });
+  const rows = Array.from(aggregated.values()).map((row) => ({
+    metricDate: row.metricDate,
+    scope,
+    metricKey: "content_paid" as const,
+    dimensionKey: row.dimensionKey,
+    countValue: row.countValue,
+    amountValue: row.amountValue,
+    extraJson: row.extraJson,
+  }));
+  let insertedCount = 0;
 
-    if (rows.length === 0) {
-      return {
-        deletedCount: deleted.count,
-        insertedCount: 0,
-      };
+  await prisma.$transaction(async (tx) => {
+    for (const row of rows) {
+      await tx.adminReportDailyFact.upsert({
+        where: {
+          metricDate_scope_metricKey_dimensionKey: {
+            metricDate: row.metricDate,
+            scope: row.scope,
+            metricKey: row.metricKey,
+            dimensionKey: row.dimensionKey,
+          },
+        },
+        update: {
+          countValue: row.countValue,
+          amountValue: row.amountValue,
+          extraJson: row.extraJson,
+        },
+        create: row,
+      });
+      insertedCount += 1;
     }
-
-    const inserted = await tx.adminReportDailyFact.createMany({
-      data: rows.map((row) => ({
-        metricDate: row.metricDate,
-        scope,
-        metricKey: "content_paid",
-        dimensionKey: row.dimensionKey,
-        countValue: row.countValue,
-        amountValue: row.amountValue,
-        extraJson: row.extraJson,
-      })),
-    });
-
-    return {
-      deletedCount: deleted.count,
-      insertedCount: inserted.count,
-    };
   });
 
   return {
@@ -1149,7 +1150,7 @@ async function rebuildAdminReportContentBreakdownFacts(
     endDate: end.toISOString(),
     dayCount: buildDateKeys(normalizedWindow).length,
     recordCount: insertedCount,
-    deletedCount,
+    deletedCount: 0,
   };
 }
 

@@ -5,11 +5,8 @@ import {
   saveHomepageBanner,
   toggleHomepageBannerStatus,
 } from "@/lib/admin-operations";
+import { redirectToAdminContent } from "@/lib/admin-content-redirect";
 import { getSessionContext } from "@/lib/session";
-
-function redirectToAdmin(request: NextRequest, suffix = "") {
-  return NextResponse.redirect(new URL(`/admin?tab=content${suffix}`, request.url));
-}
 
 export async function POST(request: NextRequest) {
   const { entitlements } = await getSessionContext();
@@ -35,13 +32,17 @@ export async function POST(request: NextRequest) {
       await moveHomepageBanner(id, "down");
     } else if (intent === "duplicate") {
       const duplicated = await duplicateHomepageBanner(id);
-      return redirectToAdmin(request, `&saved=banner&editBanner=${duplicated.id}`);
+      return redirectToAdminContent(request, {
+        formData,
+        fallbackSection: "homepage",
+        suffix: `&saved=banner&editBanner=${duplicated.id}`,
+      });
     } else {
       await saveHomepageBanner(formData);
     }
   } catch {
-    return redirectToAdmin(request, "&error=banner");
+    return redirectToAdminContent(request, { formData, fallbackSection: "homepage", suffix: "&error=banner" });
   }
 
-  return redirectToAdmin(request, "&saved=banner");
+  return redirectToAdminContent(request, { formData, fallbackSection: "homepage", suffix: "&saved=banner" });
 }

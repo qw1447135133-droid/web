@@ -448,7 +448,13 @@ export default async function PlanDetailPage({
         <div className="mt-6 grid gap-4 md:grid-cols-4">
           <div className="rounded-[1.3rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-sm text-slate-500">{planDetailCopy.authorTeam}</p>
-            <p className="mt-2 text-lg font-semibold text-white">{author?.name ?? "Signal Nine"}</p>
+            {author ? (
+              <Link href={`/authors/${author.id}`} className="mt-2 inline-flex text-lg font-semibold text-white transition hover:text-orange-200">
+                {author.name}
+              </Link>
+            ) : (
+              <p className="mt-2 text-lg font-semibold text-white">Signal Nine</p>
+            )}
           </div>
           <div className="rounded-[1.3rem] border border-white/8 bg-white/[0.03] p-4">
             <p className="text-sm text-slate-500">{planDetailCopy.kickoff}</p>

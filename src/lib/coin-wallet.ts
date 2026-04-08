@@ -3,8 +3,25 @@ import { revalidatePath } from "next/cache";
 import { closePendingCoinRechargeOrder, ensureDefaultCoinPackages } from "@/lib/admin-finance";
 import type { DisplayLocale, Locale } from "@/lib/i18n-config";
 import { membershipPlans } from "@/lib/mock-data";
+import {
+  getPaymentProviderExpiryMinutes,
+  getPaymentProviderFamily,
+  getPaymentProviderReferencePrefix,
+  getResolvedPaymentRuntimeConfig,
+  normalizePaymentProvider,
+  type PaymentProvider,
+} from "@/lib/payment-provider";
+import {
+  buildPaymentRouteSnapshot,
+  type PaymentRouteSnapshot,
+} from "@/lib/payment-orders";
 import { prisma } from "@/lib/prisma";
 import { recordUserMembershipEvent } from "@/lib/user-activity";
+import {
+  notifyContentPaid,
+  notifyMembershipActivated,
+  notifyRechargeCreated,
+} from "@/lib/user-notifications";
 import type { MembershipPlanId } from "@/lib/types";
 
 export type CoinUnlockResult =
@@ -41,9 +58,13 @@ export type MemberCoinRechargeRecord = {
   bonusAmount: number;
   totalCoins: number;
   status: "pending" | "paid" | "failed" | "closed" | "refunded";
-  provider?: "mock" | "manual" | "hosted";
+  provider?: PaymentProvider;
   providerOrderId?: string;
   paymentReference?: string;
+  expiresAt?: string;
+  memberNote?: string;
+  proofUrl?: string;
+  proofUploadedAt?: string;
   createdAt: string;
   updatedAt: string;
   creditedAt?: string;
@@ -63,6 +84,54 @@ export type MemberCoinRechargeDetail = MemberCoinRechargeRecord & {
   paidAt?: string;
   callbackPayload?: string;
 };
+
+export type MemberRechargeCollectionGuide = {
+  configured: boolean;
+  provider?: PaymentProvider;
+  providerFamily?: "mock" | "manual" | "hosted";
+  countryCode?: string;
+  countryLabel?: string;
+  currency?: string;
+  walletMethods?: string[];
+  hostedGatewayName?: string;
+  hostedCheckoutConfigured?: boolean;
+  routeFallbackReason?: "provider-not-configured";
+  channelLabel?: string;
+  accountName?: string;
+  accountNo?: string;
+  qrCodeUrl?: string;
+  note?: string;
+  memberGuide?: string;
+};
+
+function getResolvedRechargeGuideFallbackReason(
+  paymentRuntimePreferredProvider: PaymentProvider,
+  routeSnapshot?: PaymentRouteSnapshot,
+) {
+  if (routeSnapshot?.routeFallbackReason) {
+    return routeSnapshot.routeFallbackReason;
+  }
+
+  if (
+    routeSnapshot?.preferredProvider &&
+    routeSnapshot?.routedProvider &&
+    routeSnapshot.preferredProvider !== routeSnapshot.routedProvider &&
+    getPaymentProviderFamily(routeSnapshot.preferredProvider) === "hosted"
+  ) {
+    return "provider-not-configured" as const;
+  }
+
+  if (
+    routeSnapshot?.preferredProvider &&
+    routeSnapshot?.routedProvider &&
+    routeSnapshot.preferredProvider !== routeSnapshot.routedProvider &&
+    getPaymentProviderFamily(paymentRuntimePreferredProvider) === "hosted"
+  ) {
+    return "provider-not-configured" as const;
+  }
+
+  return undefined;
+}
 
 export type PublicCoinPackage = {
   id: string;
@@ -109,12 +178,12 @@ function createCoinRechargeOrderNo() {
   return `CR${dateLabel}${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
 }
 
-function createCoinRechargeReference() {
-  return `MANUAL-COIN-${randomUUID().slice(0, 8).toUpperCase()}`;
+function createCoinRechargeReference(provider: PaymentProvider) {
+  return `${getPaymentProviderReferencePrefix(provider)}-COIN-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
-function createCoinRechargeProviderOrderId() {
-  return `MANUAL-COIN-ORDER-${randomUUID().slice(0, 10).toUpperCase()}`;
+function createCoinRechargeProviderOrderId(provider: PaymentProvider) {
+  return `${getPaymentProviderReferencePrefix(provider)}-COIN-ORDER-${randomUUID().slice(0, 10).toUpperCase()}`;
 }
 
 function getCoinPrice(price: number, rate: number, minimum: number) {
@@ -162,7 +231,11 @@ function safeRevalidate(paths: string[]) {
     try {
       revalidatePath(path);
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes("static generation store missing")) {
+      if (
+        !(error instanceof Error) ||
+        (!error.message.includes("static generation store missing") &&
+          !error.message.includes("during render which is unsupported"))
+      ) {
         throw error;
       }
     }
@@ -231,7 +304,7 @@ export async function createMemberCoinRechargeOrder(input: {
   const [user, coinPackage] = await Promise.all([
     prisma.user.findUnique({
       where: { id: input.userId },
-      select: { id: true },
+      select: { id: true, countryCode: true },
     }),
     prisma.coinPackage.findFirst({
       where: {
@@ -251,32 +324,49 @@ export async function createMemberCoinRechargeOrder(input: {
     throw new Error("COIN_PACKAGE_NOT_FOUND");
   }
 
-  const created = await prisma.coinRechargeOrder.create({
-    data: {
-      orderNo: createCoinRechargeOrderNo(),
-      coinAmount: coinPackage.coinAmount,
-      bonusAmount: coinPackage.bonusAmount,
-      amount: coinPackage.price,
-      status: "pending",
-      provider: "manual",
-      providerOrderId: createCoinRechargeProviderOrderId(),
-      expiresAt: null,
-      paymentReference: createCoinRechargeReference(),
+  const paymentRuntime = await getResolvedPaymentRuntimeConfig({
+    countryCode: user.countryCode,
+  });
+  const provider = paymentRuntime.provider;
+  const expiresAt = new Date(Date.now() + getPaymentProviderExpiryMinutes(provider) * 60 * 1000);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const createdOrder = await tx.coinRechargeOrder.create({
+      data: {
+        orderNo: createCoinRechargeOrderNo(),
+        coinAmount: coinPackage.coinAmount,
+        bonusAmount: coinPackage.bonusAmount,
+        amount: coinPackage.price,
+        status: "pending",
+        provider,
+        providerOrderId: createCoinRechargeProviderOrderId(provider),
+        expiresAt,
+        paymentReference: createCoinRechargeReference(provider),
+        userId: user.id,
+        packageId: coinPackage.id,
+        callbackPayload: buildPaymentRouteSnapshot(paymentRuntime),
+      },
+      select: {
+        id: true,
+        orderNo: true,
+        paymentReference: true,
+        amount: true,
+        coinAmount: true,
+        bonusAmount: true,
+        status: true,
+      },
+    });
+
+    await notifyRechargeCreated(tx, {
       userId: user.id,
-      packageId: coinPackage.id,
-      callbackPayload: JSON.stringify({
-        source: "member-center",
-      }),
-    },
-    select: {
-      id: true,
-      orderNo: true,
-      paymentReference: true,
-      amount: true,
-      coinAmount: true,
-      bonusAmount: true,
-      status: true,
-    },
+      orderId: createdOrder.id,
+      orderNo: createdOrder.orderNo,
+      paymentReference: createdOrder.paymentReference,
+      totalCoins: createdOrder.coinAmount + createdOrder.bonusAmount,
+      amount: createdOrder.amount,
+    });
+
+    return createdOrder;
   });
 
   safeRevalidate(memberSurfacePaths);
@@ -313,6 +403,7 @@ export async function unlockArticleWithCoins(input: {
     where: { id: input.contentId },
     select: {
       id: true,
+      title: true,
       price: true,
       status: true,
     },
@@ -441,6 +532,13 @@ export async function unlockArticleWithCoins(input: {
         },
       });
 
+      await notifyContentPaid(tx, {
+        userId: input.userId,
+        orderId: updated.id,
+        subjectId: input.contentId,
+        subjectTitle: plan.title,
+      });
+
       return updated.id;
     }
 
@@ -462,6 +560,13 @@ export async function unlockArticleWithCoins(input: {
       select: {
         id: true,
       },
+    });
+
+    await notifyContentPaid(tx, {
+      userId: input.userId,
+      orderId: created.id,
+      subjectId: input.contentId,
+      subjectTitle: plan.title,
     });
 
     return created.id;
@@ -633,6 +738,13 @@ export async function purchaseMembershipWithCoins(input: {
         },
       });
 
+      await notifyMembershipActivated(tx, {
+        userId: input.userId,
+        orderId: updated.id,
+        planId: input.planId,
+        expiresAt,
+      });
+
       return {
         membershipOrderId: updated.id,
         expiresAt,
@@ -658,6 +770,13 @@ export async function purchaseMembershipWithCoins(input: {
       select: {
         id: true,
       },
+    });
+
+    await notifyMembershipActivated(tx, {
+      userId: input.userId,
+      orderId: created.id,
+      planId: input.planId,
+      expiresAt,
     });
 
     return {
@@ -762,9 +881,12 @@ export async function getMemberCoinCenter(userId: string, locale: DisplayLocale)
         item.status === "refunded"
           ? item.status
           : "pending",
-      provider: item.provider === "hosted" || item.provider === "mock" ? item.provider : "manual",
+      provider: normalizePaymentProvider(item.provider),
       providerOrderId: item.providerOrderId ?? undefined,
       paymentReference: item.paymentReference ?? undefined,
+      memberNote: item.memberNote ?? undefined,
+      proofUrl: item.proofUrl ?? undefined,
+      proofUploadedAt: item.proofUploadedAt?.toISOString(),
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
       creditedAt: item.creditedAt?.toISOString(),
@@ -772,6 +894,68 @@ export async function getMemberCoinCenter(userId: string, locale: DisplayLocale)
   };
 }
 
+
+export async function getMemberRechargeCollectionGuide(
+  countryCode?: string | null,
+  routeSnapshot?: PaymentRouteSnapshot,
+): Promise<MemberRechargeCollectionGuide> {
+  const paymentRuntime = await getResolvedPaymentRuntimeConfig({
+    countryCode,
+  });
+  const parameterRows = await prisma.systemParameter.findMany({
+    where: {
+      key: {
+        in: ["payments.member.guide"],
+      },
+    },
+    select: {
+      key: true,
+      value: true,
+    },
+  });
+
+  const parameterMap = new Map(parameterRows.map((item) => [item.key, item.value.trim()]));
+  const memberGuide = parameterMap.get("payments.member.guide") || undefined;
+  const provider = routeSnapshot?.routedProvider ?? paymentRuntime.provider;
+  const providerFamily = getPaymentProviderFamily(provider);
+  const walletMethods =
+    routeSnapshot?.routeWallets && routeSnapshot.routeWallets.length > 0
+      ? routeSnapshot.routeWallets
+      : paymentRuntime.routing.wallets;
+  const countryLabel = routeSnapshot?.routeCountryLabel ?? paymentRuntime.routing.countryLabel;
+  const currency = routeSnapshot?.routeCurrency ?? paymentRuntime.routing.currency;
+  const hostedGatewayName = routeSnapshot?.hostedGatewayName ?? paymentRuntime.hostedGateway.gatewayName;
+  const channelLabel =
+    routeSnapshot?.manualChannelLabel ?? paymentRuntime.manualCollection.channelLabel ?? walletMethods[0];
+  const accountName = routeSnapshot?.manualAccountName ?? paymentRuntime.manualCollection.accountName;
+  const accountNo = routeSnapshot?.manualAccountNo ?? paymentRuntime.manualCollection.accountNo;
+  const qrCodeUrl = routeSnapshot?.manualQrCodeUrl ?? paymentRuntime.manualCollection.qrCodeUrl;
+  const manualNote = routeSnapshot?.manualNote ?? paymentRuntime.manualCollection.note;
+  const routeFallbackReason = getResolvedRechargeGuideFallbackReason(paymentRuntime.preferredProvider, routeSnapshot);
+  const configured =
+    providerFamily === "hosted"
+      ? walletMethods.length > 0 || paymentRuntime.hostedGatewayConfigured || Boolean(hostedGatewayName)
+      : Boolean(channelLabel || accountName || accountNo || qrCodeUrl || manualNote);
+
+  return {
+    configured,
+    provider,
+    providerFamily,
+    countryCode: routeSnapshot?.routeCountry ?? paymentRuntime.routing.countryCode ?? paymentRuntime.routing.key,
+    countryLabel,
+    currency,
+    walletMethods,
+    hostedGatewayName,
+    hostedCheckoutConfigured: paymentRuntime.hostedGatewayConfigured,
+    routeFallbackReason,
+    channelLabel: providerFamily === "manual" ? channelLabel : undefined,
+    accountName: providerFamily === "manual" ? accountName : undefined,
+    accountNo: providerFamily === "manual" ? accountNo : undefined,
+    qrCodeUrl: providerFamily === "manual" ? qrCodeUrl : undefined,
+    note: providerFamily === "manual" ? manualNote : undefined,
+    memberGuide,
+  };
+}
 
 export async function getMemberCoinRechargeDetail(
   userId: string,
@@ -820,9 +1004,13 @@ export async function getMemberCoinRechargeDetail(
       order.status === "refunded"
         ? order.status
         : "pending",
-    provider: order.provider === "hosted" || order.provider === "mock" ? order.provider : "manual",
+    provider: normalizePaymentProvider(order.provider),
     providerOrderId: order.providerOrderId ?? undefined,
     paymentReference: order.paymentReference ?? undefined,
+    expiresAt: order.expiresAt?.toISOString(),
+    memberNote: order.memberNote ?? undefined,
+    proofUrl: order.proofUrl ?? undefined,
+    proofUploadedAt: order.proofUploadedAt?.toISOString(),
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
     creditedAt: order.creditedAt?.toISOString(),
@@ -864,6 +1052,57 @@ export async function cancelMemberCoinRechargeOrder(input: {
     operatorUserId: input.userId,
     operatorDisplayName: input.operatorDisplayName,
   });
+
+  return { id: order.id };
+}
+
+export async function saveMemberRechargeProof(input: {
+  userId: string;
+  orderId: string;
+  memberNote?: string;
+  proofUrl?: string;
+}) {
+  const order = await prisma.coinRechargeOrder.findFirst({
+    where: {
+      id: input.orderId,
+      userId: input.userId,
+    },
+    select: {
+      id: true,
+      status: true,
+    },
+  });
+
+  if (!order) {
+    throw new Error("COIN_RECHARGE_ORDER_NOT_FOUND");
+  }
+
+  if (order.status !== "pending") {
+    throw new Error("COIN_RECHARGE_ORDER_NOT_EDITABLE");
+  }
+
+  const nextNote = input.memberNote?.trim() || undefined;
+  const nextProofProvided = typeof input.proofUrl === "string";
+  const nextProofUrl = nextProofProvided ? input.proofUrl?.trim() || undefined : undefined;
+
+  if (!nextNote && !nextProofProvided) {
+    throw new Error("COIN_RECHARGE_PROOF_EMPTY");
+  }
+
+  await prisma.coinRechargeOrder.update({
+    where: { id: order.id },
+    data: {
+      memberNote: nextNote ?? null,
+      ...(nextProofProvided
+        ? {
+            proofUrl: nextProofUrl ?? null,
+            proofUploadedAt: nextProofUrl ? new Date() : null,
+          }
+        : {}),
+    },
+  });
+
+  safeRevalidate([...memberSurfacePaths, `/member/recharge/${order.id}`]);
 
   return { id: order.id };
 }

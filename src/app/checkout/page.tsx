@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { PaymentQueryCard } from "@/components/payment-query-card";
 import { SectionHeading } from "@/components/section-heading";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import {
@@ -11,6 +12,7 @@ import type { DisplayLocale } from "@/lib/i18n-config";
 import { getCurrentDisplayLocale, getCurrentLocale } from "@/lib/i18n";
 import { getOpsCopy } from "@/lib/ops-copy";
 import {
+  parsePaymentRouteSnapshot,
   getCheckoutOrder,
   normalizePaymentOrderType,
   sanitizeReturnTo,
@@ -24,9 +26,8 @@ import {
   getPaymentResultMeta,
 } from "@/lib/payment-ui";
 import {
-  getPaymentManualCollectionConfig,
   getPaymentProviderLabel,
-  getPaymentRuntimeConfig,
+  getResolvedPaymentRuntimeConfig,
 } from "@/lib/payment-provider";
 import { getCurrentUserRecord } from "@/lib/session";
 import { getSiteCopy } from "@/lib/ui-copy";
@@ -225,22 +226,30 @@ export default async function CheckoutPage({
   const [, displayLocale] = await Promise.all([getCurrentLocale(), getCurrentDisplayLocale()]);
   const { checkoutPageCopy } = getSiteCopy(displayLocale);
   const opsCopy = getOpsCopy(displayLocale);
-  const paymentRuntime = getPaymentRuntimeConfig();
-  const manualCollection = getPaymentManualCollectionConfig();
-  const { paymentPendingLabel, hostedCopy, manualCollectionCopy, mockFailureReason } = getCheckoutDisplayCopy(
-    displayLocale,
-    paymentRuntime.pendingMinutes,
-  );
   const current = await getCurrentUserRecord();
 
   if (!current) {
     redirect("/login?next=%2Fmember");
   }
 
+  const paymentRuntime = await getResolvedPaymentRuntimeConfig({
+    countryCode: current.countryCode,
+  });
+  const manualCollection = paymentRuntime.manualCollection;
+  const { paymentPendingLabel, hostedCopy, manualCollectionCopy, mockFailureReason } = getCheckoutDisplayCopy(
+    displayLocale,
+    paymentRuntime.pendingMinutes,
+  );
+
   const resolved = await searchParams;
   const type = normalizePaymentOrderType(readValue(resolved.type, "content"));
   const fallbackReturnTo = type === "membership" ? "/member" : "/plans";
   const orderId = readValue(resolved.orderId);
+
+  if (type === "coin-recharge") {
+    redirect(orderId ? `/member/recharge/${encodeURIComponent(orderId)}` : "/member");
+  }
+
   const returnTo = sanitizeReturnTo(readValue(resolved.returnTo, fallbackReturnTo), fallbackReturnTo);
   const payment = readValue(resolved.payment);
   const paymentResult = getPaymentResultMeta("checkout", payment, displayLocale);
@@ -296,6 +305,30 @@ export default async function CheckoutPage({
   const orderTypeLabel = checkoutPageCopy.orderTypeLabel(type);
   const providerLabel = getPaymentProviderLabel(order.provider, displayLocale);
   const checkoutFlow = getPaymentCheckoutFlow(order.provider);
+  const routeSnapshot = parsePaymentRouteSnapshot(order.callbackPayload);
+  const routeCountryLabel = routeSnapshot?.routeCountryLabel ?? paymentRuntime.routing.countryLabel;
+  const routeCurrency = routeSnapshot?.routeCurrency ?? paymentRuntime.routing.currency;
+  const routeWallets =
+    routeSnapshot?.routeWallets && routeSnapshot.routeWallets.length > 0
+      ? routeSnapshot.routeWallets
+      : paymentRuntime.routing.wallets;
+  const routePreferredProvider = routeSnapshot?.preferredProvider ?? paymentRuntime.preferredProvider;
+  const routeFallbackReason = routeSnapshot?.routeFallbackReason ?? paymentRuntime.routeFallbackReason;
+  const hostedGatewayName = routeSnapshot?.hostedGatewayName ?? paymentRuntime.hostedGateway.gatewayName;
+  const manualCollectionView = {
+    channelLabel: routeSnapshot?.manualChannelLabel ?? manualCollection.channelLabel,
+    accountName: routeSnapshot?.manualAccountName ?? manualCollection.accountName,
+    accountNo: routeSnapshot?.manualAccountNo ?? manualCollection.accountNo,
+    note: routeSnapshot?.manualNote ?? manualCollection.note,
+    qrCodeUrl: routeSnapshot?.manualQrCodeUrl ?? manualCollection.qrCodeUrl,
+  };
+  const manualCollectionConfigured = Boolean(
+    manualCollectionView.channelLabel ||
+      manualCollectionView.accountName ||
+      manualCollectionView.accountNo ||
+      manualCollectionView.note ||
+      manualCollectionView.qrCodeUrl,
+  );
   const checkoutActions = getPaymentCheckoutActionTargets({
     type,
     orderId: order.id,
@@ -333,12 +366,23 @@ export default async function CheckoutPage({
               <span className="rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-medium text-sky-100">
                 {providerLabel}
               </span>
+              <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-medium text-slate-200">
+                {routeCountryLabel}
+              </span>
+              <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-medium text-slate-400">
+                {routeCurrency}
+              </span>
               {isManualReview ? (
                 <span className="rounded-full border border-orange-300/20 bg-orange-400/10 px-3 py-1 text-xs font-medium text-orange-100">
                   {opsCopy.checkout.pendingReviewBadge}
                 </span>
               ) : null}
             </div>
+            {routeWallets.length > 0 ? (
+              <p className="mt-3 text-xs text-slate-400">
+                {routeWallets.join(" / ")}
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
@@ -379,6 +423,12 @@ export default async function CheckoutPage({
                 {checkoutPageCopy.providerOrderId} {order.providerOrderId}
               </span>
             ) : null}
+            {routeCountryLabel ? (
+              <span>
+                {displayLocale === "en" ? "Route" : displayLocale === "zh-TW" ? "路由" : "路由"} {routeCountryLabel}
+                {routeCurrency ? ` · ${routeCurrency}` : ""}
+              </span>
+            ) : null}
             <span>
               {checkoutPageCopy.orderId} {order.id}
             </span>
@@ -397,39 +447,53 @@ export default async function CheckoutPage({
               <p>
                 {opsCopy.checkout.pendingWindowLabel}: {paymentPendingLabel}
               </p>
+              {routeWallets.length ? (
+                <p>
+                  {displayLocale === "en" ? "Local methods" : displayLocale === "zh-TW" ? "本地支付方式" : "本地支付方式"}: {routeWallets.join(" / ")}
+                </p>
+              ) : null}
+              {routeFallbackReason ? (
+                <p>
+                  {displayLocale === "en"
+                    ? `Preferred ${getPaymentProviderLabel(routePreferredProvider, displayLocale)} route is not configured, so checkout falls back to manual review.`
+                    : displayLocale === "zh-TW"
+                      ? `偏好 ${getPaymentProviderLabel(routePreferredProvider, displayLocale)} 路由尚未配置完成，因此暫時回退到人工審核。`
+                      : `偏好 ${getPaymentProviderLabel(routePreferredProvider, displayLocale)} 路由尚未配置完成，因此暂时回退到人工审核。`}
+                </p>
+              ) : null}
             </div>
             <ul className="mt-4 space-y-2 text-sky-100/90">
               {opsCopy.checkout.manualSteps.map((step) => (
                 <li key={step}>- {step}</li>
               ))}
             </ul>
-            {manualCollection.configured ? (
+            {manualCollectionConfigured ? (
               <div className="mt-4 grid gap-3 rounded-[1.1rem] border border-white/10 bg-slate-950/20 p-4 sm:grid-cols-2">
-                {manualCollection.channelLabel ? (
+                {manualCollectionView.channelLabel ? (
                   <p>
-                    {manualCollectionCopy.channel}: {manualCollection.channelLabel}
+                    {manualCollectionCopy.channel}: {manualCollectionView.channelLabel}
                   </p>
                 ) : null}
-                {manualCollection.accountName ? (
+                {manualCollectionView.accountName ? (
                   <p>
-                    {manualCollectionCopy.accountName}: {manualCollection.accountName}
+                    {manualCollectionCopy.accountName}: {manualCollectionView.accountName}
                   </p>
                 ) : null}
-                {manualCollection.accountNo ? (
+                {manualCollectionView.accountNo ? (
                   <p className="break-all sm:col-span-2">
-                    {manualCollectionCopy.accountNo}: {manualCollection.accountNo}
+                    {manualCollectionCopy.accountNo}: {manualCollectionView.accountNo}
                   </p>
                 ) : null}
-                {manualCollection.note ? (
+                {manualCollectionView.note ? (
                   <p className="sm:col-span-2">
-                    {manualCollectionCopy.note}: {manualCollection.note}
+                    {manualCollectionCopy.note}: {manualCollectionView.note}
                   </p>
                 ) : null}
-                {manualCollection.qrCodeUrl ? (
+                {manualCollectionView.qrCodeUrl ? (
                   <p className="sm:col-span-2">
                     {manualCollectionCopy.qrCode}:{" "}
                     <a
-                      href={manualCollection.qrCodeUrl}
+                      href={manualCollectionView.qrCodeUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="underline underline-offset-4 transition hover:text-white"
@@ -454,6 +518,12 @@ export default async function CheckoutPage({
           <div className="mt-6 rounded-[1.35rem] border border-emerald-300/20 bg-emerald-400/10 p-5 text-sm leading-7 text-emerald-50">
             <p className="font-medium">{hostedCopy.title}</p>
             <p className="mt-2 text-emerald-100/90">{hostedCopy.description}</p>
+            {(hostedGatewayName || routeWallets.length > 0) ? (
+              <div className="mt-3 flex flex-wrap gap-3 text-xs text-emerald-100/80">
+                {hostedGatewayName ? <span>{hostedGatewayName}</span> : null}
+                {routeWallets.length > 0 ? <span>{routeWallets.join(" / ")}</span> : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -463,6 +533,10 @@ export default async function CheckoutPage({
             <p className="mt-2">{failureMeta.value}</p>
           </div>
         ) : null}
+
+        <div className="mt-6">
+          <PaymentQueryCard locale={displayLocale} orderId={order.id} orderType={type} />
+        </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
           {isPending && checkoutFlow.showMockActions ? (

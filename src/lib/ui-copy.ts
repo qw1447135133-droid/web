@@ -427,7 +427,7 @@ const zhCnCopy: SiteCopy = {
   authPageCopy: {
     heroEyebrow: "Access Control",
     heroTitle: "登录会员与运营身份",
-    heroDescription: "先用演示账号串起会员购买、内容解锁与后台运营链路，后续再接真实注册登录体系。",
+    heroDescription: "使用正式会员或运营账号登录，直接进入购买、解锁、充值与后台管理链路。",
     adminEyebrow: "Admin",
     adminTitle: "运营后台账号",
     adminDescription: "直接进入后台，查看赛事同步、内容管理、用户与订单面板。",
@@ -849,7 +849,7 @@ const zhTwCopy: SiteCopy = {
   authPageCopy: {
     ...zhCnCopy.authPageCopy,
     heroTitle: "登入會員與營運身份",
-    heroDescription: "先用展示帳號串起會員購買、內容解鎖與後台營運鏈路，後續再接真實註冊登入體系。",
+    heroDescription: "使用正式會員或營運帳號登入，直接進入購買、解鎖、充值與後台管理鏈路。",
     adminDescription: "直接進入後台，查看賽事同步、內容管理、用戶與訂單面板。",
     adminAction: "進入後台",
     adminPresetName: "營運管理員",
@@ -1259,7 +1259,7 @@ const enCopy: SiteCopy = {
   authPageCopy: {
     ...zhCnCopy.authPageCopy,
     heroTitle: "Sign in as member or operator",
-    heroDescription: "Use demo identities to validate membership purchases, content unlocks, and admin workflows before wiring up real auth.",
+    heroDescription: "Sign in with real member or admin accounts and go directly into purchase, unlock, recharge, and admin workflows.",
     adminDescription: "Jump into the admin console to review sync jobs, content operations, users, and orders.",
     adminAction: "Open admin",
     adminPresetName: "Operations Admin",
@@ -1662,7 +1662,7 @@ const thCopy: SiteCopy = {
   authPageCopy: {
     ...enCopy.authPageCopy,
     heroTitle: "เข้าสู่ระบบสมาชิกหรือทีมปฏิบัติการ",
-    heroDescription: "ใช้บัญชีเดโมเพื่อตรวจสอบการซื้อสมาชิก การปลดล็อกคอนเทนต์ และขั้นตอนหลังบ้านก่อนเชื่อม auth จริง",
+    heroDescription: "เข้าสู่ระบบด้วยบัญชีสมาชิกหรือผู้ดูแลจริง เพื่อไปยังการซื้อ การปลดล็อก การเติมเงิน และเวิร์กโฟลว์หลังบ้านได้ทันที",
     adminTitle: "บัญชีหลังบ้าน",
     adminDescription: "เข้าสู่คอนโซลเพื่อดูงานซิงก์ เนื้อหา ผู้ใช้ และคำสั่งซื้อ",
     adminAction: "เข้าแอดมิน",
@@ -1893,7 +1893,7 @@ const viCopy: SiteCopy = {
   authPageCopy: {
     ...enCopy.authPageCopy,
     heroTitle: "Đăng nhập hội viên hoặc vận hành",
-    heroDescription: "Dùng tài khoản demo để kiểm tra mua hội viên, mở khóa nội dung và luồng quản trị trước khi nối auth thật.",
+    heroDescription: "Đăng nhập bằng tài khoản hội viên hoặc quản trị thật để đi thẳng vào luồng mua, mở khóa, nạp coin và vận hành.",
     adminAction: "Mở quản trị",
     memberAction: "Mở trung tâm hội viên",
     customTitle: "Tạo phiên demo tùy chỉnh",
@@ -2059,7 +2059,7 @@ const hiCopy: SiteCopy = {
   authPageCopy: {
     ...enCopy.authPageCopy,
     heroTitle: "सदस्य या ऑपरेशन के रूप में साइन इन करें",
-    heroDescription: "डेमो पहचान का उपयोग करके सदस्यता खरीद, कंटेंट अनलॉक और एडमिन वर्कफ़्लो को जाँचें।",
+    heroDescription: "वास्तविक सदस्य या एडमिन खाते से लॉगिन करें और सीधे खरीद, अनलॉक, रिचार्ज और एडमिन वर्कफ़्लो में जाएँ।",
     adminAction: "एडमिन खोलें",
     memberAction: "सदस्य केंद्र खोलें",
     customTitle: "कस्टम डेमो सत्र बनाएँ",

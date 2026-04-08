@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   batchUpdateAgentWithdrawals,
+  getAgentAutomationRuntime,
+  runAgentLevelAutomation,
+  runWeeklyAgentSettlement,
   reviewAgentApplication,
   saveAgentApplication,
   saveAgentCampaign,
   saveAgentProfile,
   saveAgentWithdrawal,
   saveRecruitmentLead,
+  syncAgentCommissionPolicies,
   toggleAgentProfileStatus,
 } from "@/lib/admin-agents";
 import { recordAdminAuditLog } from "@/lib/admin-system";
@@ -14,6 +18,20 @@ import { getCurrentUserRecord, getSessionContext } from "@/lib/session";
 
 function redirectToAdmin(request: NextRequest, suffix = "") {
   return NextResponse.redirect(new URL(`/admin?tab=agents${suffix}`, request.url));
+}
+
+function redirectWithSaved(request: NextRequest, saved: string, extra?: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams({ tab: "agents", saved });
+
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    if (value === undefined || value === "") {
+      continue;
+    }
+
+    params.set(key, String(value));
+  }
+
+  return NextResponse.redirect(new URL(`/admin?${params.toString()}`, request.url));
 }
 
 function redirectWithBatchResult(
@@ -89,6 +107,62 @@ export async function POST(request: NextRequest) {
       await saveAgentCampaign(formData);
     } else if (intent === "save-lead") {
       await saveRecruitmentLead(formData);
+    } else if (intent === "sync-agent-commission-policy") {
+      const summary = await syncAgentCommissionPolicies();
+      const runtime = await getAgentAutomationRuntime();
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: "sync-agent-commission-policy",
+        scope: "agents.automation.commission-policy",
+        targetType: "agent-policy",
+        targetId: "all-agents",
+        detail: `processedCount: ${summary.processedCount} | changedCount: ${summary.changedCount} | policies: ${runtime.policies.map((item) => `${item.level}:${item.directRate}/${item.downstreamRate}`).join(", ")}`,
+        ipAddress,
+      });
+      return redirectWithSaved(request, "agents-automation-policy", {
+        agentProcessed: summary.processedCount,
+        agentChanged: summary.changedCount,
+      });
+    } else if (intent === "run-agent-level-sync") {
+      const summary = await runAgentLevelAutomation();
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: "run-agent-level-sync",
+        scope: "agents.automation.level-sync",
+        targetType: "agent-level",
+        targetId: "all-agents",
+        detail: `processedCount: ${summary.processedCount} | changedCount: ${summary.changedCount} | promotedCount: ${summary.promotedCount} | demotedCount: ${summary.demotedCount}`,
+        ipAddress,
+      });
+      return redirectWithSaved(request, "agents-level-sync", {
+        agentProcessed: summary.processedCount,
+        agentChanged: summary.changedCount,
+        agentPromoted: summary.promotedCount,
+        agentDemoted: summary.demotedCount,
+      });
+    } else if (intent === "run-agent-weekly-settlement") {
+      const summary = await runWeeklyAgentSettlement();
+      await recordAdminAuditLog({
+        actorUserId: currentUser?.id,
+        actorDisplayName: session.displayName,
+        actorRole: session.role,
+        action: "run-agent-weekly-settlement",
+        scope: "agents.automation.weekly-settlement",
+        targetType: "agent-withdrawal",
+        targetId: "weekly-batch",
+        detail: `processedCount: ${summary.processedCount} | createdCount: ${summary.createdCount} | skippedCount: ${summary.skippedCount} | minimumAmount: ${summary.minimumAmount}`,
+        ipAddress,
+      });
+      return redirectWithSaved(request, "agents-weekly-settlement", {
+        agentProcessed: summary.processedCount,
+        agentCreated: summary.createdCount,
+        agentSkipped: summary.skippedCount,
+        agentMinimum: summary.minimumAmount,
+      });
     } else if (intent === "save-withdrawal") {
       await saveAgentWithdrawal(formData);
       await recordAdminAuditLog({

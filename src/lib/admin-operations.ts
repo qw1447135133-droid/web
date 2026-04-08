@@ -60,16 +60,28 @@ export type AdminHomepageBannerRecord = {
   titleZhCn: string;
   titleZhTw: string;
   titleEn: string;
+  titleTh: string;
+  titleVi: string;
+  titleHi: string;
   subtitleZhCn: string;
   subtitleZhTw: string;
   subtitleEn: string;
+  subtitleTh: string;
+  subtitleVi: string;
+  subtitleHi: string;
   descriptionZhCn: string;
   descriptionZhTw: string;
   descriptionEn: string;
+  descriptionTh: string;
+  descriptionVi: string;
+  descriptionHi: string;
   href: string;
   ctaLabelZhCn: string;
   ctaLabelZhTw: string;
   ctaLabelEn: string;
+  ctaLabelTh: string;
+  ctaLabelVi: string;
+  ctaLabelHi: string;
   imageUrl: string;
   startsAt?: string;
   endsAt?: string;
@@ -99,13 +111,22 @@ export type AdminSiteAnnouncementRecord = {
   titleZhCn: string;
   titleZhTw: string;
   titleEn: string;
+  titleTh: string;
+  titleVi: string;
+  titleHi: string;
   messageZhCn: string;
   messageZhTw: string;
   messageEn: string;
+  messageTh: string;
+  messageVi: string;
+  messageHi: string;
   href: string;
   ctaLabelZhCn: string;
   ctaLabelZhTw: string;
   ctaLabelEn: string;
+  ctaLabelTh: string;
+  ctaLabelVi: string;
+  ctaLabelHi: string;
   startsAt?: string;
   endsAt?: string;
   status: string;
@@ -441,16 +462,28 @@ export async function getAdminHomepageBanners(): Promise<AdminHomepageBannerReco
     titleZhCn: banner.titleZhCn,
     titleZhTw: banner.titleZhTw,
     titleEn: banner.titleEn,
+    titleTh: banner.titleTh,
+    titleVi: banner.titleVi,
+    titleHi: banner.titleHi,
     subtitleZhCn: banner.subtitleZhCn,
     subtitleZhTw: banner.subtitleZhTw,
     subtitleEn: banner.subtitleEn,
+    subtitleTh: banner.subtitleTh,
+    subtitleVi: banner.subtitleVi,
+    subtitleHi: banner.subtitleHi,
     descriptionZhCn: banner.descriptionZhCn,
     descriptionZhTw: banner.descriptionZhTw,
     descriptionEn: banner.descriptionEn,
+    descriptionTh: banner.descriptionTh,
+    descriptionVi: banner.descriptionVi,
+    descriptionHi: banner.descriptionHi,
     href: banner.href,
     ctaLabelZhCn: banner.ctaLabelZhCn,
     ctaLabelZhTw: banner.ctaLabelZhTw,
     ctaLabelEn: banner.ctaLabelEn,
+    ctaLabelTh: banner.ctaLabelTh,
+    ctaLabelVi: banner.ctaLabelVi,
+    ctaLabelHi: banner.ctaLabelHi,
     imageUrl: banner.imageUrl,
     startsAt: banner.startsAt?.toISOString(),
     endsAt: banner.endsAt?.toISOString(),
@@ -542,16 +575,28 @@ export async function bootstrapMockHomepageBanners() {
         titleZhCn: banner.translations["zh-CN"].title,
         titleZhTw: banner.translations["zh-TW"].title,
         titleEn: banner.translations.en.title,
+        titleTh: banner.translations.th.title,
+        titleVi: banner.translations.vi.title,
+        titleHi: banner.translations.hi.title,
         subtitleZhCn: banner.translations["zh-CN"].subtitle,
         subtitleZhTw: banner.translations["zh-TW"].subtitle,
         subtitleEn: banner.translations.en.subtitle,
+        subtitleTh: banner.translations.th.subtitle,
+        subtitleVi: banner.translations.vi.subtitle,
+        subtitleHi: banner.translations.hi.subtitle,
         descriptionZhCn: banner.translations["zh-CN"].description,
         descriptionZhTw: banner.translations["zh-TW"].description,
         descriptionEn: banner.translations.en.description,
+        descriptionTh: banner.translations.th.description,
+        descriptionVi: banner.translations.vi.description,
+        descriptionHi: banner.translations.hi.description,
         href: banner.href,
         ctaLabelZhCn: banner.translations["zh-CN"].ctaLabel,
         ctaLabelZhTw: banner.translations["zh-TW"].ctaLabel,
         ctaLabelEn: banner.translations.en.ctaLabel,
+        ctaLabelTh: banner.translations.th.ctaLabel,
+        ctaLabelVi: banner.translations.vi.ctaLabel,
+        ctaLabelHi: banner.translations.hi.ctaLabel,
         imageUrl: banner.imageUrl,
         startsAt: banner.startsAt ? new Date(banner.startsAt) : null,
         endsAt: banner.endsAt ? new Date(banner.endsAt) : null,
@@ -564,16 +609,28 @@ export async function bootstrapMockHomepageBanners() {
         titleZhCn: banner.translations["zh-CN"].title,
         titleZhTw: banner.translations["zh-TW"].title,
         titleEn: banner.translations.en.title,
+        titleTh: banner.translations.th.title,
+        titleVi: banner.translations.vi.title,
+        titleHi: banner.translations.hi.title,
         subtitleZhCn: banner.translations["zh-CN"].subtitle,
         subtitleZhTw: banner.translations["zh-TW"].subtitle,
         subtitleEn: banner.translations.en.subtitle,
+        subtitleTh: banner.translations.th.subtitle,
+        subtitleVi: banner.translations.vi.subtitle,
+        subtitleHi: banner.translations.hi.subtitle,
         descriptionZhCn: banner.translations["zh-CN"].description,
         descriptionZhTw: banner.translations["zh-TW"].description,
         descriptionEn: banner.translations.en.description,
+        descriptionTh: banner.translations.th.description,
+        descriptionVi: banner.translations.vi.description,
+        descriptionHi: banner.translations.hi.description,
         href: banner.href,
         ctaLabelZhCn: banner.translations["zh-CN"].ctaLabel,
         ctaLabelZhTw: banner.translations["zh-TW"].ctaLabel,
         ctaLabelEn: banner.translations.en.ctaLabel,
+        ctaLabelTh: banner.translations.th.ctaLabel,
+        ctaLabelVi: banner.translations.vi.ctaLabel,
+        ctaLabelHi: banner.translations.hi.ctaLabel,
         imageUrl: banner.imageUrl,
         startsAt: banner.startsAt ? new Date(banner.startsAt) : null,
         endsAt: banner.endsAt ? new Date(banner.endsAt) : null,
@@ -598,13 +655,22 @@ export async function getAdminSiteAnnouncements(): Promise<AdminSiteAnnouncement
     titleZhCn: announcement.titleZhCn,
     titleZhTw: announcement.titleZhTw,
     titleEn: announcement.titleEn,
+    titleTh: announcement.titleTh,
+    titleVi: announcement.titleVi,
+    titleHi: announcement.titleHi,
     messageZhCn: announcement.messageZhCn,
     messageZhTw: announcement.messageZhTw,
     messageEn: announcement.messageEn,
+    messageTh: announcement.messageTh,
+    messageVi: announcement.messageVi,
+    messageHi: announcement.messageHi,
     href: announcement.href ?? "",
     ctaLabelZhCn: announcement.ctaLabelZhCn ?? "",
     ctaLabelZhTw: announcement.ctaLabelZhTw ?? "",
     ctaLabelEn: announcement.ctaLabelEn ?? "",
+    ctaLabelTh: announcement.ctaLabelTh ?? "",
+    ctaLabelVi: announcement.ctaLabelVi ?? "",
+    ctaLabelHi: announcement.ctaLabelHi ?? "",
     startsAt: announcement.startsAt?.toISOString(),
     endsAt: announcement.endsAt?.toISOString(),
     status: announcement.status,
@@ -676,13 +742,22 @@ export async function bootstrapMockSiteAnnouncements() {
         titleZhCn: announcement.translations["zh-CN"].title,
         titleZhTw: announcement.translations["zh-TW"].title,
         titleEn: announcement.translations.en.title,
+        titleTh: announcement.translations.th.title,
+        titleVi: announcement.translations.vi.title,
+        titleHi: announcement.translations.hi.title,
         messageZhCn: announcement.translations["zh-CN"].message,
         messageZhTw: announcement.translations["zh-TW"].message,
         messageEn: announcement.translations.en.message,
+        messageTh: announcement.translations.th.message,
+        messageVi: announcement.translations.vi.message,
+        messageHi: announcement.translations.hi.message,
         href: announcement.href ?? null,
         ctaLabelZhCn: announcement.translations["zh-CN"].ctaLabel ?? null,
         ctaLabelZhTw: announcement.translations["zh-TW"].ctaLabel ?? null,
         ctaLabelEn: announcement.translations.en.ctaLabel ?? null,
+        ctaLabelTh: announcement.translations.th.ctaLabel ?? null,
+        ctaLabelVi: announcement.translations.vi.ctaLabel ?? null,
+        ctaLabelHi: announcement.translations.hi.ctaLabel ?? null,
         startsAt: announcement.startsAt ? new Date(announcement.startsAt) : null,
         endsAt: announcement.endsAt ? new Date(announcement.endsAt) : null,
         status: "active",
@@ -694,13 +769,22 @@ export async function bootstrapMockSiteAnnouncements() {
         titleZhCn: announcement.translations["zh-CN"].title,
         titleZhTw: announcement.translations["zh-TW"].title,
         titleEn: announcement.translations.en.title,
+        titleTh: announcement.translations.th.title,
+        titleVi: announcement.translations.vi.title,
+        titleHi: announcement.translations.hi.title,
         messageZhCn: announcement.translations["zh-CN"].message,
         messageZhTw: announcement.translations["zh-TW"].message,
         messageEn: announcement.translations.en.message,
+        messageTh: announcement.translations.th.message,
+        messageVi: announcement.translations.vi.message,
+        messageHi: announcement.translations.hi.message,
         href: announcement.href ?? null,
         ctaLabelZhCn: announcement.translations["zh-CN"].ctaLabel ?? null,
         ctaLabelZhTw: announcement.translations["zh-TW"].ctaLabel ?? null,
         ctaLabelEn: announcement.translations.en.ctaLabel ?? null,
+        ctaLabelTh: announcement.translations.th.ctaLabel ?? null,
+        ctaLabelVi: announcement.translations.vi.ctaLabel ?? null,
+        ctaLabelHi: announcement.translations.hi.ctaLabel ?? null,
         startsAt: announcement.startsAt ? new Date(announcement.startsAt) : null,
         endsAt: announcement.endsAt ? new Date(announcement.endsAt) : null,
         status: "active",
@@ -890,12 +974,21 @@ export async function saveHomepageBanner(formData: FormData) {
   const titleZhCn = String(formData.get("titleZhCn") || "").trim();
   const titleZhTw = String(formData.get("titleZhTw") || "").trim() || titleZhCn;
   const titleEn = String(formData.get("titleEn") || "").trim() || titleZhCn;
+  const titleTh = String(formData.get("titleTh") || "").trim() || titleEn || titleZhCn;
+  const titleVi = String(formData.get("titleVi") || "").trim() || titleEn || titleZhCn;
+  const titleHi = String(formData.get("titleHi") || "").trim() || titleEn || titleZhCn;
   const subtitleZhCn = String(formData.get("subtitleZhCn") || "").trim() || titleZhCn;
   const subtitleZhTw = String(formData.get("subtitleZhTw") || "").trim() || subtitleZhCn;
   const subtitleEn = String(formData.get("subtitleEn") || "").trim() || subtitleZhCn;
+  const subtitleTh = String(formData.get("subtitleTh") || "").trim() || subtitleEn || subtitleZhCn;
+  const subtitleVi = String(formData.get("subtitleVi") || "").trim() || subtitleEn || subtitleZhCn;
+  const subtitleHi = String(formData.get("subtitleHi") || "").trim() || subtitleEn || subtitleZhCn;
   const descriptionZhCn = String(formData.get("descriptionZhCn") || "").trim();
   const descriptionZhTw = String(formData.get("descriptionZhTw") || "").trim() || descriptionZhCn;
   const descriptionEn = String(formData.get("descriptionEn") || "").trim() || descriptionZhCn;
+  const descriptionTh = String(formData.get("descriptionTh") || "").trim() || descriptionEn || descriptionZhCn;
+  const descriptionVi = String(formData.get("descriptionVi") || "").trim() || descriptionEn || descriptionZhCn;
+  const descriptionHi = String(formData.get("descriptionHi") || "").trim() || descriptionEn || descriptionZhCn;
 
   if (!titleZhCn || !descriptionZhCn) {
     throw new Error("首页 Banner 至少需要简体中文标题和正文。");
@@ -907,6 +1000,9 @@ export async function saveHomepageBanner(formData: FormData) {
   const ctaLabelZhCn = String(formData.get("ctaLabelZhCn") || "").trim() || "查看详情";
   const ctaLabelZhTw = String(formData.get("ctaLabelZhTw") || "").trim() || ctaLabelZhCn;
   const ctaLabelEn = String(formData.get("ctaLabelEn") || "").trim() || ctaLabelZhCn;
+  const ctaLabelTh = String(formData.get("ctaLabelTh") || "").trim() || ctaLabelEn || ctaLabelZhCn;
+  const ctaLabelVi = String(formData.get("ctaLabelVi") || "").trim() || ctaLabelEn || ctaLabelZhCn;
+  const ctaLabelHi = String(formData.get("ctaLabelHi") || "").trim() || ctaLabelEn || ctaLabelZhCn;
   const imageUrl = String(formData.get("imageUrl") || "").trim();
   const startsAt = parseOptionalDate(formData.get("startsAt"));
   const endsAt = parseOptionalDate(formData.get("endsAt"));
@@ -927,16 +1023,28 @@ export async function saveHomepageBanner(formData: FormData) {
     titleZhCn,
     titleZhTw,
     titleEn,
+    titleTh,
+    titleVi,
+    titleHi,
     subtitleZhCn,
     subtitleZhTw,
     subtitleEn,
+    subtitleTh,
+    subtitleVi,
+    subtitleHi,
     descriptionZhCn,
     descriptionZhTw,
     descriptionEn,
+    descriptionTh,
+    descriptionVi,
+    descriptionHi,
     href,
     ctaLabelZhCn,
     ctaLabelZhTw,
     ctaLabelEn,
+    ctaLabelTh,
+    ctaLabelVi,
+    ctaLabelHi,
     imageUrl,
     startsAt,
     endsAt,
@@ -1060,16 +1168,28 @@ export async function duplicateHomepageBanner(id: string) {
       titleZhCn: current.titleZhCn,
       titleZhTw: current.titleZhTw,
       titleEn: current.titleEn,
+      titleTh: current.titleTh,
+      titleVi: current.titleVi,
+      titleHi: current.titleHi,
       subtitleZhCn: current.subtitleZhCn,
       subtitleZhTw: current.subtitleZhTw,
       subtitleEn: current.subtitleEn,
+      subtitleTh: current.subtitleTh,
+      subtitleVi: current.subtitleVi,
+      subtitleHi: current.subtitleHi,
       descriptionZhCn: current.descriptionZhCn,
       descriptionZhTw: current.descriptionZhTw,
       descriptionEn: current.descriptionEn,
+      descriptionTh: current.descriptionTh,
+      descriptionVi: current.descriptionVi,
+      descriptionHi: current.descriptionHi,
       href: current.href,
       ctaLabelZhCn: current.ctaLabelZhCn,
       ctaLabelZhTw: current.ctaLabelZhTw,
       ctaLabelEn: current.ctaLabelEn,
+      ctaLabelTh: current.ctaLabelTh,
+      ctaLabelVi: current.ctaLabelVi,
+      ctaLabelHi: current.ctaLabelHi,
       imageUrl: current.imageUrl,
       startsAt: current.startsAt,
       endsAt: current.endsAt,
@@ -1201,9 +1321,15 @@ export async function saveSiteAnnouncement(formData: FormData) {
   const titleZhCn = String(formData.get("titleZhCn") || "").trim();
   const titleZhTw = String(formData.get("titleZhTw") || "").trim() || titleZhCn;
   const titleEn = String(formData.get("titleEn") || "").trim() || titleZhCn;
+  const titleTh = String(formData.get("titleTh") || "").trim() || titleEn || titleZhCn;
+  const titleVi = String(formData.get("titleVi") || "").trim() || titleEn || titleZhCn;
+  const titleHi = String(formData.get("titleHi") || "").trim() || titleEn || titleZhCn;
   const messageZhCn = String(formData.get("messageZhCn") || "").trim();
   const messageZhTw = String(formData.get("messageZhTw") || "").trim() || messageZhCn;
   const messageEn = String(formData.get("messageEn") || "").trim() || messageZhCn;
+  const messageTh = String(formData.get("messageTh") || "").trim() || messageEn || messageZhCn;
+  const messageVi = String(formData.get("messageVi") || "").trim() || messageEn || messageZhCn;
+  const messageHi = String(formData.get("messageHi") || "").trim() || messageEn || messageZhCn;
 
   if (!titleZhCn || !messageZhCn) {
     throw new Error("站内公告至少需要简体中文标题和正文。");
@@ -1218,6 +1344,9 @@ export async function saveSiteAnnouncement(formData: FormData) {
   const ctaLabelZhCn = String(formData.get("ctaLabelZhCn") || "").trim();
   const ctaLabelZhTw = String(formData.get("ctaLabelZhTw") || "").trim() || ctaLabelZhCn;
   const ctaLabelEn = String(formData.get("ctaLabelEn") || "").trim() || ctaLabelZhCn;
+  const ctaLabelTh = String(formData.get("ctaLabelTh") || "").trim() || ctaLabelEn || ctaLabelZhCn;
+  const ctaLabelVi = String(formData.get("ctaLabelVi") || "").trim() || ctaLabelEn || ctaLabelZhCn;
+  const ctaLabelHi = String(formData.get("ctaLabelHi") || "").trim() || ctaLabelEn || ctaLabelZhCn;
   const startsAt = parseOptionalDate(formData.get("startsAt"));
   const endsAt = parseOptionalDate(formData.get("endsAt"));
   const status = String(formData.get("status") || "active").trim() || "active";
@@ -1233,13 +1362,22 @@ export async function saveSiteAnnouncement(formData: FormData) {
     titleZhCn,
     titleZhTw,
     titleEn,
+    titleTh,
+    titleVi,
+    titleHi,
     messageZhCn,
     messageZhTw,
     messageEn,
+    messageTh,
+    messageVi,
+    messageHi,
     href: href || null,
     ctaLabelZhCn: ctaLabelZhCn || null,
     ctaLabelZhTw: ctaLabelZhTw || null,
     ctaLabelEn: ctaLabelEn || null,
+    ctaLabelTh: ctaLabelTh || null,
+    ctaLabelVi: ctaLabelVi || null,
+    ctaLabelHi: ctaLabelHi || null,
     startsAt,
     endsAt,
     status,

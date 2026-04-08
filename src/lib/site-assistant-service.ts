@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { answerSiteAssistantQuestion, type SiteAssistantLink } from "@/lib/site-assistant";
 import { resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
+import { notifySupportHandoffRequested, notifySupportHandoffResolved } from "@/lib/user-notifications";
 
 export const assistantCookieName = "signal-nine-assistant";
 const assistantCookieMaxAge = 60 * 60 * 24 * 30;
@@ -1060,6 +1061,13 @@ export async function requestAssistantHandoff(params: {
     },
   });
 
+  if (params.user?.id) {
+    await notifySupportHandoffRequested(prisma, {
+      userId: params.user.id,
+      conversationId: conversation.id,
+    });
+  }
+
   return {
     id: handoff.id,
     conversationId: conversation.id,
@@ -1144,6 +1152,7 @@ export async function resolveAssistantHandoffRequest(id: string) {
       id: true,
       conversationId: true,
       status: true,
+      userId: true,
     },
   });
 
@@ -1172,4 +1181,11 @@ export async function resolveAssistantHandoffRequest(id: string) {
       resolvedAt: pendingCount > 0 ? null : new Date(),
     },
   });
+
+  if (request.userId) {
+    await notifySupportHandoffResolved(prisma, {
+      userId: request.userId,
+      conversationId: request.conversationId,
+    });
+  }
 }

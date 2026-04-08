@@ -32,14 +32,50 @@ import type {
   HomepageModule,
   Match,
   PredictionRecord,
+  SiteAd,
   SiteAnnouncement,
   Sport,
 } from "@/lib/types";
+import { getSiteAds as getManagedSiteAds } from "@/lib/site-ads";
+
+export type SiteContentIncludeKey =
+  | "banners"
+  | "announcements"
+  | "ads"
+  | "homepageModules"
+  | "authors"
+  | "articlePlans"
+  | "predictions";
+
+export type SiteContentPayload = {
+  banners?: HomepageBanner[];
+  announcements?: SiteAnnouncement[];
+  ads?: SiteAd[];
+  homepageModules?: HomepageModule[];
+  authors?: AuthorTeam[];
+  articlePlans?: ArticlePlan[];
+  predictions?: PredictionRecord[];
+};
 
 type ContentLocale = Locale | DisplayLocale;
 
 function resolveContentLocale(locale: ContentLocale): Locale {
   return resolveRenderLocale(locale as DisplayLocale);
+}
+
+function resolveDisplayContentLocale(locale: ContentLocale): DisplayLocale {
+  if (
+    locale === "zh-CN" ||
+    locale === "zh-TW" ||
+    locale === "en" ||
+    locale === "th" ||
+    locale === "vi" ||
+    locale === "hi"
+  ) {
+    return locale;
+  }
+
+  return resolveContentLocale(locale);
 }
 
 function mergeDefined<T extends object>(fallback: T, primary: T) {
@@ -92,26 +128,61 @@ function localizeSiteAnnouncement(
     titleZhCn: string;
     titleZhTw: string;
     titleEn: string;
+    titleTh: string;
+    titleVi: string;
+    titleHi: string;
     messageZhCn: string;
     messageZhTw: string;
     messageEn: string;
+    messageTh: string;
+    messageVi: string;
+    messageHi: string;
     ctaLabelZhCn?: string;
     ctaLabelZhTw?: string;
     ctaLabelEn?: string;
+    ctaLabelTh?: string;
+    ctaLabelVi?: string;
+    ctaLabelHi?: string;
   },
   locale: ContentLocale,
 ): SiteAnnouncement {
-  const renderLocale = resolveContentLocale(locale);
+  const displayLocale = resolveDisplayContentLocale(locale);
   const title =
-    renderLocale === "zh-TW" ? item.titleZhTw : renderLocale === "en" ? item.titleEn : item.titleZhCn;
+    displayLocale === "zh-TW"
+      ? item.titleZhTw
+      : displayLocale === "en"
+        ? item.titleEn
+        : displayLocale === "th"
+          ? item.titleTh || item.titleEn || item.titleZhCn
+          : displayLocale === "vi"
+            ? item.titleVi || item.titleEn || item.titleZhCn
+            : displayLocale === "hi"
+              ? item.titleHi || item.titleEn || item.titleZhCn
+              : item.titleZhCn;
   const message =
-    renderLocale === "zh-TW" ? item.messageZhTw : renderLocale === "en" ? item.messageEn : item.messageZhCn;
+    displayLocale === "zh-TW"
+      ? item.messageZhTw
+      : displayLocale === "en"
+        ? item.messageEn
+        : displayLocale === "th"
+          ? item.messageTh || item.messageEn || item.messageZhCn
+          : displayLocale === "vi"
+            ? item.messageVi || item.messageEn || item.messageZhCn
+            : displayLocale === "hi"
+              ? item.messageHi || item.messageEn || item.messageZhCn
+              : item.messageZhCn;
   const ctaLabel =
-    renderLocale === "zh-TW"
+    displayLocale === "zh-TW"
       ? item.ctaLabelZhTw
-      : renderLocale === "en"
+      : displayLocale === "en"
         ? item.ctaLabelEn
-        : item.ctaLabelZhCn;
+        : displayLocale === "th"
+          ? item.ctaLabelTh || item.ctaLabelEn || item.ctaLabelZhCn
+          : displayLocale === "vi"
+            ? item.ctaLabelVi || item.ctaLabelEn || item.ctaLabelZhCn
+            : displayLocale === "hi"
+              ? item.ctaLabelHi || item.ctaLabelEn || item.ctaLabelZhCn
+              : item.ctaLabelZhCn;
 
   return {
     id: item.id,
@@ -132,37 +203,82 @@ function localizeHomepageBanner(
     titleZhCn: string;
     titleZhTw: string;
     titleEn: string;
+    titleTh: string;
+    titleVi: string;
+    titleHi: string;
     subtitleZhCn: string;
     subtitleZhTw: string;
     subtitleEn: string;
+    subtitleTh: string;
+    subtitleVi: string;
+    subtitleHi: string;
     descriptionZhCn: string;
     descriptionZhTw: string;
     descriptionEn: string;
+    descriptionTh: string;
+    descriptionVi: string;
+    descriptionHi: string;
     ctaLabelZhCn: string;
     ctaLabelZhTw: string;
     ctaLabelEn: string;
+    ctaLabelTh: string;
+    ctaLabelVi: string;
+    ctaLabelHi: string;
   },
   locale: ContentLocale,
 ): HomepageBanner {
-  const renderLocale = resolveContentLocale(locale);
+  const displayLocale = resolveDisplayContentLocale(locale);
   return {
     id: item.id,
-    title: renderLocale === "zh-TW" ? item.titleZhTw : renderLocale === "en" ? item.titleEn : item.titleZhCn,
+    title:
+      displayLocale === "zh-TW"
+        ? item.titleZhTw
+        : displayLocale === "en"
+          ? item.titleEn
+          : displayLocale === "th"
+            ? item.titleTh || item.titleEn || item.titleZhCn
+            : displayLocale === "vi"
+              ? item.titleVi || item.titleEn || item.titleZhCn
+              : displayLocale === "hi"
+                ? item.titleHi || item.titleEn || item.titleZhCn
+                : item.titleZhCn,
     subtitle:
-      renderLocale === "zh-TW" ? item.subtitleZhTw : renderLocale === "en" ? item.subtitleEn : item.subtitleZhCn,
+      displayLocale === "zh-TW"
+        ? item.subtitleZhTw
+        : displayLocale === "en"
+          ? item.subtitleEn
+          : displayLocale === "th"
+            ? item.subtitleTh || item.subtitleEn || item.subtitleZhCn || item.titleTh || item.titleEn || item.titleZhCn
+            : displayLocale === "vi"
+              ? item.subtitleVi || item.subtitleEn || item.subtitleZhCn || item.titleVi || item.titleEn || item.titleZhCn
+              : displayLocale === "hi"
+                ? item.subtitleHi || item.subtitleEn || item.subtitleZhCn || item.titleHi || item.titleEn || item.titleZhCn
+                : item.subtitleZhCn,
     description:
-      renderLocale === "zh-TW"
+      displayLocale === "zh-TW"
         ? item.descriptionZhTw
-        : renderLocale === "en"
+        : displayLocale === "en"
           ? item.descriptionEn
-          : item.descriptionZhCn,
+          : displayLocale === "th"
+            ? item.descriptionTh || item.descriptionEn || item.descriptionZhCn
+            : displayLocale === "vi"
+              ? item.descriptionVi || item.descriptionEn || item.descriptionZhCn
+              : displayLocale === "hi"
+                ? item.descriptionHi || item.descriptionEn || item.descriptionZhCn
+                : item.descriptionZhCn,
     href: item.href,
     ctaLabel:
-      renderLocale === "zh-TW"
+      displayLocale === "zh-TW"
         ? item.ctaLabelZhTw
-        : renderLocale === "en"
+        : displayLocale === "en"
           ? item.ctaLabelEn
-          : item.ctaLabelZhCn,
+          : displayLocale === "th"
+            ? item.ctaLabelTh || item.ctaLabelEn || item.ctaLabelZhCn
+            : displayLocale === "vi"
+              ? item.ctaLabelVi || item.ctaLabelEn || item.ctaLabelZhCn
+              : displayLocale === "hi"
+                ? item.ctaLabelHi || item.ctaLabelEn || item.ctaLabelZhCn
+                : item.ctaLabelZhCn,
     imageUrl: item.imageUrl,
     theme: item.theme,
   };
@@ -307,15 +423,27 @@ export async function getHomepageBanners(locale: ContentLocale = defaultLocale):
     titleZhCn: item.translations["zh-CN"].title,
     titleZhTw: item.translations["zh-TW"].title,
     titleEn: item.translations.en.title,
+    titleTh: item.translations.th.title,
+    titleVi: item.translations.vi.title,
+    titleHi: item.translations.hi.title,
     subtitleZhCn: item.translations["zh-CN"].subtitle,
     subtitleZhTw: item.translations["zh-TW"].subtitle,
     subtitleEn: item.translations.en.subtitle,
+    subtitleTh: item.translations.th.subtitle,
+    subtitleVi: item.translations.vi.subtitle,
+    subtitleHi: item.translations.hi.subtitle,
     descriptionZhCn: item.translations["zh-CN"].description,
     descriptionZhTw: item.translations["zh-TW"].description,
     descriptionEn: item.translations.en.description,
+    descriptionTh: item.translations.th.description,
+    descriptionVi: item.translations.vi.description,
+    descriptionHi: item.translations.hi.description,
     ctaLabelZhCn: item.translations["zh-CN"].ctaLabel,
     ctaLabelZhTw: item.translations["zh-TW"].ctaLabel,
     ctaLabelEn: item.translations.en.ctaLabel,
+    ctaLabelTh: item.translations.th.ctaLabel,
+    ctaLabelVi: item.translations.vi.ctaLabel,
+    ctaLabelHi: item.translations.hi.ctaLabel,
   }));
 
   const source = storedBanners.length > 0 ? storedBanners : fallbackBanners;
@@ -341,22 +469,43 @@ export async function getSiteAnnouncements(locale: ContentLocale = defaultLocale
     titleZhCn: item.translations["zh-CN"].title,
     titleZhTw: item.translations["zh-TW"].title,
     titleEn: item.translations.en.title,
+    titleTh: item.translations.th.title,
+    titleVi: item.translations.vi.title,
+    titleHi: item.translations.hi.title,
     messageZhCn: item.translations["zh-CN"].message,
     messageZhTw: item.translations["zh-TW"].message,
     messageEn: item.translations.en.message,
+    messageTh: item.translations.th.message,
+    messageVi: item.translations.vi.message,
+    messageHi: item.translations.hi.message,
     ctaLabelZhCn: item.translations["zh-CN"].ctaLabel,
     ctaLabelZhTw: item.translations["zh-TW"].ctaLabel,
     ctaLabelEn: item.translations.en.ctaLabel,
+    ctaLabelTh: item.translations.th.ctaLabel,
+    ctaLabelVi: item.translations.vi.ctaLabel,
+    ctaLabelHi: item.translations.hi.ctaLabel,
   }));
 
   const source = storedAnnouncements.length > 0 ? storedAnnouncements : fallbackAnnouncements;
   return source.map((item) => localizeSiteAnnouncement(item, locale));
 }
 
+export async function getSiteAds(
+  locale: ContentLocale = defaultLocale,
+  placement?: SiteAd["placement"],
+): Promise<SiteAd[]> {
+  return getManagedSiteAds(locale, placement);
+}
+
 export async function getAuthorTeams(locale: Locale = defaultLocale): Promise<AuthorTeam[]> {
   const authors = await getStoredAuthorTeams();
   const source = mergeById(authors, mockAuthorTeams);
   return source.map((item) => localizeAuthorTeam(item, locale));
+}
+
+export async function getAuthorById(authorId: string, locale: Locale = defaultLocale): Promise<AuthorTeam | undefined> {
+  const authors = await getAuthorTeams(locale);
+  return authors.find((item) => item.id === authorId);
 }
 
 export async function getArticlePlans(sport?: Sport, locale: Locale = defaultLocale): Promise<ArticlePlan[]> {
@@ -387,4 +536,82 @@ export async function getPredictionByMatchId(matchId: string, locale: Locale = d
   const fallback = getMockPredictionByMatchId(matchId) ?? undefined;
   const source = prediction && fallback ? mergeDefined(fallback, prediction) : (prediction ?? fallback);
   return source ? localizePrediction(source, locale) : undefined;
+}
+
+export async function getSiteContentPayload(
+  locale: ContentLocale = defaultLocale,
+  options: {
+    include?: SiteContentIncludeKey[];
+    sport?: Sport;
+  } = {},
+): Promise<SiteContentPayload> {
+  const renderLocale = resolveContentLocale(locale);
+  const includeSet = new Set<SiteContentIncludeKey>(
+    options.include && options.include.length > 0
+      ? options.include
+      : ["banners", "announcements", "ads", "homepageModules", "authors", "articlePlans", "predictions"],
+  );
+
+  const payload: SiteContentPayload = {};
+
+  const tasks: Promise<void>[] = [];
+
+  if (includeSet.has("banners")) {
+    tasks.push(
+      getHomepageBanners(locale).then((value) => {
+        payload.banners = value;
+      }),
+    );
+  }
+
+  if (includeSet.has("announcements")) {
+    tasks.push(
+      getSiteAnnouncements(locale).then((value) => {
+        payload.announcements = value;
+      }),
+    );
+  }
+
+  if (includeSet.has("ads")) {
+    tasks.push(
+      getSiteAds(locale).then((value) => {
+        payload.ads = value;
+      }),
+    );
+  }
+
+  if (includeSet.has("homepageModules")) {
+    tasks.push(
+      getHomepageModules(locale).then((value) => {
+        payload.homepageModules = value;
+      }),
+    );
+  }
+
+  if (includeSet.has("authors")) {
+    tasks.push(
+      getAuthorTeams(renderLocale).then((value) => {
+        payload.authors = value;
+      }),
+    );
+  }
+
+  if (includeSet.has("articlePlans")) {
+    tasks.push(
+      getArticlePlans(options.sport, renderLocale).then((value) => {
+        payload.articlePlans = value;
+      }),
+    );
+  }
+
+  if (includeSet.has("predictions")) {
+    tasks.push(
+      getPredictions(options.sport, renderLocale).then((value) => {
+        payload.predictions = value;
+      }),
+    );
+  }
+
+  await Promise.all(tasks);
+  return payload;
 }
