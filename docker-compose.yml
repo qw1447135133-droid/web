@@ -1,0 +1,47 @@
+services:
+  app:
+    image: ${DOCKER_IMAGE:-sports-news:latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TUZI_API_KEY: ${TUZI_API_KEY}
+      FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY}
+      PIPELINE_API_SECRET: ${PIPELINE_API_SECRET}
+      NEXT_PUBLIC_REVALIDATE_SECRET: ${NEXT_PUBLIC_REVALIDATE_SECRET}
+      NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-足球资讯}
+      NEXT_PUBLIC_SITE_DOMAIN: ${NEXT_PUBLIC_SITE_DOMAIN}
+      NEXT_PUBLIC_SITE_LOGO_URL: ${NEXT_PUBLIC_SITE_LOGO_URL:-/logo.png}
+      NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-vi}
+      NEXT_PUBLIC_AD_LINKS: ${NEXT_PUBLIC_AD_LINKS:-{}}
+      GOOGLE_INDEXING_SERVICE_ACCOUNT_B64: ${GOOGLE_INDEXING_SERVICE_ACCOUNT_B64:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Content pipeline cron (runs every 2 hours)
+  pipeline:
+    image: ${DOCKER_IMAGE:-sports-news:latest}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      TUZI_API_KEY: ${TUZI_API_KEY}
+      FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY}
+      PIPELINE_API_SECRET: ${PIPELINE_API_SECRET}
+      SITE_URL: http://app:3000
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          echo "[pipeline] $(date) starting run..."
+          node /app/scripts/pipeline/run.mjs || echo "[pipeline] run failed, will retry next cycle"
+          echo "[pipeline] sleeping 2 hours..."
+          sleep 7200
+        done
+    depends_on:
+      app:
+        condition: service_healthy

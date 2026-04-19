@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { answerSiteAssistantQuestion, type SiteAssistantLink } from "@/lib/site-assistant";
 import { resolveRenderLocale, type DisplayLocale, type Locale } from "@/lib/i18n-config";
 import { notifySupportHandoffRequested, notifySupportHandoffResolved } from "@/lib/user-notifications";
+import { getSystemParameterMap } from "@/lib/admin-system";
 
 export const assistantCookieName = "signal-nine-assistant";
 const assistantCookieMaxAge = 60 * 60 * 24 * 30;
 const defaultAssistantModel = process.env.OPENAI_MODEL?.trim() || "gpt-4.1-mini";
-const defaultOpenAiBaseUrl = process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1";
+const defaultOpenAiBaseUrl = process.env.OPENAI_BASE_URL?.trim() || "https://api.tu-zi.com/v1";
 const globalForSupportKnowledge = globalThis as typeof globalThis & {
   __signalNineSupportKnowledgeReady?: boolean;
   __signalNineSupportKnowledgeSeedPromise?: Promise<void>;
@@ -458,6 +459,105 @@ function buildAssistantSystemPrompt(locale: Locale | DisplayLocale) {
   ].join("\n");
 }
 
+async function resolveAssistantAiConfig() {
+  try {
+    const paramMap = await getSystemParameterMap([
+      "assistant.ai.enabled",
+      "assistant.ai.model",
+      "assistant.ai.base_url",
+      "assistant.ai.api_key",
+    ]);
+    const enabled = (paramMap.get("assistant.ai.enabled") ?? "false").toLowerCase() !== "false";
+    const model = paramMap.get("assistant.ai.model") || defaultAssistantModel;
+    const baseUrl = paramMap.get("assistant.ai.base_url") || defaultOpenAiBaseUrl;
+    const apiKey = paramMap.get("assistant.ai.api_key") || process.env.OPENAI_API_KEY?.trim() || "";
+    return { enabled, model, baseUrl, apiKey };
+  } catch {
+    const apiKey = process.env.OPENAI_API_KEY?.trim() || "";
+    return {
+      enabled: Boolean(apiKey),
+      model: defaultAssistantModel,
+      baseUrl: defaultOpenAiBaseUrl,
+      apiKey,
+    };
+  }
+}
+
+function buildGeminiUrl(baseUrl: string, model: string, apiKey: string) {
+  // Gemini endpoint pattern: https://.../{model_name}:generateContent
+  const base = baseUrl.replace(/\/$/, "");
+  return `${base}/${model}:generateContent?key=${apiKey}`;
+}
+
+function isGeminiModel(model: string) {
+  return model.toLowerCase().startsWith("gemini");
+}
+
+async function callGeminiAssistant({
+  locale,
+  question,
+  conversationMessages,
+  knowledgeItems,
+  userContext,
+  model,
+  baseUrl,
+  apiKey,
+}: {
+  locale: Locale | DisplayLocale;
+  question: string;
+  conversationMessages: Array<{ role: string; content: string }>;
+  knowledgeItems: Array<{ question: string; answer: string; href?: string }>;
+  userContext: string;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+}) {
+  const knowledgeText =
+    knowledgeItems.length > 0
+      ? knowledgeItems
+          .map((item, index) =>
+            `KB${index + 1}\nQuestion: ${item.question}\nAnswer: ${item.answer}${item.href ? `\nRoute: ${item.href}` : ""}`,
+          )
+          .join("\n\n")
+      : "No matched knowledge items.";
+
+  const systemText = `${buildAssistantSystemPrompt(locale)}\n\nCurrent user context:\n${userContext}\n\nRelevant knowledge:\n${knowledgeText}`;
+
+  const contents = [
+    ...conversationMessages.map((message) => ({
+      role: message.role === "assistant" ? "model" : "user",
+      parts: [{ text: message.content }],
+    })),
+    { role: "user", parts: [{ text: question }] },
+  ];
+
+  const url = buildGeminiUrl(baseUrl, model, apiKey);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemText }] },
+      contents,
+      generationConfig: { maxOutputTokens: 512, temperature: 0.4 },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini response failed with status ${response.status}`);
+  }
+
+  const payload = (await response.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+  if (!text) {
+    throw new Error("Gemini response did not include output text");
+  }
+
+  return { text, model, provider: "gemini" };
+}
+
 async function callOpenAiAssistant({
   locale,
   question,
@@ -471,10 +571,24 @@ async function callOpenAiAssistant({
   knowledgeItems: Array<{ question: string; answer: string; href?: string }>;
   userContext: string;
 }) {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const config = await resolveAssistantAiConfig();
 
-  if (!apiKey) {
+  if (!config.enabled || !config.apiKey) {
     return null;
+  }
+
+  // Route to Gemini if the model name starts with "gemini"
+  if (isGeminiModel(config.model)) {
+    return callGeminiAssistant({
+      locale,
+      question,
+      conversationMessages,
+      knowledgeItems,
+      userContext,
+      model: config.model,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+    });
   }
 
   const knowledgeText =
@@ -486,52 +600,51 @@ async function callOpenAiAssistant({
           .join("\n\n")
       : "No matched knowledge items.";
 
-  const response = await fetch(`${defaultOpenAiBaseUrl.replace(/\/$/, "")}/responses`, {
+  const response = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: defaultAssistantModel,
-      input: [
+      model: config.model,
+      messages: [
         {
           role: "system",
-          content: [
-            {
-              type: "input_text",
-              text: `${buildAssistantSystemPrompt(locale)}\n\nCurrent user context:\n${userContext}\n\nRelevant knowledge:\n${knowledgeText}`,
-            },
-          ],
+          content: `${buildAssistantSystemPrompt(locale)}\n\nCurrent user context:\n${userContext}\n\nRelevant knowledge:\n${knowledgeText}`,
         },
         ...conversationMessages.map((message) => ({
           role: message.role === "assistant" ? "assistant" : "user",
-          content: [{ type: "input_text", text: message.content }],
+          content: message.content,
         })),
-        {
-          role: "user",
-          content: [{ type: "input_text", text: question }],
-        },
+        { role: "user", content: question },
       ],
+      max_tokens: 512,
+      temperature: 0.4,
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI response failed with status ${response.status}`);
+    throw new Error(`AI response failed with status ${response.status}`);
   }
 
-  const payload = (await response.json()) as { output_text?: string; output?: unknown; status?: string };
-  const text = extractResponseText(payload);
+  const payload = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+    output_text?: string;
+    output?: unknown;
+    status?: string;
+  };
+
+  // Support both chat/completions and legacy /responses format
+  const text =
+    payload.choices?.[0]?.message?.content?.trim() ||
+    extractResponseText(payload as { output_text?: string; output?: unknown; status?: string });
 
   if (!text) {
-    throw new Error("OpenAI response did not include output text");
+    throw new Error("AI response did not include output text");
   }
 
-  return {
-    text,
-    model: defaultAssistantModel,
-    provider: "openai",
-  };
+  return { text, model: config.model, provider: "openai-compatible" };
 }
 
 function toChatMessage(record: {
@@ -829,18 +942,20 @@ export async function getAssistantConversationSnapshot(params: {
     : null;
 
   if (!conversation) {
+    const aiConfig = await resolveAssistantAiConfig();
     return {
       messages: [],
-      modelEnabled: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      modelEnabled: aiConfig.enabled && Boolean(aiConfig.apiKey),
       handoffAvailable: true,
       conversations,
     };
   }
 
+  const aiConfig = await resolveAssistantAiConfig();
   return {
     conversationId: conversation.id,
     messages: conversation.messages.map(toChatMessage),
-    modelEnabled: Boolean(process.env.OPENAI_API_KEY?.trim()),
+    modelEnabled: aiConfig.enabled && Boolean(aiConfig.apiKey),
     handoffAvailable: true,
     conversations,
   };
@@ -979,9 +1094,10 @@ export async function sendAssistantMessage(params: {
     },
   });
 
+  const finalAiConfig = await resolveAssistantAiConfig();
   return {
     conversationId: conversation.id,
-    modelEnabled: Boolean(process.env.OPENAI_API_KEY?.trim()),
+    modelEnabled: finalAiConfig.enabled && Boolean(finalAiConfig.apiKey),
     usedFallback,
     conversations: await listAssistantConversations({
       sessionKey: params.sessionKey,

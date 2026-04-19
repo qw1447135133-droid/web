@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -974,6 +974,20 @@ model ArticlePlan {
   publishedAt      DateTime?
   leagueId         String?
   authorId         String
+  // multilingual content
+  titleZhCn        String?
+  titleZhTw        String?
+  titleEn          String?
+  titleTh          String?
+  titleVi          String?
+  contentZhCn      String?
+  contentZhTw      String?
+  contentEn        String?
+  contentTh        String?
+  contentVi        String?
+  seoDescription   String?
+  aiGenerated      Boolean     @default(false)
+  sourceUrl        String?
   league           League?     @relation(fields: [leagueId], references: [id], onDelete: SetNull)
   author           AuthorTeam  @relation(fields: [authorId], references: [id], onDelete: Restrict)
   createdAt        DateTime    @default(now())
@@ -983,6 +997,7 @@ model ArticlePlan {
   @@index([sport, status, kickoff])
   @@index([authorId, status])
   @@index([matchId])
+  @@index([status, publishedAt])
 }
 
 model HomepageFeaturedMatchSlot {

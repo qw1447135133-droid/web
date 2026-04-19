@@ -1,0 +1,37 @@
+name: Content Pipeline
+
+on:
+  schedule:
+    # Run every 2 hours
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no publishing)"
+        type: boolean
+        default: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run content pipeline
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+          TUZI_API_KEY: ${{ secrets.TUZI_API_KEY }}
+          PIPELINE_API_SECRET: ${{ secrets.PIPELINE_API_SECRET }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: node scripts/pipeline/run.mjs

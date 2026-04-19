@@ -368,7 +368,8 @@ function isBooleanSystemParameterKey(key: string) {
     key === "app.version.force_update" ||
     key === "app.web.install_enabled" ||
     key === "app.web.fullscreen_enabled" ||
-    key === "app.push.webpush_enabled"
+    key === "app.push.webpush_enabled" ||
+    key === "assistant.ai.enabled"
   );
 }
 
@@ -3251,6 +3252,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
   const systemParameterMap = new Map(systemDashboard.parameters.map((item) => [item.key, item]));
   const auditRetentionParameter = systemParameterMap.get("system.audit.retention_days");
   const auditRetentionDaysValue = Number.parseInt(auditRetentionParameter?.value ?? "180", 10) || 180;
+
+  // AI assistant parameters
+  const aiAssistantParams = {
+    enabled: systemParameterMap.get("assistant.ai.enabled"),
+    model: systemParameterMap.get("assistant.ai.model"),
+    baseUrl: systemParameterMap.get("assistant.ai.base_url"),
+    apiKey: systemParameterMap.get("assistant.ai.api_key"),
+  };
+  const aiEnabled = (aiAssistantParams.enabled?.value ?? "false").toLowerCase() !== "false";
+  const aiCurrentModel = aiAssistantParams.model?.value ?? "gpt-4.1-mini";
+
   const curatedAppParameterKeys = [
     "app.version.current",
     "app.version.minimum_supported",
@@ -9829,6 +9841,180 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                     ) : null}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className={showSystemRuntime ? "rounded-[1.5rem] border border-white/8 bg-white/[0.03] p-5" : "hidden"}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="section-label">{locale === "en" ? "AI assistant" : locale === "zh-TW" ? "AI 助手" : "AI 助手"}</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    {locale === "en" ? "Model & provider settings" : locale === "zh-TW" ? "模型與服務商設定" : "模型与服务商设置"}
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {locale === "en"
+                      ? "Configure the AI model used by the floating assistant. Supports any OpenAI-compatible relay."
+                      : locale === "zh-TW"
+                        ? "設定浮動助手使用的 AI 模型，支援任何 OpenAI 相容中轉站。"
+                        : "配置浮动助手使用的 AI 模型，支持任何 OpenAI 兼容中转站。"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-slate-300">
+                  <span className={`rounded-full border px-3 py-1.5 ${aiEnabled ? "border-lime-300/20 bg-lime-300/10 text-lime-100" : "border-white/10 bg-white/[0.04] text-slate-400"}`}>
+                    {aiEnabled ? (locale === "en" ? "AI enabled" : "AI 已启用") : (locale === "en" ? "AI disabled" : "AI 已禁用")}
+                  </span>
+                  {aiEnabled && (
+                    <span className="rounded-full border border-sky-300/20 bg-sky-300/10 px-3 py-1.5 text-sky-100">{aiCurrentModel}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                {/* Enable/disable toggle */}
+                {aiAssistantParams.enabled ? (
+                  <form action="/api/admin/system" method="post" className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                    <input type="hidden" name="intent" value="save-parameter" />
+                    <input type="hidden" name="key" value="assistant.ai.enabled" />
+                    <input type="hidden" name="category" value="assistant" />
+                    <input type="hidden" name="description" value={aiAssistantParams.enabled.description ?? ""} />
+                    <p className="font-medium text-white">{locale === "en" ? "AI enabled" : locale === "zh-TW" ? "啟用 AI" : "启用 AI"}</p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {locale === "en" ? "Toggle AI-powered replies. Disabled falls back to keyword matching." : locale === "zh-TW" ? "關閉後退回關鍵詞匹配模式。" : "关闭后退回关键词匹配模式。"}
+                    </p>
+                    <select
+                      name="value"
+                      defaultValue={aiEnabled ? "true" : "false"}
+                      className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                    >
+                      <option value="true">{locale === "en" ? "Enabled" : "启用"}</option>
+                      <option value="false">{locale === "en" ? "Disabled" : "禁用"}</option>
+                    </select>
+                    <div className="mt-3 flex justify-end">
+                      <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                        {locale === "en" ? "Update" : "更新"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+
+                {/* Model selector */}
+                {aiAssistantParams.model ? (
+                  <form action="/api/admin/system" method="post" className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                    <input type="hidden" name="intent" value="save-parameter" />
+                    <input type="hidden" name="key" value="assistant.ai.model" />
+                    <input type="hidden" name="category" value="assistant" />
+                    <input type="hidden" name="description" value={aiAssistantParams.model.description ?? ""} />
+                    <p className="font-medium text-white">{locale === "en" ? "AI model" : locale === "zh-TW" ? "AI 模型" : "AI 模型"}</p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {locale === "en" ? "Select a preset or type a custom model name." : locale === "zh-TW" ? "選擇預設模型或輸入自訂模型名稱。" : "选择预设模型或输入自定义模型名称。"}
+                    </p>
+                    <select
+                      id="ai-model-preset"
+                      defaultValue={["gpt-5.4-mini", "gemini-2.0-flash-preview", "deepseek-v3.2"].includes(aiCurrentModel) ? aiCurrentModel : "custom"}
+                      className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                      onChange={undefined}
+                    >
+                      <option value="gpt-5.4-mini">gpt-5.4-mini</option>
+                      <option value="gemini-2.0-flash-preview">gemini-2.0-flash-preview</option>
+                      <option value="deepseek-v3.2">deepseek-v3.2</option>
+                      {!["gpt-5.4-mini", "gemini-2.0-flash-preview", "deepseek-v3.2"].includes(aiCurrentModel) && (
+                        <option value={aiCurrentModel}>{aiCurrentModel} (current)</option>
+                      )}
+                    </select>
+                    <p className="mt-3 text-xs text-slate-500">
+                      {locale === "en" ? "Custom model name (overrides dropdown):" : locale === "zh-TW" ? "自訂模型名稱（覆蓋下拉選項）：" : "自定义模型名称（覆盖下拉选项）："}
+                    </p>
+                    <input
+                      id="ai-model-input"
+                      name="value"
+                      defaultValue={aiCurrentModel}
+                      placeholder="e.g. gpt-4o-mini, claude-3-haiku"
+                      className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                    />
+                    {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+                    <script dangerouslySetInnerHTML={{ __html: `(function(){var s=document.getElementById('ai-model-preset'),i=document.getElementById('ai-model-input');if(s&&i){s.addEventListener('change',function(){i.value=s.value;})}})();` }} />
+                    <div className="mt-3 flex justify-end">
+                      <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                        {locale === "en" ? "Update" : "更新"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+
+                {/* Base URL */}
+                {aiAssistantParams.baseUrl ? (
+                  <form action="/api/admin/system" method="post" className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                    <input type="hidden" name="intent" value="save-parameter" />
+                    <input type="hidden" name="key" value="assistant.ai.base_url" />
+                    <input type="hidden" name="category" value="assistant" />
+                    <input type="hidden" name="description" value={aiAssistantParams.baseUrl.description ?? ""} />
+                    <p className="font-medium text-white">{locale === "en" ? "API base URL" : locale === "zh-TW" ? "API 基礎地址" : "API 基础地址"}</p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {locale === "en"
+                        ? "OpenAI-compatible endpoint. For Gemini models, use the tu-zi.com v1beta relay."
+                        : locale === "zh-TW"
+                          ? "OpenAI 相容端點。Gemini 模型請使用 v1beta 中轉地址。"
+                          : "OpenAI 兼容端点。Gemini 模型请使用 v1beta 中转地址。"}
+                    </p>
+                    <select
+                      id="ai-baseurl-preset"
+                      className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                      defaultValue=""
+                    >
+                      <option value="" disabled>{locale === "en" ? "— Quick presets —" : "— 快速预设 —"}</option>
+                      <option value="https://api.tu-zi.com/v1">tu-zi.com /v1 (GPT / DeepSeek)</option>
+                      <option value="https://api.tu-zi.com/v1beta">tu-zi.com /v1beta (Gemini)</option>
+                      <option value="https://api.openai.com/v1">api.openai.com /v1 (official)</option>
+                    </select>
+                    <input
+                      id="ai-baseurl-input"
+                      name="value"
+                      defaultValue={aiAssistantParams.baseUrl.value}
+                      placeholder="https://api.tu-zi.com/v1"
+                      className="mt-3 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                    />
+                    {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+                    <script dangerouslySetInnerHTML={{ __html: `(function(){var s=document.getElementById('ai-baseurl-preset'),i=document.getElementById('ai-baseurl-input');if(s&&i){s.addEventListener('change',function(){if(s.value)i.value=s.value;})}})();` }} />
+                    <div className="mt-3 flex justify-end">
+                      <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                        {locale === "en" ? "Update" : "更新"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+
+                {/* API Key */}
+                {aiAssistantParams.apiKey ? (
+                  <form action="/api/admin/system" method="post" className="rounded-[1rem] border border-white/8 bg-slate-950/35 p-4">
+                    <input type="hidden" name="intent" value="save-parameter" />
+                    <input type="hidden" name="key" value="assistant.ai.api_key" />
+                    <input type="hidden" name="category" value="assistant" />
+                    <input type="hidden" name="description" value={aiAssistantParams.apiKey.description ?? ""} />
+                    <p className="font-medium text-white">{locale === "en" ? "API key" : locale === "zh-TW" ? "API 金鑰" : "API 密钥"}</p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {locale === "en"
+                        ? "Stored in the database. Takes precedence over the OPENAI_API_KEY environment variable."
+                        : locale === "zh-TW"
+                          ? "存入資料庫，優先於環境變數 OPENAI_API_KEY。"
+                          : "存入数据库，优先于环境变量 OPENAI_API_KEY。"}
+                    </p>
+                    <input
+                      name="value"
+                      type="password"
+                      defaultValue={aiAssistantParams.apiKey.value}
+                      placeholder="sk-..."
+                      className="mt-4 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                    />
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className="text-xs text-slate-500">
+                        {aiAssistantParams.apiKey.value ? (locale === "en" ? "Key is set" : "密钥已设置") : (locale === "en" ? "No key set" : "未设置密钥")}
+                      </span>
+                      <button type="submit" className="rounded-full border border-white/12 px-4 py-2 text-sm text-slate-100 transition hover:border-white/25 hover:text-white">
+                        {locale === "en" ? "Update" : "更新"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
               </div>
             </div>
 

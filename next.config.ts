@@ -7,7 +7,6 @@ const cdnAssetPrefix =
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "192.168.1.170", "*.localhost"],
-  output: "standalone",
   assetPrefix: cdnAssetPrefix,
   async headers() {
     return [

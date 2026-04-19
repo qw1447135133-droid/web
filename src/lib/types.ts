@@ -13,7 +13,10 @@ export type SiteAdPlacement =
   | "plans-inline"
   | "database-inline"
   | "match-detail-inline"
-  | "live-footer";
+  | "live-footer"
+  | "sidebar"
+  | "hero"
+  | "inline";
 export type SiteAdTheme = "neutral" | "highlight" | "premium";
 
 export type MembershipPlanId = "monthly" | "seasonal" | "annual";
@@ -127,6 +130,7 @@ export interface ArticlePlan {
   matchId?: string;
   title: string;
   league: string;
+  leagueLabel?: string;
   kickoff: string;
   authorId: string;
   teaser: string;
@@ -136,6 +140,24 @@ export interface ArticlePlan {
   isHot: boolean;
   performance: string;
   tags: string[];
+  status?: string;
+  publishedAt?: Date | string | null;
+  updatedAt?: Date | string;
+  // multilingual content
+  titleZhCn?: string | null;
+  titleZhTw?: string | null;
+  titleEn?: string | null;
+  titleTh?: string | null;
+  titleVi?: string | null;
+  contentZhCn?: string | null;
+  contentZhTw?: string | null;
+  contentEn?: string | null;
+  contentTh?: string | null;
+  contentVi?: string | null;
+  fullAnalysisText?: string;
+  seoDescription?: string | null;
+  aiGenerated?: boolean;
+  sourceUrl?: string | null;
 }
 
 export interface MembershipPlan {

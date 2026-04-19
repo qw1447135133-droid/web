@@ -610,6 +610,30 @@ const defaultSystemParameters = [
     category: "agents",
     description: "Minimum unsettled commission required to generate a weekly settlement request.",
   },
+  {
+    key: "assistant.ai.enabled",
+    value: process.env.OPENAI_API_KEY?.trim() ? "true" : "false",
+    category: "assistant",
+    description: "Enable AI-powered assistant replies. When disabled, the assistant falls back to keyword matching.",
+  },
+  {
+    key: "assistant.ai.model",
+    value: process.env.OPENAI_MODEL?.trim() || "gpt-4.1-mini",
+    category: "assistant",
+    description: "AI model used for assistant replies. Preset options: gpt-5.4-mini, gemini-2.0-flash-preview, deepseek-v3.2. Custom models are also supported.",
+  },
+  {
+    key: "assistant.ai.base_url",
+    value: process.env.OPENAI_BASE_URL?.trim() || "https://api.tu-zi.com/v1",
+    category: "assistant",
+    description: "OpenAI-compatible API base URL. Supports any relay or proxy that follows the /v1/chat/completions interface.",
+  },
+  {
+    key: "assistant.ai.api_key",
+    value: process.env.OPENAI_API_KEY?.trim() || "",
+    category: "assistant",
+    description: "API key for the AI provider. Stored in the database and takes precedence over the OPENAI_API_KEY environment variable.",
+  },
 ];
 
 function safeRevalidate(paths: string[]) {

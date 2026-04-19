@@ -180,6 +180,18 @@ const siteAdPlacementMeta: Record<
       hi: "Football, basketball, cricket aur esports live scoreboards ke neeche dikhai deta hai.",
     },
   },
+  sidebar: {
+    label: { "zh-CN": "侧边栏广告位", "zh-TW": "側邊欄廣告位", en: "Sidebar", th: "แถบด้านข้าง", vi: "Thanh bên", hi: "Sidebar" },
+    hint: { "zh-CN": "显示在公开页面侧边栏。", "zh-TW": "顯示在公開頁面側邊欄。", en: "Shown in the public page sidebar.", th: "แสดงในแถบด้านข้างของหน้าสาธารณะ", vi: "Hiển thị trong thanh bên trang công khai.", hi: "Public page sidebar mein dikhaya jata hai." },
+  },
+  hero: {
+    label: { "zh-CN": "头部横幅广告位", "zh-TW": "頭部橫幅廣告位", en: "Hero banner", th: "แบนเนอร์หลัก", vi: "Banner chính", hi: "Hero banner" },
+    hint: { "zh-CN": "显示在页面顶部横幅区域。", "zh-TW": "顯示在頁面頂部橫幅區域。", en: "Shown in the hero banner area.", th: "แสดงในพื้นที่แบนเนอร์หลัก", vi: "Hiển thị trong khu vực banner chính.", hi: "Hero banner area mein dikhaya jata hai." },
+  },
+  inline: {
+    label: { "zh-CN": "内容内嵌广告位", "zh-TW": "內容內嵌廣告位", en: "Inline", th: "โฆษณาในเนื้อหา", vi: "Quảng cáo nội tuyến", hi: "Inline" },
+    hint: { "zh-CN": "显示在文章内容中间。", "zh-TW": "顯示在文章內容中間。", en: "Shown within article content.", th: "แสดงภายในเนื้อหาบทความ", vi: "Hiển thị trong nội dung bài viết.", hi: "Article content ke beech mein dikhaya jata hai." },
+  },
 };
 
 const seedAds = [
